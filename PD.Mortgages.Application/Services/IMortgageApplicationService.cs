@@ -7,6 +7,7 @@ public interface IMortgageApplicationService
 {
     Task<MortgageApplicationDto> CreateAsync(CancellationToken cancellationToken = default);
     Task<MortgageApplicationDto> GetAsync(Guid id, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
     Task SaveApplicantAsync(Guid id, string firstName, string lastName, string email, string phoneNumber, CancellationToken cancellationToken = default);
     Task SaveQualificationAsync(Guid id, decimal propertyValue, decimal deposit, CancellationToken cancellationToken = default);
     Task SaveFinancesAsync(Guid id, decimal annualIncome, decimal monthlyCommitments, EmploymentType employmentType, CancellationToken cancellationToken = default);

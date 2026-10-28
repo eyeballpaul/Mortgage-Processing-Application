@@ -23,4 +23,15 @@ public sealed class InMemoryMortgageDocumentStorage : IMortgageDocumentStorage
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(_documents.TryGetValue((applicationId, documentId), out var contents) ? contents.ToArray() : null);
     }
+
+    public Task DeleteAllAsync(Guid applicationId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        foreach (var key in _documents.Keys.Where(key => key.ApplicationId == applicationId))
+        {
+            _documents.TryRemove(key, out _);
+        }
+
+        return Task.CompletedTask;
+    }
 }

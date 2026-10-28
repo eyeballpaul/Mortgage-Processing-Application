@@ -22,6 +22,12 @@ public sealed class MortgageApplicationService(
     public async Task<MortgageApplicationDto> GetAsync(Guid id, CancellationToken cancellationToken = default) =>
         Map(await FindAsync(id, cancellationToken));
 
+    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        await documentStorage.DeleteAllAsync(id, cancellationToken);
+        await applicationRepository.DeleteAsync(id, cancellationToken);
+    }
+
     public Task SaveApplicantAsync(Guid id, string firstName, string lastName, string email, string phoneNumber, CancellationToken cancellationToken = default) =>
         ChangeAsync(id, application => application.UpdateApplicant(firstName, lastName, email, phoneNumber), cancellationToken);
 

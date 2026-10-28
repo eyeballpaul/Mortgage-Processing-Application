@@ -27,6 +27,22 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
         return RedirectToAction(nameof(Qualification));
     }
 
+    [HttpPost("start-over")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StartOver(CancellationToken cancellationToken)
+    {
+        if (CurrentApplicationId() is Guid currentApplicationId)
+        {
+            await applicationService.DeleteAsync(currentApplicationId, cancellationToken);
+        }
+
+        var application = await applicationService.CreateAsync(cancellationToken);
+        HttpContext.Session.SetString(ApplicationSessionKey, application.Id.ToString());
+        HttpContext.Session.SetInt32(StepSessionKey, 1);
+        TempData["Notice"] = "Your previous application was deleted. You can start again below.";
+        return RedirectToAction(nameof(Qualification));
+    }
+
     [HttpGet("resume")]
     public IActionResult Resume()
     {

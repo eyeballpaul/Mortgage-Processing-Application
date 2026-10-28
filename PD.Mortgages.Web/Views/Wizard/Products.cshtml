@@ -56,4 +56,5 @@
             <button type="submit" class="btn btn-primary btn-lg" disabled="@(Model.Products.Count == 0)">Continue <span aria-hidden="true">→</span></button>
         </div>
     </form>
+    <div class="start-over-row">@await Html.PartialAsync("_StartOver")</div>
 </div>

@@ -1,10 +1,10 @@
 @model PD.Mortgages.Application.Models.MortgageApplicationDto
 @{
     ViewData["Title"] = "Your documents";
-    ViewData["WizardStep"] = 6;
+    ViewData["WizardStep"] = 7;
 }
 <div class="form-card">
-    <p class="eyebrow">Step 6 · Your documents</p>
+    <p class="eyebrow">Step 7 · Your documents</p>
     <h1>Add any supporting documents</h1>
     <p class="text-secondary">You can add documents now or continue and come back later. We accept PDF, PNG and JPEG files up to 5 MB each, with a limit of 10 files or 25 MB total.</p>
     <div class="notice-box mb-4">
@@ -34,4 +34,5 @@
         <a class="btn btn-outline-secondary btn-lg" asp-action="Products">Back</a>
         <a class="btn btn-primary btn-lg" asp-action="Review">Continue to review <span aria-hidden="true">→</span></a>
     </div>
+    <div class="start-over-row">@await Html.PartialAsync("_StartOver")</div>
 </div>

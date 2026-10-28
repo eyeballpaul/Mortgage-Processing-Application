@@ -37,4 +37,11 @@ public sealed class InMemoryMortgageApplicationRepository : IMortgageApplication
         _applications[application.Id] = application;
         return Task.CompletedTask;
     }
+
+    public Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _applications.TryRemove(id, out _);
+        return Task.CompletedTask;
+    }
 }
