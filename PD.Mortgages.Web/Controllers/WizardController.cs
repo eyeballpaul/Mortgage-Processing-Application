@@ -48,9 +48,9 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
             return RedirectToAction("Index", "Home");
         }
 
-        HttpContext.Session.SetInt32(StepSessionKey, Math.Clamp(step, 1, 7));
+        HttpContext.Session.SetInt32(StepSessionKey, Math.Clamp(step, 1, 8));
         TempData["Notice"] = "Your progress is saved on this device. You can return to this application later.";
-        return RedirectToStep(Math.Clamp(step, 1, 7));
+        return RedirectToStep(Math.Clamp(step, 1, 8));
     }
 
     [HttpGet("dashboard")]
@@ -192,8 +192,41 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
+        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 4);
+        if (prerequisiteRedirect is not null) return prerequisiteRedirect;
         await applicationService.SaveConsentsAsync(application.Id, model.CreditCheckConsent, model.OpenBankingConsent, cancellationToken);
         SetStep(5);
+        return RedirectToAction(nameof(DecisionInPrinciple));
+    }
+
+    [HttpGet("decision-in-principle")]
+    public async Task<IActionResult> DecisionInPrinciple(CancellationToken cancellationToken)
+    {
+        var application = await GetCurrentApplicationAsync(cancellationToken);
+        if (application is null) return RedirectToAction("Index", "Home");
+        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 5);
+        if (prerequisiteRedirect is not null) return prerequisiteRedirect;
+
+        application = application.DecisionInPrinciple is null
+            ? await applicationService.GenerateDecisionInPrincipleAsync(application.Id, cancellationToken)
+            : application;
+
+        SetStep(5);
+        return View(application);
+    }
+
+    [HttpPost("decision-in-principle")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ContinueFromDecisionInPrinciple(CancellationToken cancellationToken)
+    {
+        var application = await GetCurrentApplicationAsync(cancellationToken);
+        if (application is null) return RedirectToAction("Index", "Home");
+        if (application.DecisionInPrinciple is null)
+        {
+            return RedirectToAction(nameof(DecisionInPrinciple));
+        }
+
+        SetStep(6);
         return RedirectToAction(nameof(Products));
     }
 
@@ -202,14 +235,15 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
-        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 5);
+        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 6);
         if (prerequisiteRedirect is not null) return prerequisiteRedirect;
-        SetStep(5);
+        SetStep(6);
         var products = await applicationService.GetEligibleProductsAsync(application.Id, cancellationToken);
         return View(new ProductsViewModel
         {
             SelectedProductId = application.SelectedProductId,
             LoanAmount = (application.PropertyValue ?? 0) - (application.Deposit ?? 0),
+            DipOutcome = application.DecisionInPrinciple?.Outcome,
             Products = products
         });
     }
@@ -220,6 +254,8 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
+        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 6);
+        if (prerequisiteRedirect is not null) return prerequisiteRedirect;
         var eligibleProducts = await applicationService.GetEligibleProductsAsync(application.Id, cancellationToken);
         if (string.IsNullOrWhiteSpace(model.SelectedProductId) ||
             eligibleProducts.All(product => product.Id != model.SelectedProductId))
@@ -231,12 +267,13 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
         {
             model.Products = eligibleProducts;
             model.LoanAmount = (application.PropertyValue ?? 0) - (application.Deposit ?? 0);
-            SetStep(5);
+            model.DipOutcome = application.DecisionInPrinciple?.Outcome;
+            SetStep(6);
             return View(model);
         }
 
         await applicationService.SelectProductAsync(application.Id, model.SelectedProductId!, cancellationToken);
-        SetStep(6);
+        SetStep(7);
         return RedirectToAction(nameof(Documents));
     }
 
@@ -245,9 +282,9 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
-        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 6);
+        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 7);
         if (prerequisiteRedirect is not null) return prerequisiteRedirect;
-        SetStep(6);
+        SetStep(7);
         return View(application);
     }
 
@@ -258,6 +295,8 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
+        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 7);
+        if (prerequisiteRedirect is not null) return prerequisiteRedirect;
 
         if (document is null || document.Length == 0)
         {
@@ -290,12 +329,12 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
                 var safeFileName = Path.GetFileName(document.FileName);
                 await applicationService.AddDocumentAsync(application.Id, safeFileName, contents, cancellationToken);
                 TempData["Notice"] = $"{safeFileName} was added to your application.";
-                SetStep(6);
+                SetStep(7);
                 return RedirectToAction(nameof(Documents));
             }
         }
 
-        SetStep(6);
+        SetStep(7);
         return View(application);
     }
 
@@ -322,9 +361,9 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
-        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 7);
+        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 8);
         if (prerequisiteRedirect is not null) return prerequisiteRedirect;
-        SetStep(7);
+        SetStep(8);
         return await ReviewViewAsync(application, cancellationToken);
     }
 
@@ -334,6 +373,8 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
+        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 8);
+        if (prerequisiteRedirect is not null) return prerequisiteRedirect;
 
         try
         {
@@ -410,14 +451,19 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
             return RedirectToStep(4);
         }
 
-        if (requestedStep > 5 && application.SelectedProductId is null)
+        if (requestedStep > 5 && application.DecisionInPrinciple is null)
         {
             return RedirectToStep(5);
         }
 
-        if (requestedStep == 7 && (HttpContext.Session.GetInt32(StepSessionKey) ?? 0) < 6)
+        if (requestedStep > 6 && application.SelectedProductId is null)
         {
             return RedirectToStep(6);
+        }
+
+        if (requestedStep == 8 && (HttpContext.Session.GetInt32(StepSessionKey) ?? 0) < 7)
+        {
+            return RedirectToStep(7);
         }
 
         return null;
@@ -428,9 +474,10 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
         2 => RedirectToAction(nameof(Applicant)),
         3 => RedirectToAction(nameof(Finances)),
         4 => RedirectToAction(nameof(Connections)),
-        5 => RedirectToAction(nameof(Products)),
-        6 => RedirectToAction(nameof(Documents)),
-        7 => RedirectToAction(nameof(Review)),
+        5 => RedirectToAction(nameof(DecisionInPrinciple)),
+        6 => RedirectToAction(nameof(Products)),
+        7 => RedirectToAction(nameof(Documents)),
+        8 => RedirectToAction(nameof(Review)),
         _ => RedirectToAction(nameof(Qualification))
     };
 

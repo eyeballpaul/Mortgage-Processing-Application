@@ -11,6 +11,7 @@ public interface IMortgageApplicationService
     Task SaveQualificationAsync(Guid id, decimal propertyValue, decimal deposit, CancellationToken cancellationToken = default);
     Task SaveFinancesAsync(Guid id, decimal annualIncome, decimal monthlyCommitments, EmploymentType employmentType, CancellationToken cancellationToken = default);
     Task SaveConsentsAsync(Guid id, bool creditCheckConsent, bool openBankingConsent, CancellationToken cancellationToken = default);
+    Task<MortgageApplicationDto> GenerateDecisionInPrincipleAsync(Guid id, CancellationToken cancellationToken = default);
     Task SelectProductAsync(Guid id, string productId, CancellationToken cancellationToken = default);
     Task AddDocumentAsync(Guid id, string fileName, byte[] contents, CancellationToken cancellationToken = default);
     Task<byte[]?> GetDocumentAsync(Guid id, Guid documentId, CancellationToken cancellationToken = default);

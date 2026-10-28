@@ -22,6 +22,7 @@ public sealed class MortgageApplication
     public bool CreditCheckConsent { get; private set; }
     public bool OpenBankingConsent { get; private set; }
     public bool ConsentsRecorded { get; private set; }
+    public DecisionInPrincipleResult? DecisionInPrinciple { get; private set; }
     public string? SelectedProductId { get; private set; }
     public IReadOnlyCollection<MortgageDocument> Documents => _documents.AsReadOnly();
 
@@ -43,6 +44,8 @@ public sealed class MortgageApplication
 
         PropertyValue = propertyValue;
         Deposit = deposit;
+        DecisionInPrinciple = null;
+        SelectedProductId = null;
         Touch();
     }
 
@@ -56,6 +59,7 @@ public sealed class MortgageApplication
         AnnualIncome = annualIncome;
         MonthlyCommitments = monthlyCommitments;
         EmploymentType = employmentType;
+        DecisionInPrinciple = null;
         Touch();
     }
 
@@ -64,7 +68,39 @@ public sealed class MortgageApplication
         CreditCheckConsent = creditCheckConsent;
         OpenBankingConsent = openBankingConsent;
         ConsentsRecorded = true;
+        DecisionInPrinciple = null;
         Touch();
+    }
+
+    public DecisionInPrincipleResult GenerateIndicativeDecisionInPrinciple()
+    {
+        if (PropertyValue is null || Deposit is null || AnnualIncome is null)
+        {
+            throw new InvalidOperationException("Complete your property, deposit and income details before viewing a decision in principle.");
+        }
+
+        var requestedLoanAmount = PropertyValue.Value - Deposit.Value;
+        var outcome = CreditCheckConsent
+            ? DecisionInPrincipleOutcome.WithinIndicativeRange
+            : DecisionInPrincipleOutcome.CreditCheckNotSelected;
+        decimal? indicativeMaximumBorrowing = null;
+
+        if (CreditCheckConsent)
+        {
+            indicativeMaximumBorrowing = AnnualIncome.Value * 4.5m;
+            if (requestedLoanAmount > indicativeMaximumBorrowing.Value)
+            {
+                outcome = DecisionInPrincipleOutcome.AboveIndicativeRange;
+            }
+        }
+
+        DecisionInPrinciple = new DecisionInPrincipleResult(
+            outcome,
+            requestedLoanAmount,
+            indicativeMaximumBorrowing,
+            DateTime.UtcNow);
+        Touch();
+        return DecisionInPrinciple;
     }
 
     public void SelectProduct(string productId)
@@ -88,6 +124,8 @@ public sealed class MortgageApplication
             Deposit is null ||
             AnnualIncome is null ||
             EmploymentType is null ||
+            !ConsentsRecorded ||
+            DecisionInPrinciple is null ||
             SelectedProductId is null)
         {
             throw new InvalidOperationException("Complete your applicant, property, income and product details before submitting.");

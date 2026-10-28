@@ -2,12 +2,12 @@
 @using PD.Mortgages.Application.Services
 @{
     ViewData["Title"] = "Choose a mortgage";
-    ViewData["WizardStep"] = 5;
+    ViewData["WizardStep"] = 6;
 }
 <div class="wide-card">
     <div class="section-topline">
         <div>
-            <p class="eyebrow">Step 5 · Your mortgage</p>
+            <p class="eyebrow">Step 6 · Your mortgage</p>
             <h1>Find a mortgage that feels right</h1>
             <p class="text-secondary mb-0">Based on the details you’ve shared, compare these example options.</p>
         </div>
@@ -18,9 +18,19 @@
     </div>
     <form asp-action="Products" method="post">
         <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
+        @if (Model.DipOutcome == PD.Mortgages.Domain.Enums.DecisionInPrincipleOutcome.AboveIndicativeRange)
+        {
+            <div class="notice-box mb-3">
+                <strong>Your requested loan is above the illustrative borrowing guide</strong>
+                <p class="mb-0">You can still compare these example products. Consider reviewing your property value or deposit. A real lender would make its own assessment.</p>
+            </div>
+        }
         @if (Model.Products.Count == 0)
         {
-            <div class="notice-box mt-4">There are no example products available for the deposit and property value entered. Go back and review your details.</div>
+            <div class="notice-box mt-4">
+                <strong>No example products match these details yet</strong>
+                <p class="mb-0">Our current examples support borrowing up to 95% of the property value. A larger deposit may give you more options. Go back to review your property value or deposit.</p>
+            </div>
         }
         <div class="product-grid">
             @foreach (var product in Model.Products)
@@ -32,7 +42,7 @@
                     <span class="product-choice">@(selected ? "Selected" : "Choose this")</span>
                     <span class="product-name">@product.Name</span>
                     <span class="product-rate">@product.InterestRate.ToString("0.00")<small>%</small></span>
-                    <span class="product-caption">@(product.Id == "tracker-2" ? $"Tracker for {product.FixedTermYears} years" : $"Fixed for {product.FixedTermYears} years")</span>
+                    <span class="product-caption">@(product.Id == "tracker-2" ? $"Tracker for {product.FixedTermYears} years" : $"Fixed for {product.FixedTermYears} years") · Up to @product.MaximumLoanToValue% LTV</span>
                     <span class="product-divider"></span>
                     <span class="product-detail"><span>Product fee</span><strong>@(product.Fee == 0 ? "No fee" : product.Fee.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB")))</strong></span>
                     <span class="product-detail"><span>APRC</span><strong>@product.Aprc.ToString("0.00")%</strong></span>
@@ -42,7 +52,7 @@
         </div>
         <p class="estimate-disclaimer">Illustrative only. Rates and monthly payments are examples, not an offer or advice. Payments are estimated over a 25-year term and exclude fees and other costs.</p>
         <div class="form-actions">
-            <a class="btn btn-outline-secondary" asp-action="Connections">Back</a>
+            <a class="btn btn-outline-secondary" asp-action="DecisionInPrinciple">Back</a>
             <button type="submit" class="btn btn-primary btn-lg" disabled="@(Model.Products.Count == 0)">Continue <span aria-hidden="true">→</span></button>
         </div>
     </form>

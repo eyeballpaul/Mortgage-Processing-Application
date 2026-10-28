@@ -34,6 +34,14 @@ public sealed class MortgageApplicationService(
     public Task SaveConsentsAsync(Guid id, bool creditCheckConsent, bool openBankingConsent, CancellationToken cancellationToken = default) =>
         ChangeAsync(id, application => application.RecordConsents(creditCheckConsent, openBankingConsent), cancellationToken);
 
+    public async Task<MortgageApplicationDto> GenerateDecisionInPrincipleAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var application = await FindAsync(id, cancellationToken);
+        application.GenerateIndicativeDecisionInPrinciple();
+        await applicationRepository.UpdateAsync(application, cancellationToken);
+        return Map(application);
+    }
+
     public async Task SelectProductAsync(Guid id, string productId, CancellationToken cancellationToken = default)
     {
         if (await productRepository.GetByIdAsync(productId, cancellationToken) is null)
@@ -116,6 +124,7 @@ public sealed class MortgageApplicationService(
         application.CreditCheckConsent,
         application.OpenBankingConsent,
         application.ConsentsRecorded,
+        application.DecisionInPrinciple,
         application.SelectedProductId,
         application.Documents.ToList());
 

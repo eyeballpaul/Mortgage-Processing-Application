@@ -20,5 +20,6 @@ public sealed record MortgageApplicationDto(
     bool CreditCheckConsent,
     bool OpenBankingConsent,
     bool ConsentsRecorded,
+    DecisionInPrincipleResult? DecisionInPrinciple,
     string? SelectedProductId,
     IReadOnlyList<MortgageDocument> Documents);

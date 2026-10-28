@@ -35,9 +35,42 @@
             <li class="@(application.PropertyValue.HasValue ? "done" : "current")"><span class="timeline-dot"></span><div><strong>Plans and property</strong><small>@(application.PropertyValue.HasValue ? "Completed" : "Ready when you are")</small></div></li>
             <li class="@(application.FirstName is not null ? "done" : Model.CurrentStep >= 2 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Your details</strong><small>@(application.FirstName is not null ? "Completed" : "In progress")</small></div></li>
             <li class="@(application.AnnualIncome.HasValue ? "done" : Model.CurrentStep >= 3 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Your finances</strong><small>@(application.AnnualIncome.HasValue ? "Completed" : "To do")</small></div></li>
-            <li class="@(application.SelectedProductId is not null ? "done" : Model.CurrentStep >= 5 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Mortgage and documents</strong><small>@(application.SelectedProductId is not null ? "Product selected" : "To do")</small></div></li>
-            <li class="@(completed ? "done" : Model.CurrentStep >= 7 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Review and submit</strong><small>@(completed ? "Submitted" : "To do")</small></div></li>
+            <li class="@(application.ConsentsRecorded ? "done" : Model.CurrentStep >= 4 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Credit and banking choices</strong><small>@(application.ConsentsRecorded ? "Completed" : "To do")</small></div></li>
+            <li class="@(application.DecisionInPrinciple is not null ? "done" : Model.CurrentStep >= 5 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Decision in Principle</strong><small>@(application.DecisionInPrinciple is not null ? "Indicative result ready" : "To do")</small></div></li>
+            <li class="@(application.SelectedProductId is not null ? "done" : Model.CurrentStep >= 6 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Mortgage and documents</strong><small>@(application.SelectedProductId is not null ? "Product selected" : "To do")</small></div></li>
+            <li class="@(completed ? "done" : Model.CurrentStep >= 8 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Review and submit</strong><small>@(completed ? "Submitted" : "To do")</small></div></li>
         </ol>
+    </section>
+    <section class="dashboard-card">
+        <p class="eyebrow">Decision in Principle · demo guide</p>
+        @if (application.DecisionInPrinciple is { } decision)
+        {
+            <h2>@(decision.Outcome switch
+            {
+                DecisionInPrincipleOutcome.CreditCheckNotSelected => "Credit check not selected",
+                DecisionInPrincipleOutcome.WithinIndicativeRange => "Within illustrative range",
+                DecisionInPrincipleOutcome.AboveIndicativeRange => "Above illustrative range",
+                _ => "Indicative result"
+            })</h2>
+            @if (decision.IndicativeMaximumBorrowing is decimal maximumBorrowing)
+            {
+                <div class="dashboard-rate">@maximumBorrowing.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</div>
+                <p class="text-secondary">Illustrative maximum borrowing guide</p>
+            }
+            else
+            {
+                <p class="text-secondary">No indicative borrowing figure is available without credit-check consent.</p>
+            }
+        }
+        else
+        {
+            <h2>Not completed yet</h2>
+            <p class="text-secondary">Your indicative result appears here after the DIP step.</p>
+        }
+        @if (!completed)
+        {
+            <a class="text-link" asp-action="Resume">View application progress <span aria-hidden="true">→</span></a>
+        }
     </section>
     <section class="dashboard-card">
         <p class="eyebrow">Mortgage product</p>
