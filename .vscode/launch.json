@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "PD Mortgages (Development)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build solution",
+      "program": "${workspaceFolder}/PD.Mortgages.Web/bin/Debug/net10.0/PD.Mortgages.Web.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/PD.Mortgages.Web",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5085"
+      },
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
+        "uriFormat": "%s"
+      },
+      "console": "integratedTerminal",
+      "stopAtEntry": false
+    }
+  ]
+}
