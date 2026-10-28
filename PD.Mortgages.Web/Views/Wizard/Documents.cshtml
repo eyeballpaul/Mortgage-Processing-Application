@@ -1,0 +1,37 @@
+@model PD.Mortgages.Application.Models.MortgageApplicationDto
+@{
+    ViewData["Title"] = "Your documents";
+    ViewData["WizardStep"] = 6;
+}
+<div class="form-card">
+    <p class="eyebrow">Step 6 · Your documents</p>
+    <h1>Add any supporting documents</h1>
+    <p class="text-secondary">You can add documents now or continue and come back later. We accept PDF, PNG and JPEG files up to 5 MB each, with a limit of 10 files or 25 MB total.</p>
+    <div class="notice-box mb-4">
+        <strong>Demo storage information</strong>
+        <p class="mb-0">Files are held in application memory only and are cleared when the site restarts. This is a demonstration, not a production document portal.</p>
+    </div>
+    <form asp-action="Documents" method="post" enctype="multipart/form-data" class="upload-form">
+        <label for="document" class="form-label fw-semibold">Choose a file</label>
+        <input id="document" name="document" type="file" class="form-control" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" />
+        <span class="field-validation">@Html.ValidationMessage("document")</span>
+        <button type="submit" class="btn btn-outline-primary mt-3">Upload document</button>
+    </form>
+    @if (Model.Documents.Count > 0)
+    {
+        <h2 class="h5 mt-4">Added to your application</h2>
+        <ul class="document-list">
+            @foreach (var document in Model.Documents)
+            {
+                <li>
+                    <span><strong>@document.FileName</strong><small>@((document.SizeInBytes / 1024d).ToString("N0")) KB · @document.UploadedAtUtc.ToLocalTime().ToString("d MMM yyyy")</small></span>
+                    <a asp-action="DownloadDocument" asp-route-documentId="@document.Id">Download<span class="visually-hidden"> @document.FileName</span></a>
+                </li>
+            }
+        </ul>
+    }
+    <div class="form-actions mt-4">
+        <a class="btn btn-outline-secondary" asp-action="Products">Back</a>
+        <a class="btn btn-primary btn-lg" asp-action="Review">Continue to review <span aria-hidden="true">→</span></a>
+    </div>
+</div>

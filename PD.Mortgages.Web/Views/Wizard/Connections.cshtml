@@ -1,0 +1,34 @@
+@model ConnectionsViewModel
+@{
+    ViewData["Title"] = "Your connections";
+    ViewData["WizardStep"] = 4;
+}
+<div class="form-card">
+    <p class="eyebrow">Step 4 · Credit and banking</p>
+    <h1>Choose how you’d like us to check your details</h1>
+    <p class="text-secondary">You’re in control. You can continue without either optional check.</p>
+    <div class="notice-box mb-4">
+        <strong>For this demonstration</strong>
+        <p class="mb-0">These choices are saved with your application only. No credit bureau or bank is contacted, and no financial data is retrieved.</p>
+    </div>
+    <form asp-action="Connections" method="post">
+        <div class="consent-option">
+            <input asp-for="CreditCheckConsent" class="form-check-input" />
+            <div>
+                <label asp-for="CreditCheckConsent" class="form-check-label fw-semibold">I agree to a credit check</label>
+                <p class="text-secondary mb-0">A real lender may use a credit reference agency to assess your application. This demo does not perform that check.</p>
+            </div>
+        </div>
+        <div class="consent-option">
+            <input asp-for="OpenBankingConsent" class="form-check-input" />
+            <div>
+                <label asp-for="OpenBankingConsent" class="form-check-label fw-semibold">I’d like to use open banking</label>
+                <p class="text-secondary mb-0">In a real application, you could securely connect your bank to help verify your income and spending. No bank is contacted here.</p>
+            </div>
+        </div>
+        <div class="form-actions mt-4">
+            <a class="btn btn-outline-secondary" asp-action="Finances">Back</a>
+            <button type="submit" class="btn btn-primary btn-lg">Continue <span aria-hidden="true">→</span></button>
+        </div>
+    </form>
+</div>

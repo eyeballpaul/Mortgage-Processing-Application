@@ -1,0 +1,62 @@
+@model ReviewViewModel
+@{
+    ViewData["Title"] = "Review your application";
+    ViewData["WizardStep"] = 7;
+    var application = Model.Application;
+}
+<div class="wide-card">
+    <p class="eyebrow">Step 7 · Final check</p>
+    <h1>Review your application</h1>
+    <p class="text-secondary">Check the details below before you send your application to our team.</p>
+    <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
+    <div class="review-grid">
+        <section class="review-section">
+            <div class="review-heading"><h2>Your details</h2><a asp-action="Applicant">Change</a></div>
+            <dl class="review-list">
+                <dt>Name</dt><dd>@application.FirstName @application.LastName</dd>
+                <dt>Email</dt><dd>@application.Email</dd>
+                <dt>Phone</dt><dd>@application.PhoneNumber</dd>
+            </dl>
+        </section>
+        <section class="review-section">
+            <div class="review-heading"><h2>Property and finances</h2><a asp-action="Qualification">Change</a></div>
+            <dl class="review-list">
+                <dt>Property value</dt><dd>@application.PropertyValue?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
+                <dt>Deposit</dt><dd>@application.Deposit?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
+                <dt>Annual income</dt><dd>@application.AnnualIncome?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
+                <dt>Monthly commitments</dt><dd>@application.MonthlyCommitments?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
+                <dt>Employment</dt><dd>@application.EmploymentType</dd>
+            </dl>
+        </section>
+        <section class="review-section">
+            <div class="review-heading"><h2>Your mortgage</h2><a asp-action="Products">Change</a></div>
+            @if (Model.Product is not null)
+            {
+                <dl class="review-list">
+                    <dt>Product</dt><dd>@Model.Product.Name</dd>
+                    <dt>Rate</dt><dd>@Model.Product.InterestRate.ToString("0.00")%</dd>
+                    <dt>Product fee</dt><dd>@Model.Product.Fee.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
+                    <dt>Estimated payment</dt><dd>@Model.EstimatedMonthlyPayment?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB")) / month</dd>
+                </dl>
+            }
+            else
+            {
+                <p class="text-secondary mb-0">No mortgage product has been selected yet. <a asp-action="Products">Choose a product</a>.</p>
+            }
+        </section>
+        <section class="review-section">
+            <div class="review-heading"><h2>Documents</h2><a asp-action="Documents">Manage</a></div>
+            <p class="mb-0">@(application.Documents.Count == 0 ? "No documents added." : $"{application.Documents.Count} document(s) added.")</p>
+        </section>
+    </div>
+    <div class="notice-box mt-4">
+        <strong>Before you submit</strong>
+        <p class="mb-0">Submitting gives our team permission to review your information. This demo does not send your application to a lender, credit agency or third party.</p>
+    </div>
+    <div class="form-actions mt-4">
+        <a class="btn btn-outline-secondary" asp-action="Documents">Back</a>
+        <form asp-action="Submit" method="post">
+            <button type="submit" class="btn btn-primary btn-lg">Submit application <span aria-hidden="true">→</span></button>
+        </form>
+    </div>
+</div>

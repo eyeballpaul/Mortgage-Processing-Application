@@ -1,0 +1,65 @@
+﻿@using Microsoft.AspNetCore.Http
+@{
+    var hasApplication = Context.Session.GetString("CurrentApplicationId") is not null;
+    var isApplicationArea = ViewContext.RouteData.Values["controller"]?.ToString() == "Wizard";
+    var step = ViewContext.ViewData["WizardStep"] as int? ?? Context.Session.GetInt32("CurrentApplicationStep") ?? 1;
+}
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#005eb8" />
+    <title>@ViewData["Title"] - PD Mortgages</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/PDMortgages.css" asp-append-version="true" />
+</head>
+<body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+        <div class="header-inner">
+            <a class="brand" asp-controller="Home" asp-action="Index" aria-label="PD Mortgages home">
+                <span class="brand-mark" aria-hidden="true">PD</span>
+                <span class="brand-name">PD <strong>Mortgages</strong><small>Making home happen</small></span>
+            </a>
+            <nav class="header-nav" aria-label="Main navigation">
+                @if (hasApplication)
+                {
+                    <a asp-controller="Wizard" asp-action="Dashboard">My dashboard</a>
+                }
+                <a asp-controller="Home" asp-action="Index" asp-fragment="help">Help</a>
+                @if (hasApplication && isApplicationArea)
+                {
+                    <form asp-controller="Wizard" asp-action="SaveProgress" method="post" class="save-form">
+                        <input type="hidden" name="step" value="@step" />
+                        <button class="btn btn-outline-primary btn-sm" type="submit">Save progress</button>
+                    </form>
+                }
+            </nav>
+        </div>
+    </header>
+    @if (hasApplication && isApplicationArea)
+    {
+        <div class="progress-shell">
+            <div class="page-container">
+                @await Html.PartialAsync("_WizardProgress", step)
+            </div>
+        </div>
+    }
+    <main id="main-content" class="page-container main-content">
+        @if (TempData["Notice"] is string notice)
+        {
+            <div class="alert alert-success notice-alert" role="status">@notice</div>
+        }
+        @RenderBody()
+    </main>
+    <footer class="site-footer">
+        <div class="page-container footer-inner">
+            <a class="footer-brand" asp-controller="Home" asp-action="Index">PD Mortgages</a>
+            <p>Fictional demo only. Applications and documents are in memory and clear when the site restarts.</p>
+            <a asp-controller="Home" asp-action="Index" asp-fragment="help">Contact and help</a>
+        </div>
+    </footer>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

@@ -1,0 +1,23 @@
+@model int
+@{
+    var labels = new[] { "Your plans", "About you", "Your finances", "Connections", "Your mortgage", "Documents", "Review" };
+}
+<nav class="wizard-progress" aria-label="Application progress">
+    <div class="progress-summary">
+        <span>Step @Model of @labels.Length</span>
+        <span>@((int)Math.Round((double)Model / labels.Length * 100))% complete</span>
+    </div>
+    <div class="progress" role="progressbar" aria-label="Application progress" aria-valuenow="@Model" aria-valuemin="1" aria-valuemax="@labels.Length">
+        <div class="progress-bar" style="width: @((double)Model / labels.Length * 100)%"></div>
+    </div>
+    <ol class="step-labels">
+        @for (var index = 0; index < labels.Length; index++)
+        {
+            var stepNumber = index + 1;
+            <li class="@(stepNumber == Model ? "active" : stepNumber < Model ? "complete" : "")" aria-current="@(stepNumber == Model ? "step" : null)">
+                <span class="step-dot">@(stepNumber < Model ? "✓" : stepNumber)</span>
+                <span class="step-label">@labels[index]</span>
+            </li>
+        }
+    </ol>
+</nav>

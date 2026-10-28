@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="PD.Mortgages.Application/PD.Mortgages.Application.csproj" />
+  <Project Path="PD.Mortgages.Domain/PD.Mortgages.Domain.csproj" />
+  <Project Path="PD.Mortgages.Infrastructure/PD.Mortgages.Infrastructure.csproj" />
+  <Project Path="PD.Mortgages.Web/PD.Mortgages.Web.csproj" />
+</Solution>

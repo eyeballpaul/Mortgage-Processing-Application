@@ -1,0 +1,36 @@
+@model FinancesViewModel
+@{
+    ViewData["Title"] = "Your finances";
+    ViewData["WizardStep"] = 3;
+}
+<div class="form-card">
+    <p class="eyebrow">Step 3 · Your finances</p>
+    <h1>A little about your income</h1>
+    <p class="text-secondary">A few details help us understand what a comfortable monthly payment could look like for you.</p>
+    <form asp-action="Finances" method="post" class="mt-4">
+        <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
+        <div class="mb-4">
+            <label asp-for="AnnualIncome" class="form-label"></label>
+            <div class="input-group"><span class="input-group-text" aria-hidden="true">£</span><input asp-for="AnnualIncome" class="form-control" inputmode="decimal" placeholder="50,000" /></div>
+            <span asp-validation-for="AnnualIncome" class="field-validation"></span>
+            <div class="form-text">Include income from all applicants.</div>
+        </div>
+        <div class="mb-4">
+            <label asp-for="MonthlyCommitments" class="form-label"></label>
+            <div class="input-group"><span class="input-group-text" aria-hidden="true">£</span><input asp-for="MonthlyCommitments" class="form-control" inputmode="decimal" placeholder="250" /></div>
+            <span asp-validation-for="MonthlyCommitments" class="field-validation"></span>
+            <div class="form-text">For example, loan repayments, credit cards or childcare.</div>
+        </div>
+        <div class="mb-4">
+            <label asp-for="EmploymentType" class="form-label"></label>
+            <select asp-for="EmploymentType" asp-items="Html.GetEnumSelectList<PD.Mortgages.Domain.Enums.EmploymentType>()" class="form-select">
+                <option value="">Choose an option</option>
+            </select>
+            <span asp-validation-for="EmploymentType" class="field-validation"></span>
+        </div>
+        <div class="form-actions">
+            <a class="btn btn-outline-secondary" asp-action="Applicant">Back</a>
+            <button type="submit" class="btn btn-primary btn-lg">Continue <span aria-hidden="true">→</span></button>
+        </div>
+    </form>
+</div>

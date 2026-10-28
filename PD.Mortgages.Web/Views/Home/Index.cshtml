@@ -1,0 +1,62 @@
+@{
+    ViewData["Title"] = "Mortgages made clearer";
+    var hasApplication = Context.Session.GetString("CurrentApplicationId") is not null;
+}
+
+<section class="hero-panel">
+    <div class="hero-copy">
+        <p class="eyebrow">A home for your next chapter</p>
+        <h1>A mortgage that moves you forward.</h1>
+        <p class="hero-lede">A clearer way to find your home loan. Tell us a little about your plans and we’ll guide you through each step.</p>
+        <div class="hero-actions">
+            <a class="btn btn-primary btn-lg" asp-controller="Wizard" asp-action="Start">Get started <span aria-hidden="true">→</span></a>
+            @if (hasApplication)
+            {
+                <a class="btn btn-outline-primary btn-lg" asp-controller="Wizard" asp-action="Resume">Resume your application</a>
+            }
+        </div>
+        <div class="trust-note"><span class="trust-mark" aria-hidden="true">✓</span> No impact to your credit score to get started</div>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+        <div class="sun"></div>
+        <div class="house">
+            <div class="roof"></div>
+            <div class="house-body"><div class="window"></div><div class="door"></div></div>
+        </div>
+        <div class="plant plant-one"></div>
+        <div class="plant plant-two"></div>
+    </div>
+</section>
+
+<section class="benefits-section">
+    <div class="section-heading">
+        <p class="eyebrow">Here when you need us</p>
+        <h2>Make your next move with confidence</h2>
+    </div>
+    <div class="benefit-grid">
+        <article class="benefit-card">
+            <div class="benefit-icon" aria-hidden="true">01</div>
+            <h3>Clear from the start</h3>
+            <p>Understand what you could borrow and compare options with straightforward guidance.</p>
+        </article>
+        <article class="benefit-card">
+            <div class="benefit-icon" aria-hidden="true">02</div>
+            <h3>At your own pace</h3>
+            <p>Your progress is saved as you go, so you can take a break and come back when it suits you.</p>
+        </article>
+        <article class="benefit-card">
+            <div class="benefit-icon" aria-hidden="true">03</div>
+            <h3>Support at every step</h3>
+            <p>From your first questions to your application, we’ll make each part easy to follow.</p>
+        </article>
+    </div>
+</section>
+
+<section class="help-strip" id="help">
+    <div>
+        <p class="eyebrow">A little help goes a long way</p>
+        <h2>Not sure where to begin?</h2>
+        <p>Our guided application explains what you’ll need, one simple step at a time.</p>
+    </div>
+    <a class="btn btn-light" asp-controller="Wizard" asp-action="Start">Explore your options</a>
+</section>

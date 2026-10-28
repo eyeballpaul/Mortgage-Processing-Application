@@ -1,0 +1,81 @@
+@model DashboardViewModel
+@using PD.Mortgages.Domain.Enums
+@{
+    ViewData["Title"] = "Your dashboard";
+    var application = Model.Application;
+    var name = string.IsNullOrWhiteSpace(application.FirstName) ? "there" : application.FirstName;
+    var completed = application.Status == ApplicationStatus.Submitted;
+}
+<section class="dashboard-welcome">
+    <div>
+        <p class="eyebrow">Your mortgage dashboard</p>
+        <h1>Good to see you, @name</h1>
+        <p class="text-secondary mb-0">Your application details and next steps, all in one place.</p>
+    </div>
+    <span class="status-pill @(completed ? "status-complete" : "status-progress")"><span aria-hidden="true">●</span> @(completed ? "Submitted" : "In progress")</span>
+</section>
+<div class="dashboard-grid">
+    <section class="dashboard-card application-summary">
+        <div class="card-title-row"><div><p class="eyebrow">Application summary</p><h2>Home purchase</h2></div><span class="status-pill @(completed ? "status-complete" : "status-progress")">@(completed ? "Submitted" : "In progress")</span></div>
+        <dl class="summary-list">
+            <dt>Application reference</dt><dd>PD-@application.Id.ToString("N")[..8].ToUpperInvariant()</dd>
+            <dt>Started</dt><dd>@application.CreatedAtUtc.ToLocalTime().ToString("d MMMM yyyy")</dd>
+            <dt>Property value</dt><dd>@(application.PropertyValue?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB")) ?? "Not added yet")</dd>
+            <dt>Deposit</dt><dd>@(application.Deposit?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB")) ?? "Not added yet")</dd>
+        </dl>
+        @if (!completed)
+        {
+            <a class="btn btn-primary" asp-action="Resume">Continue your application <span aria-hidden="true">→</span></a>
+        }
+    </section>
+    <section class="dashboard-card">
+        <p class="eyebrow">Your progress</p>
+        <h2>Application timeline</h2>
+        <ol class="timeline-list">
+            <li class="@(application.PropertyValue.HasValue ? "done" : "current")"><span class="timeline-dot"></span><div><strong>Plans and property</strong><small>@(application.PropertyValue.HasValue ? "Completed" : "Ready when you are")</small></div></li>
+            <li class="@(application.FirstName is not null ? "done" : Model.CurrentStep >= 2 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Your details</strong><small>@(application.FirstName is not null ? "Completed" : "In progress")</small></div></li>
+            <li class="@(application.AnnualIncome.HasValue ? "done" : Model.CurrentStep >= 3 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Your finances</strong><small>@(application.AnnualIncome.HasValue ? "Completed" : "To do")</small></div></li>
+            <li class="@(application.SelectedProductId is not null ? "done" : Model.CurrentStep >= 5 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Mortgage and documents</strong><small>@(application.SelectedProductId is not null ? "Product selected" : "To do")</small></div></li>
+            <li class="@(completed ? "done" : Model.CurrentStep >= 7 ? "current" : "")"><span class="timeline-dot"></span><div><strong>Review and submit</strong><small>@(completed ? "Submitted" : "To do")</small></div></li>
+        </ol>
+    </section>
+    <section class="dashboard-card">
+        <p class="eyebrow">Mortgage product</p>
+        <h2>@(Model.Product?.Name ?? "Not selected yet")</h2>
+        @if (Model.Product is not null)
+        {
+            <div class="dashboard-rate">@Model.Product.InterestRate.ToString("0.00")<small>%</small></div>
+            <p class="text-secondary">@(Model.EstimatedMonthlyPayment?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))) estimated monthly payment</p>
+        }
+        else
+        {
+            <p class="text-secondary">Compare example rates and payments in your application.</p>
+        }
+        @if (!completed)
+        {
+            <a class="text-link" asp-action="Resume">View your options <span aria-hidden="true">→</span></a>
+        }
+    </section>
+    <section class="dashboard-card">
+        <p class="eyebrow">Your documents</p>
+        <h2>@application.Documents.Count document(s)</h2>
+        @if (application.Documents.Count > 0)
+        {
+            <ul class="dashboard-documents">
+                @foreach (var document in application.Documents)
+                {
+                    <li><a asp-action="DownloadDocument" asp-route-documentId="@document.Id">@document.FileName</a></li>
+                }
+            </ul>
+        }
+        else
+        {
+            <p class="text-secondary">Documents you add will appear here.</p>
+        }
+        @if (!completed)
+        {
+            <a class="text-link" asp-action="Documents">Manage documents <span aria-hidden="true">→</span></a>
+        }
+    </section>
+</div>
+<p class="estimate-disclaimer mt-3">PD Mortgages is a demonstration application. Product information, rates, estimates and status updates are illustrative only and are not an offer of credit.</p>

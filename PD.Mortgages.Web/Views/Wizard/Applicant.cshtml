@@ -1,0 +1,39 @@
+@model ApplicantViewModel
+@{
+    ViewData["Title"] = "About you";
+    ViewData["WizardStep"] = 2;
+}
+<div class="form-card">
+    <p class="eyebrow">Step 2 · About you</p>
+    <h1>Let’s get to know you</h1>
+    <p class="text-secondary">We’ll use these details to keep your application up to date and get in touch about your mortgage.</p>
+    <form asp-action="Applicant" method="post" class="mt-4">
+        <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label asp-for="FirstName" class="form-label"></label>
+                <input asp-for="FirstName" class="form-control" autocomplete="given-name" />
+                <span asp-validation-for="FirstName" class="field-validation"></span>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="LastName" class="form-label"></label>
+                <input asp-for="LastName" class="form-control" autocomplete="family-name" />
+                <span asp-validation-for="LastName" class="field-validation"></span>
+            </div>
+            <div class="col-12">
+                <label asp-for="Email" class="form-label"></label>
+                <input asp-for="Email" class="form-control" autocomplete="email" inputmode="email" />
+                <span asp-validation-for="Email" class="field-validation"></span>
+            </div>
+            <div class="col-12">
+                <label asp-for="PhoneNumber" class="form-label"></label>
+                <input asp-for="PhoneNumber" class="form-control" autocomplete="tel" inputmode="tel" />
+                <span asp-validation-for="PhoneNumber" class="field-validation"></span>
+            </div>
+        </div>
+        <div class="form-actions mt-4">
+            <a class="btn btn-outline-secondary" asp-action="Qualification">Back</a>
+            <button type="submit" class="btn btn-primary btn-lg">Continue <span aria-hidden="true">→</span></button>
+        </div>
+    </form>
+</div>
