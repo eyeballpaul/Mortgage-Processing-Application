@@ -43,6 +43,18 @@ public sealed class MortgageApplicationService(
     public async Task<MortgageApplicationDto> GenerateDecisionInPrincipleAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var application = await FindAsync(id, cancellationToken);
+        if (application.DecisionInPrinciple is not null)
+        {
+            return Map(application);
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        application = await FindAsync(id, cancellationToken);
+        if (application.DecisionInPrinciple is not null)
+        {
+            return Map(application);
+        }
+
         application.GenerateIndicativeDecisionInPrinciple();
         await applicationRepository.UpdateAsync(application, cancellationToken);
         return Map(application);

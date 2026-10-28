@@ -17,7 +17,7 @@ PD.Mortgages.Web
 - **Infrastructure** implements the domain contracts with thread-safe in-memory collections and realistic example mortgage products.
 - **Web** contains the MVC controllers, annotated view models, strongly typed Razor pages, session configuration, layout, and responsive design system.
 
-The application flow is: property and deposit → applicant details → income and commitments → optional credit/open-banking consent → an indicative Decision in Principle guide → eligible example products → optional document upload → review and submission. The demonstration DIP is a simple 4.5× annual-income illustration only; it is not a lender decision, does not contact a credit agency, and is not an offer or guarantee. A dashboard summarizes status, timeline, DIP guide, product, and documents.
+The application flow is: property and deposit → applicant details → income and commitments → optional credit/open-banking consent → an indicative Decision in Principle guide → eligible example products → optional document upload → review and submission. The DIP page displays a loading state while the backend runs a simulated assessment with a two-second delay. The resulting guide is a simple 4.5× annual-income illustration only; it is not a lender decision, does not contact a credit agency, and is not an offer or guarantee. A dashboard summarizes status, timeline, DIP guide, product, and documents.
 
 ## Run
 

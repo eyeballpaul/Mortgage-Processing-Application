@@ -1,0 +1,60 @@
+@model PD.Mortgages.Application.Models.MortgageApplicationDto
+@using PD.Mortgages.Domain.Enums
+@{
+    var decision = Model.DecisionInPrinciple ?? throw new InvalidOperationException("The application has no Decision in Principle result.");
+    var currency = System.Globalization.CultureInfo.GetCultureInfo("en-GB");
+    var outcomeLabel = decision.Outcome switch
+    {
+        DecisionInPrincipleOutcome.CreditCheckNotSelected => "Credit check not selected",
+        DecisionInPrincipleOutcome.WithinIndicativeRange => "Within the illustrative borrowing range",
+        DecisionInPrincipleOutcome.AboveIndicativeRange => "Above the illustrative borrowing range",
+        _ => "Indicative result"
+    };
+}
+@if (decision.Outcome == DecisionInPrincipleOutcome.CreditCheckNotSelected)
+{
+    <div class="dip-result dip-unavailable" role="status">
+        <span class="dip-result-label">Your result</span>
+        <h2>@outcomeLabel</h2>
+        <p class="mb-0">You chose not to consent to a credit check, so no borrowing guide has been calculated. You can still continue to compare example mortgage products.</p>
+    </div>
+}
+else if (decision.Outcome == DecisionInPrincipleOutcome.WithinIndicativeRange)
+{
+    <div class="dip-result dip-positive" role="status">
+        <span class="dip-result-label">Your result</span>
+        <h2>@outcomeLabel</h2>
+        <p class="mb-0">The loan amount you entered is within this simple income-multiple guide.</p>
+    </div>
+}
+else
+{
+    <div class="dip-result dip-review" role="status">
+        <span class="dip-result-label">Your result</span>
+        <h2>@outcomeLabel</h2>
+        <p class="mb-0">The loan amount you entered is above this simple income-multiple guide. You can still continue to compare products, or go back to review the property and deposit details.</p>
+    </div>
+}
+
+<dl class="dip-figures">
+    <dt>Loan amount requested</dt>
+    <dd>@decision.RequestedLoanAmount.ToString("C0", currency)</dd>
+    @if (decision.IndicativeMaximumBorrowing is decimal maximumBorrowing)
+    {
+        <dt>Illustrative maximum borrowing</dt>
+        <dd>@maximumBorrowing.ToString("C0", currency)</dd>
+    }
+</dl>
+
+<div class="notice-box">
+    <strong>Important: this is not a lender’s Decision in Principle</strong>
+    @if (decision.IndicativeMaximumBorrowing is not null)
+    {
+        <p class="mb-0">This demonstration uses a simple 4.5× annual-income calculation only. It does not check your credit file, fully assess your outgoings or contact a lender. A real lender’s decision may be different, and this result is not an offer or guarantee of a mortgage.</p>
+    }
+    else
+    {
+        <p class="mb-0">This demonstration does not check your credit file or contact a lender. A real lender’s decision may be different, and this result is not an offer or guarantee of a mortgage.</p>
+    }
+</div>
+<p class="estimate-disclaimer">Generated @decision.AssessedAtUtc.ToLocalTime().ToString("d MMM yyyy 'at' h:mm tt"). No external credit or open-banking services were contacted.</p>

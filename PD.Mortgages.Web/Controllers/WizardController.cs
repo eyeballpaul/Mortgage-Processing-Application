@@ -223,12 +223,21 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
         var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 5);
         if (prerequisiteRedirect is not null) return prerequisiteRedirect;
 
-        application = application.DecisionInPrinciple is null
-            ? await applicationService.GenerateDecisionInPrincipleAsync(application.Id, cancellationToken)
-            : application;
-
         SetStep(5);
         return View(application);
+    }
+
+    [HttpPost("decision-in-principle/assess")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AssessDecisionInPrinciple(CancellationToken cancellationToken)
+    {
+        var application = await GetCurrentApplicationAsync(cancellationToken);
+        if (application is null) return Unauthorized();
+        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 5);
+        if (prerequisiteRedirect is not null) return BadRequest();
+
+        var result = await applicationService.GenerateDecisionInPrincipleAsync(application.Id, cancellationToken);
+        return PartialView("_DecisionInPrincipleResult", result);
     }
 
     [HttpPost("decision-in-principle")]

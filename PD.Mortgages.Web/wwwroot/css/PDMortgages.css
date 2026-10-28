@@ -182,6 +182,11 @@ p { color: var(--pd-muted); }
 .dip-result h2 { margin: .25rem 0 .45rem; font-size: 1.28rem; }
 .dip-result p { font-size: .93rem; }
 .dip-result-label { color: #40546b; font-size: .78rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.dip-loading { display: flex; align-items: center; gap: 1rem; min-height: 120px; margin: 1.4rem 0 1.1rem; padding: 1.25rem 1.35rem; border: 1px solid #b7d5eb; border-radius: 10px; background: #f3f8fc; }
+.dip-loading .spinner-border { width: 2rem; height: 2rem; flex: 0 0 auto; }
+.dip-loading strong { display: block; margin-bottom: .2rem; color: #183c5b; }
+.dip-loading p, .dip-request-error p { font-size: .9rem; }
+.dip-request-error { margin: 1.4rem 0 1.1rem; padding: 1.25rem 1.35rem; border: 1px solid #f1b6b3; border-radius: 10px; background: #fff4f3; }
 .dip-positive { border-color: #b6d7bd; border-left-color: var(--pd-success); background: #f1f8f2; }
 .dip-unavailable { border-color: #cbd4df; border-left-color: #65758a; background: #f5f7fa; }
 .dip-review { border-color: #ead4a5; border-left-color: var(--pd-warning); background: #fff9e9; }
