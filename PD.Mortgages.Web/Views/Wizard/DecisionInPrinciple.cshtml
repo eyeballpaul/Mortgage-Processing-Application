@@ -67,7 +67,7 @@
     <p class="estimate-disclaimer">Generated @decision.AssessedAtUtc.ToLocalTime().ToString("d MMM yyyy 'at' h:mm tt"). No external credit or open-banking services were contacted.</p>
 
     <div class="form-actions mt-4">
-        <a class="btn btn-outline-secondary" asp-action="Connections">Back</a>
+        <a class="btn btn-outline-secondary btn-lg" asp-action="Connections">Back</a>
         <a class="text-link" asp-action="Qualification">Review property and deposit</a>
         <form action="/application/decision-in-principle" method="post">
             @Html.AntiForgeryToken()
