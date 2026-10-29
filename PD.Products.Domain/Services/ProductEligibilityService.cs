@@ -1,9 +1,9 @@
-using PD.Mortgages.Domain.Entities;
-using PD.Mortgages.Domain.ValueObjects;
+using PD.Products.Domain.Entities;
+using PD.Products.Domain.ValueObjects;
 
-namespace PD.Mortgages.Domain.Services;
+namespace PD.Products.Domain.Services;
 
-public sealed class MortgageEligibilityService
+public sealed class ProductEligibilityService
 {
     public IReadOnlyList<MortgageProduct> GetEligibleProducts(
         decimal propertyValue,

@@ -1,7 +1,7 @@
-using PD.Mortgages.Domain.Entities;
-using PD.Mortgages.Domain.Repositories;
+using PD.Products.Domain.Entities;
+using PD.Products.Domain.Repositories;
 
-namespace PD.Mortgages.Infrastructure.Repositories;
+namespace PD.Products.Infrastructure.Repositories;
 
 public sealed class InMemoryMortgageProductRepository : IMortgageProductRepository
 {

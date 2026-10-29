@@ -1,6 +1,6 @@
-using PD.Mortgages.Domain.Entities;
+using PD.Products.Domain.Entities;
 
-namespace PD.Mortgages.Domain.Repositories;
+namespace PD.Products.Domain.Repositories;
 
 public interface IMortgageProductRepository
 {

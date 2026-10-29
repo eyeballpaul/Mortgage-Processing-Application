@@ -1,6 +1,5 @@
 using PD.Mortgages.Application.Services;
 using PD.Mortgages.Domain.Repositories;
-using PD.Mortgages.Domain.Services;
 using PD.Mortgages.Infrastructure.Repositories;
 using PD.Mortgages.Infrastructure.Storage;
 
@@ -19,9 +18,22 @@ builder.Services.AddSession(options =>
 });
 
 builder.Services.AddSingleton<IMortgageApplicationRepository, InMemoryMortgageApplicationRepository>();
-builder.Services.AddSingleton<IMortgageProductRepository, InMemoryMortgageProductRepository>();
 builder.Services.AddSingleton<IMortgageDocumentStorage, InMemoryMortgageDocumentStorage>();
-builder.Services.AddSingleton<MortgageEligibilityService>();
+var useMockProductService = bool.TryParse(builder.Configuration["ProductService:UseMock"], out var configuredUseMock)
+    && configuredUseMock;
+
+if (useMockProductService)
+{
+    builder.Services.AddSingleton<IProductCatalogClient, MockProductCatalogClient>();
+}
+else
+{
+    builder.Services.AddHttpClient<IProductCatalogClient, ProductCatalogClient>(client =>
+    {
+        client.BaseAddress = new Uri(builder.Configuration["ProductService:BaseUrl"] ?? "http://localhost:5260/");
+        client.Timeout = TimeSpan.FromSeconds(10);
+    });
+}
 builder.Services.AddSingleton<IMortgageApplicationService, MortgageApplicationService>();
 
 var app = builder.Build();

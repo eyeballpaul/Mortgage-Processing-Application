@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+	<ProjectReference Include="..\PD.Products.Application\PD.Products.Application.csproj" />
+	<ProjectReference Include="..\PD.Products.Contracts\PD.Products.Contracts.csproj" />
+	<ProjectReference Include="..\PD.Products.Infrastructure\PD.Products.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+	<TargetFramework>net10.0</TargetFramework>
+	<Nullable>enable</Nullable>
+	<ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

@@ -2,15 +2,13 @@ using PD.Mortgages.Application.Models;
 using PD.Mortgages.Domain.Entities;
 using PD.Mortgages.Domain.Enums;
 using PD.Mortgages.Domain.Repositories;
-using PD.Mortgages.Domain.Services;
 
 namespace PD.Mortgages.Application.Services;
 
 public sealed class MortgageApplicationService(
     IMortgageApplicationRepository applicationRepository,
-    IMortgageProductRepository productRepository,
-    IMortgageDocumentStorage documentStorage,
-    MortgageEligibilityService eligibilityService) : IMortgageApplicationService
+    IProductCatalogClient productCatalogClient,
+    IMortgageDocumentStorage documentStorage) : IMortgageApplicationService
 {
     public async Task<MortgageApplicationDto> CreateAsync(CancellationToken cancellationToken = default)
     {
@@ -62,7 +60,7 @@ public sealed class MortgageApplicationService(
 
     public async Task SelectProductAsync(Guid id, string productId, CancellationToken cancellationToken = default)
     {
-        if (await productRepository.GetByIdAsync(productId, cancellationToken) is null)
+        if (await productCatalogClient.GetProductAsync(productId, cancellationToken) is null)
         {
             throw new ArgumentException("The selected mortgage product is not available.", nameof(productId));
         }
@@ -91,7 +89,7 @@ public sealed class MortgageApplicationService(
         ChangeAsync(id, application => application.Submit(), cancellationToken);
 
     public async Task<IReadOnlyList<MortgageProductDto>> GetProductsAsync(CancellationToken cancellationToken = default) =>
-        (await productRepository.GetAllAsync(cancellationToken)).Select(Map).ToList();
+        await productCatalogClient.GetProductsAsync(cancellationToken);
 
     public async Task<IReadOnlyList<MortgageProductDto>> GetEligibleProductsAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -101,17 +99,15 @@ public sealed class MortgageApplicationService(
             return [];
         }
 
-        var products = await productRepository.GetAllAsync(cancellationToken);
-        return eligibilityService
-            .GetEligibleProducts(application.PropertyValue.Value, application.Deposit.Value, products)
-            .Select(Map)
-            .ToList();
+        return await productCatalogClient.GetEligibleProductsAsync(
+            application.PropertyValue.Value,
+            application.Deposit.Value,
+            cancellationToken);
     }
 
     public async Task<MortgageProductDto?> GetProductAsync(string id, CancellationToken cancellationToken = default)
     {
-        var product = await productRepository.GetByIdAsync(id, cancellationToken);
-        return product is null ? null : Map(product);
+        return await productCatalogClient.GetProductAsync(id, cancellationToken);
     }
 
     private async Task ChangeAsync(Guid id, Action<MortgageApplication> change, CancellationToken cancellationToken)
@@ -146,12 +142,4 @@ public sealed class MortgageApplicationService(
         application.SelectedProductId,
         application.Documents.ToList());
 
-    private static MortgageProductDto Map(MortgageProduct product) => new(
-        product.Id,
-        product.Name,
-        product.InterestRate,
-        product.Fee,
-        product.Aprc,
-        product.FixedTermYears,
-        product.MaximumLoanToValue);
 }

@@ -3,4 +3,9 @@
   <Project Path="PD.Mortgages.Domain/PD.Mortgages.Domain.csproj" />
   <Project Path="PD.Mortgages.Infrastructure/PD.Mortgages.Infrastructure.csproj" />
   <Project Path="PD.Mortgages.Web/PD.Mortgages.Web.csproj" />
+  <Project Path="PD.Products.Api/PD.Products.Api.csproj" />
+  <Project Path="PD.Products.Application/PD.Products.Application.csproj" />
+  <Project Path="PD.Products.Contracts/PD.Products.Contracts.csproj" />
+  <Project Path="PD.Products.Domain/PD.Products.Domain.csproj" />
+  <Project Path="PD.Products.Infrastructure/PD.Products.Infrastructure.csproj" />
 </Solution>

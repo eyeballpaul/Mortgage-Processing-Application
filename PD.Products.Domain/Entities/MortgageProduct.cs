@@ -1,4 +1,4 @@
-namespace PD.Mortgages.Domain.Entities;
+namespace PD.Products.Domain.Entities;
 
 public sealed record MortgageProduct(
     string Id,

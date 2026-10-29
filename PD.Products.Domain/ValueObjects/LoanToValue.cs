@@ -1,4 +1,4 @@
-namespace PD.Mortgages.Domain.ValueObjects;
+namespace PD.Products.Domain.ValueObjects;
 
 public readonly record struct LoanToValue
 {
