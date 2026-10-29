@@ -1,0 +1,58 @@
+name: Build, test and security checks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.x
+
+      - name: Restore
+        run: dotnet restore PD.Mortgages.slnx
+
+      - name: Build
+        run: dotnet build PD.Mortgages.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test PD.Mortgages.slnx --configuration Release --no-build --no-restore --verbosity normal
+
+      - name: Check vulnerable NuGet packages
+        shell: pwsh
+        run: |
+          $output = dotnet list PD.Mortgages.slnx package --vulnerable --include-transitive 2>&1
+          $output
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          if ($output -match 'has the following vulnerable packages') {
+            Write-Error 'Vulnerable NuGet packages were detected.'
+            exit 1
+          }
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

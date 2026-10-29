@@ -60,12 +60,28 @@ public sealed class MortgageApplicationService(
 
     public async Task SelectProductAsync(Guid id, string productId, CancellationToken cancellationToken = default)
     {
+        var application = await FindAsync(id, cancellationToken);
         if (await productCatalogClient.GetProductAsync(productId, cancellationToken) is null)
         {
             throw new ArgumentException("The selected mortgage product is not available.", nameof(productId));
         }
 
-        await ChangeAsync(id, application => application.SelectProduct(productId), cancellationToken);
+        if (application.PropertyValue is null || application.Deposit is null)
+        {
+            throw new InvalidOperationException("Complete the property and deposit details before selecting a product.");
+        }
+
+        var eligibleProducts = await productCatalogClient.GetEligibleProductsAsync(
+            application.PropertyValue.Value,
+            application.Deposit.Value,
+            cancellationToken);
+        if (eligibleProducts.All(product => product.Id != productId))
+        {
+            throw new ArgumentException("The selected mortgage product is not eligible for this application.", nameof(productId));
+        }
+
+        application.SelectProduct(productId);
+        await applicationRepository.UpdateAsync(application, cancellationToken);
     }
 
     public async Task AddDocumentAsync(Guid id, string fileName, byte[] contents, CancellationToken cancellationToken = default)

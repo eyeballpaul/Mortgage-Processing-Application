@@ -1,7 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\PD.Mortgages.Application\PD.Mortgages.Application.csproj" />
     <ProjectReference Include="..\PD.Mortgages.Domain\PD.Mortgages.Domain.csproj" />
+    <ProjectReference Include="..\PD.Products.Contracts\PD.Products.Contracts.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <PropertyGroup>

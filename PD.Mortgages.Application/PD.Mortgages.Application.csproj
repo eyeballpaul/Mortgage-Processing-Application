@@ -2,7 +2,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PD.Mortgages.Domain\PD.Mortgages.Domain.csproj" />
-    <ProjectReference Include="..\PD.Products.Contracts\PD.Products.Contracts.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

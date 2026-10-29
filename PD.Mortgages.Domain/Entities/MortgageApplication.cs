@@ -28,6 +28,7 @@ public sealed class MortgageApplication
 
     public void UpdateApplicant(string firstName, string lastName, string email, string phoneNumber)
     {
+        EnsureEditable();
         FirstName = firstName;
         LastName = lastName;
         Email = email;
@@ -37,6 +38,7 @@ public sealed class MortgageApplication
 
     public void UpdateQualification(decimal propertyValue, decimal deposit)
     {
+        EnsureEditable();
         if (propertyValue <= 0 || deposit < 0 || deposit >= propertyValue)
         {
             throw new ArgumentOutOfRangeException(nameof(propertyValue), "Enter a property value above zero and a deposit below the property value.");
@@ -51,6 +53,7 @@ public sealed class MortgageApplication
 
     public void UpdateFinances(decimal annualIncome, decimal monthlyCommitments, EmploymentType employmentType)
     {
+        EnsureEditable();
         if (annualIncome <= 0 || monthlyCommitments < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(annualIncome), "Income must be positive and monthly commitments cannot be negative.");
@@ -65,6 +68,7 @@ public sealed class MortgageApplication
 
     public void RecordConsents(bool creditCheckConsent, bool openBankingConsent)
     {
+        EnsureEditable();
         CreditCheckConsent = creditCheckConsent;
         OpenBankingConsent = openBankingConsent;
         ConsentsRecorded = true;
@@ -74,6 +78,7 @@ public sealed class MortgageApplication
 
     public DecisionInPrincipleResult GenerateIndicativeDecisionInPrinciple()
     {
+        EnsureEditable();
         if (PropertyValue is null || Deposit is null || AnnualIncome is null)
         {
             throw new InvalidOperationException("Complete your property, deposit and income details before viewing a decision in principle.");
@@ -105,18 +110,31 @@ public sealed class MortgageApplication
 
     public void SelectProduct(string productId)
     {
+        EnsureEditable();
+        if (string.IsNullOrWhiteSpace(productId))
+        {
+            throw new ArgumentException("A mortgage product must be selected.", nameof(productId));
+        }
+
         SelectedProductId = productId;
         Touch();
     }
 
     public void AddDocument(Guid documentId, string fileName, long sizeInBytes)
     {
+        EnsureEditable();
+        if (documentId == Guid.Empty || string.IsNullOrWhiteSpace(fileName) || sizeInBytes <= 0)
+        {
+            throw new ArgumentException("A document must have an identifier, file name and positive size.");
+        }
+
         _documents.Add(new MortgageDocument(documentId, fileName, sizeInBytes, DateTime.UtcNow));
         Touch();
     }
 
     public void Submit()
     {
+        EnsureEditable();
         if (string.IsNullOrWhiteSpace(FirstName) ||
             string.IsNullOrWhiteSpace(LastName) ||
             string.IsNullOrWhiteSpace(Email) ||
@@ -133,6 +151,14 @@ public sealed class MortgageApplication
 
         Status = ApplicationStatus.Submitted;
         Touch();
+    }
+
+    private void EnsureEditable()
+    {
+        if (Status != ApplicationStatus.InProgress)
+        {
+            throw new InvalidOperationException("Submitted applications cannot be changed.");
+        }
     }
 
     private void Touch() => UpdatedAtUtc = DateTime.UtcNow;

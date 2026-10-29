@@ -2,28 +2,22 @@ using Microsoft.AspNetCore.Mvc;
 using PD.Mortgages.Application.Models;
 using PD.Mortgages.Application.Services;
 using PD.Mortgages.Web.Models;
+using PD.Mortgages.Web.Services;
 
 namespace PD.Mortgages.Web.Controllers;
 
 [Route("application")]
-public sealed class WizardController(IMortgageApplicationService applicationService) : Controller
+public sealed class WizardController(
+    IMortgageApplicationService applicationService,
+    IWizardSession wizardSession,
+    IDocumentUploadValidator documentUploadValidator) : Controller
 {
-    private const string ApplicationSessionKey = "CurrentApplicationId";
-    private const string StepSessionKey = "CurrentApplicationStep";
-    private const long MaximumUploadBytes = 5 * 1024 * 1024;
-    private const int MaximumDocumentCount = 10;
-    private const long MaximumApplicationDocumentBytes = 25 * 1024 * 1024;
-    private static readonly HashSet<string> PermittedExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".pdf", ".png", ".jpg", ".jpeg"
-    };
 
     [HttpGet("start")]
     public async Task<IActionResult> Start(CancellationToken cancellationToken)
     {
         var application = await applicationService.CreateAsync(cancellationToken);
-        HttpContext.Session.SetString(ApplicationSessionKey, application.Id.ToString());
-        HttpContext.Session.SetInt32(StepSessionKey, 1);
+        wizardSession.SetApplication(application.Id, 1);
         return RedirectToAction(nameof(Qualification));
     }
 
@@ -37,8 +31,7 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
         }
 
         var application = await applicationService.CreateAsync(cancellationToken);
-        HttpContext.Session.SetString(ApplicationSessionKey, application.Id.ToString());
-        HttpContext.Session.SetInt32(StepSessionKey, 1);
+        wizardSession.SetApplication(application.Id, 1);
         TempData["Notice"] = "Your previous application was deleted. You can start again below.";
         return RedirectToAction(nameof(Qualification));
     }
@@ -52,7 +45,7 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
             return RedirectToAction("Index", "Home");
         }
 
-        return RedirectToStep(HttpContext.Session.GetInt32(StepSessionKey) ?? 1);
+        return RedirectToStep(wizardSession.CurrentStep);
     }
 
     [HttpPost("save-progress")]
@@ -64,7 +57,7 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
             return RedirectToAction("Index", "Home");
         }
 
-        HttpContext.Session.SetInt32(StepSessionKey, Math.Clamp(step, 1, 8));
+        wizardSession.SetStep(step);
         TempData["Notice"] = "Your progress is saved on this device. You can return to this application later.";
         return RedirectToStep(Math.Clamp(step, 1, 8));
     }
@@ -83,7 +76,7 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
         {
             Application = application,
             Product = product,
-            CurrentStep = HttpContext.Session.GetInt32(StepSessionKey) ?? 1,
+            CurrentStep = wizardSession.CurrentStep,
             EstimatedMonthlyPayment = product is null
                 ? null
                 : MortgagePaymentCalculator.MonthlyPayment(loanAmount, product.InterestRate)
@@ -315,7 +308,7 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
 
     [HttpPost("documents")]
     [ValidateAntiForgeryToken]
-    [RequestSizeLimit(MaximumUploadBytes + 1024)]
+    [RequestSizeLimit(DocumentUploadLimits.MaximumFileBytes + 1024)]
     public async Task<IActionResult> Documents(IFormFile? document, CancellationToken cancellationToken)
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
@@ -323,40 +316,21 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
         var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 7);
         if (prerequisiteRedirect is not null) return prerequisiteRedirect;
 
-        if (document is null || document.Length == 0)
+        var validation = await documentUploadValidator.ValidateAsync(
+            document,
+            application.Documents.Count,
+            application.Documents.Sum(existing => existing.SizeInBytes),
+            cancellationToken);
+        if (!validation.IsValid)
         {
-            ModelState.AddModelError(nameof(document), "Choose a file to upload.");
-        }
-        else if (document.Length > MaximumUploadBytes)
-        {
-            ModelState.AddModelError(nameof(document), "Files must be 5 MB or smaller.");
-        }
-        else if (application.Documents.Count >= MaximumDocumentCount ||
-                 application.Documents.Sum(existing => existing.SizeInBytes) + document.Length > MaximumApplicationDocumentBytes)
-        {
-            ModelState.AddModelError(nameof(document), "This application has reached its document limit (10 files or 25 MB total).");
-        }
-        else if (!PermittedExtensions.Contains(Path.GetExtension(document.FileName)))
-        {
-            ModelState.AddModelError(nameof(document), "Upload a PDF, PNG or JPEG file.");
+            ModelState.AddModelError(nameof(document), validation.ErrorMessage!);
         }
         else
         {
-            await using var memoryStream = new MemoryStream();
-            await document.CopyToAsync(memoryStream, cancellationToken);
-            var contents = memoryStream.ToArray();
-            if (!HasAllowedSignature(Path.GetExtension(document.FileName), contents))
-            {
-                ModelState.AddModelError(nameof(document), "The file content does not match its file type. Please choose a valid PDF, PNG or JPEG.");
-            }
-            else
-            {
-                var safeFileName = Path.GetFileName(document.FileName);
-                await applicationService.AddDocumentAsync(application.Id, safeFileName, contents, cancellationToken);
-                TempData["Notice"] = $"{safeFileName} was added to your application.";
-                SetStep(7);
-                return RedirectToAction(nameof(Documents));
-            }
+            await applicationService.AddDocumentAsync(application.Id, validation.SafeFileName!, validation.Contents!, cancellationToken);
+            TempData["Notice"] = $"{validation.SafeFileName} was added to your application.";
+            SetStep(7);
+            return RedirectToAction(nameof(Documents));
         }
 
         SetStep(7);
@@ -439,16 +413,14 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
         }
         catch (KeyNotFoundException)
         {
-            HttpContext.Session.Remove(ApplicationSessionKey);
-            HttpContext.Session.Remove(StepSessionKey);
+            wizardSession.Clear();
             return null;
         }
     }
 
-    private Guid? CurrentApplicationId() =>
-        Guid.TryParse(HttpContext.Session.GetString(ApplicationSessionKey), out var id) ? id : null;
+    private Guid? CurrentApplicationId() => wizardSession.CurrentApplicationId;
 
-    private void SetStep(int step) => HttpContext.Session.SetInt32(StepSessionKey, step);
+    private void SetStep(int step) => wizardSession.SetStep(step);
 
     private IActionResult? RedirectIfPrerequisitesMissing(MortgageApplicationDto application, int requestedStep)
     {
@@ -486,7 +458,7 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
             return RedirectToStep(6);
         }
 
-        if (requestedStep == 8 && (HttpContext.Session.GetInt32(StepSessionKey) ?? 0) < 7)
+        if (requestedStep == 8 && wizardSession.CurrentStep < 7)
         {
             return RedirectToStep(7);
         }
@@ -506,15 +478,4 @@ public sealed class WizardController(IMortgageApplicationService applicationServ
         _ => RedirectToAction(nameof(Qualification))
     };
 
-    private static bool HasAllowedSignature(string extension, byte[] contents)
-    {
-        var header = contents.AsSpan();
-        return extension.ToLowerInvariant() switch
-        {
-            ".pdf" => header.StartsWith("%PDF-"u8),
-            ".png" => header.StartsWith(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }),
-            ".jpg" or ".jpeg" => header.Length >= 3 && header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF,
-            _ => false
-        };
-    }
 }

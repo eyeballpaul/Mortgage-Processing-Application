@@ -1,26 +1,27 @@
 using System.Net;
 using System.Net.Http.Json;
 using PD.Mortgages.Application.Models;
+using PD.Mortgages.Application.Services;
 using PD.Products.Contracts;
 
-namespace PD.Mortgages.Application.Services;
+namespace PD.Mortgages.Infrastructure.Products;
 
 public sealed class ProductCatalogClient(HttpClient httpClient) : IProductCatalogClient
 {
     public Task<IReadOnlyList<MortgageProductDto>> GetProductsAsync(CancellationToken cancellationToken = default) =>
-        GetProductListAsync("api/products", cancellationToken);
+        GetProductListAsync("api/v1/products", cancellationToken);
 
     public Task<IReadOnlyList<MortgageProductDto>> GetEligibleProductsAsync(
         decimal propertyValue,
         decimal deposit,
         CancellationToken cancellationToken = default) =>
         GetProductListAsync(
-            $"api/products/eligible?propertyValue={Uri.EscapeDataString(propertyValue.ToString(System.Globalization.CultureInfo.InvariantCulture))}&deposit={Uri.EscapeDataString(deposit.ToString(System.Globalization.CultureInfo.InvariantCulture))}",
+            $"api/v1/products/eligible?propertyValue={Uri.EscapeDataString(propertyValue.ToString(System.Globalization.CultureInfo.InvariantCulture))}&deposit={Uri.EscapeDataString(deposit.ToString(System.Globalization.CultureInfo.InvariantCulture))}",
             cancellationToken);
 
     public async Task<MortgageProductDto?> GetProductAsync(string id, CancellationToken cancellationToken = default)
     {
-        using var response = await httpClient.GetAsync($"api/products/{Uri.EscapeDataString(id)}", cancellationToken);
+        using var response = await httpClient.GetAsync($"api/v1/products/{Uri.EscapeDataString(id)}", cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             return null;

@@ -1,6 +1,7 @@
 using PD.Mortgages.Application.Models;
+using PD.Mortgages.Application.Services;
 
-namespace PD.Mortgages.Application.Services;
+namespace PD.Mortgages.Infrastructure.Products;
 
 public sealed class MockProductCatalogClient : IProductCatalogClient
 {
