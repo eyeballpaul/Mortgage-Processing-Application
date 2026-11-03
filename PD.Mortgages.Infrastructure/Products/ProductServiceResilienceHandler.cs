@@ -7,11 +7,25 @@ public sealed class ProductServiceResilienceHandler(
     ILogger<ProductServiceResilienceHandler> logger) : DelegatingHandler
 {
     private const int MaximumRetries = 2;
+    private const int FailureThreshold = 3;
+    private static readonly TimeSpan CircuitOpenDuration = TimeSpan.FromSeconds(30);
+    private int consecutiveFailures;
+    private long circuitOpenUntilTicks;
 
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
+        if (IsCircuitOpen())
+        {
+            logger.LogWarning("Product service circuit is open; short-circuiting {Method} {Uri}", request.Method, request.RequestUri);
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                RequestMessage = request,
+                ReasonPhrase = "Product service circuit is open"
+            };
+        }
+
         for (var attempt = 0; ; attempt++)
         {
             try
@@ -19,6 +33,15 @@ public sealed class ProductServiceResilienceHandler(
                 var response = await base.SendAsync(request, cancellationToken);
                 if (!IsTransient(response.StatusCode) || attempt >= MaximumRetries)
                 {
+                    if (IsTransient(response.StatusCode))
+                    {
+                        RecordFailure();
+                    }
+                    else
+                    {
+                        ResetCircuit();
+                    }
+
                     return response;
                 }
 
@@ -36,7 +59,29 @@ public sealed class ProductServiceResilienceHandler(
                     MaximumRetries);
                 await DelayAsync(attempt, request, cancellationToken);
             }
+            catch (HttpRequestException exception)
+            {
+                RecordFailure();
+                logger.LogError(exception, "Product service request failed after retries for {Method} {Uri}", request.Method, request.RequestUri);
+                throw;
+            }
         }
+    }
+
+    private bool IsCircuitOpen() => DateTimeOffset.UtcNow.UtcTicks < Interlocked.Read(ref circuitOpenUntilTicks);
+
+    private void RecordFailure()
+    {
+        if (Interlocked.Increment(ref consecutiveFailures) >= FailureThreshold)
+        {
+            Interlocked.Exchange(ref circuitOpenUntilTicks, DateTimeOffset.UtcNow.Add(CircuitOpenDuration).UtcTicks);
+        }
+    }
+
+    private void ResetCircuit()
+    {
+        Interlocked.Exchange(ref consecutiveFailures, 0);
+        Interlocked.Exchange(ref circuitOpenUntilTicks, 0);
     }
 
     private async Task DelayAsync(int attempt, HttpRequestMessage request, CancellationToken cancellationToken)

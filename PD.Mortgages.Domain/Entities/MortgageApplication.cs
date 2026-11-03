@@ -7,6 +7,8 @@ public sealed class MortgageApplication
     private readonly List<MortgageDocument> _documents = [];
 
     public Guid Id { get; private set; } = Guid.NewGuid();
+    public long Version { get; private set; }
+    public string? OwnerId { get; private set; }
     public DateTime CreatedAtUtc { get; private set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; private set; } = DateTime.UtcNow;
     public ApplicationStatus Status { get; private set; } = ApplicationStatus.InProgress;
@@ -24,7 +26,75 @@ public sealed class MortgageApplication
     public bool ConsentsRecorded { get; private set; }
     public DecisionInPrincipleResult? DecisionInPrinciple { get; private set; }
     public string? SelectedProductId { get; private set; }
+    public SelectedMortgageProductSnapshot? SelectedProduct { get; private set; }
     public IReadOnlyCollection<MortgageDocument> Documents => _documents.AsReadOnly();
+
+    public static MortgageApplication Rehydrate(
+        Guid id,
+        long version,
+        string? ownerId,
+        DateTime createdAtUtc,
+        DateTime updatedAtUtc,
+        ApplicationStatus status,
+        string? firstName,
+        string? lastName,
+        string? email,
+        string? phoneNumber,
+        decimal? propertyValue,
+        decimal? deposit,
+        decimal? annualIncome,
+        decimal? monthlyCommitments,
+        EmploymentType? employmentType,
+        bool creditCheckConsent,
+        bool openBankingConsent,
+        bool consentsRecorded,
+        DecisionInPrincipleResult? decisionInPrinciple,
+        string? selectedProductId,
+        SelectedMortgageProductSnapshot? selectedProduct,
+        IEnumerable<MortgageDocument> documents)
+    {
+        var application = new MortgageApplication
+        {
+            Id = id,
+            Version = version,
+            OwnerId = ownerId,
+            CreatedAtUtc = createdAtUtc,
+            UpdatedAtUtc = updatedAtUtc,
+            Status = status,
+            FirstName = firstName,
+            LastName = lastName,
+            Email = email,
+            PhoneNumber = phoneNumber,
+            PropertyValue = propertyValue,
+            Deposit = deposit,
+            AnnualIncome = annualIncome,
+            MonthlyCommitments = monthlyCommitments,
+            EmploymentType = employmentType,
+            CreditCheckConsent = creditCheckConsent,
+            OpenBankingConsent = openBankingConsent,
+            ConsentsRecorded = consentsRecorded,
+            DecisionInPrinciple = decisionInPrinciple,
+            SelectedProductId = selectedProductId,
+            SelectedProduct = selectedProduct
+        };
+        application._documents.AddRange(documents);
+        return application;
+    }
+
+    public void AssignOwner(string ownerId)
+    {
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            throw new ArgumentException("An application owner is required.", nameof(ownerId));
+        }
+
+        if (OwnerId is not null && !string.Equals(OwnerId, ownerId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The application already belongs to another owner.");
+        }
+
+        OwnerId = ownerId;
+    }
 
     public void UpdateApplicant(string firstName, string lastName, string email, string phoneNumber)
     {
@@ -48,6 +118,7 @@ public sealed class MortgageApplication
         Deposit = deposit;
         DecisionInPrinciple = null;
         SelectedProductId = null;
+        SelectedProduct = null;
         Touch();
     }
 
@@ -110,6 +181,11 @@ public sealed class MortgageApplication
 
     public void SelectProduct(string productId)
     {
+        SelectProduct(productId, null);
+    }
+
+    public void SelectProduct(string productId, SelectedMortgageProductSnapshot? product)
+    {
         EnsureEditable();
         if (string.IsNullOrWhiteSpace(productId))
         {
@@ -117,6 +193,7 @@ public sealed class MortgageApplication
         }
 
         SelectedProductId = productId;
+        SelectedProduct = product;
         Touch();
     }
 
@@ -161,5 +238,9 @@ public sealed class MortgageApplication
         }
     }
 
-    private void Touch() => UpdatedAtUtc = DateTime.UtcNow;
+    private void Touch()
+    {
+        UpdatedAtUtc = DateTime.UtcNow;
+        Version++;
+    }
 }

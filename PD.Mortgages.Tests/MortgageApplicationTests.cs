@@ -64,6 +64,15 @@ public sealed class MortgageApplicationTests
     }
 
     [Fact]
+    public void ApplicationOwnerCannotBeChanged()
+    {
+        var application = new MortgageApplication();
+        application.AssignOwner("customer-1");
+
+        Assert.Throws<InvalidOperationException>(() => application.AssignOwner("customer-2"));
+    }
+
+    [Fact]
     public void SubmittedApplicationCannotBeChanged()
     {
         var application = new MortgageApplication();

@@ -7,4 +7,5 @@ public interface IProductCatalogClient
     Task<IReadOnlyList<MortgageProductDto>> GetProductsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MortgageProductDto>> GetEligibleProductsAsync(decimal propertyValue, decimal deposit, CancellationToken cancellationToken = default);
     Task<MortgageProductDto?> GetProductAsync(string id, CancellationToken cancellationToken = default);
+    Task<bool> IsProductEligibleAsync(string id, decimal propertyValue, decimal deposit, CancellationToken cancellationToken = default);
 }

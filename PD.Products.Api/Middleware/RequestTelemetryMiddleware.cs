@@ -1,4 +1,5 @@
 using System.Diagnostics.Metrics;
+using System.Diagnostics;
 
 namespace PD.Products.Api.Middleware;
 
@@ -11,8 +12,10 @@ public sealed class RequestTelemetryMiddleware(
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var correlationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault()
-            ?? Guid.NewGuid().ToString("N");
+        var suppliedCorrelationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault();
+        var correlationId = suppliedCorrelationId is { Length: > 0 and <= 64 } && suppliedCorrelationId.All(char.IsLetterOrDigit)
+            ? suppliedCorrelationId
+            : Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N");
         context.Response.Headers["X-Correlation-ID"] = correlationId;
 
         using var scope = logger.BeginScope(new Dictionary<string, object>
@@ -26,7 +29,7 @@ public sealed class RequestTelemetryMiddleware(
         }
         finally
         {
-            RequestCounter.Add(1, new KeyValuePair<string, object?>("route", context.Request.Path.ToString()));
+            RequestCounter.Add(1, new KeyValuePair<string, object?>("route", context.GetEndpoint()?.DisplayName ?? "unknown"));
             logger.LogInformation(
                 "Product API request {Method} {Path} returned {StatusCode}",
                 context.Request.Method,

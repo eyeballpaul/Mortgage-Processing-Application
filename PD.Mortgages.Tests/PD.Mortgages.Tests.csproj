@@ -3,6 +3,7 @@
   <ItemGroup>
 	<ProjectReference Include="..\PD.Mortgages.Application\PD.Mortgages.Application.csproj" />
 	<ProjectReference Include="..\PD.Mortgages.Domain\PD.Mortgages.Domain.csproj" />
+	  <ProjectReference Include="..\PD.Mortgages.Infrastructure\PD.Mortgages.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

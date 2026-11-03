@@ -1,10 +1,10 @@
-using PD.Mortgages.Domain.Entities;
 using PD.Mortgages.Domain.Enums;
 
 namespace PD.Mortgages.Application.Models;
 
 public sealed record MortgageApplicationDto(
     Guid Id,
+    string? OwnerId,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
     ApplicationStatus Status,
@@ -20,6 +20,6 @@ public sealed record MortgageApplicationDto(
     bool CreditCheckConsent,
     bool OpenBankingConsent,
     bool ConsentsRecorded,
-    DecisionInPrincipleResult? DecisionInPrinciple,
+    DecisionInPrincipleDto? DecisionInPrinciple,
     string? SelectedProductId,
-    IReadOnlyList<MortgageDocument> Documents);
+    IReadOnlyList<MortgageDocumentDto> Documents);

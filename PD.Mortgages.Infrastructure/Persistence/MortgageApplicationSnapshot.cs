@@ -1,0 +1,77 @@
+using PD.Mortgages.Domain.Entities;
+using PD.Mortgages.Domain.Enums;
+
+namespace PD.Mortgages.Infrastructure.Persistence;
+
+public sealed record MortgageApplicationSnapshot(
+    Guid Id,
+    long Version,
+    string? OwnerId,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc,
+    ApplicationStatus Status,
+    string? FirstName,
+    string? LastName,
+    string? Email,
+    string? PhoneNumber,
+    decimal? PropertyValue,
+    decimal? Deposit,
+    decimal? AnnualIncome,
+    decimal? MonthlyCommitments,
+    EmploymentType? EmploymentType,
+    bool CreditCheckConsent,
+    bool OpenBankingConsent,
+    bool ConsentsRecorded,
+    DecisionInPrincipleResult? DecisionInPrinciple,
+    string? SelectedProductId,
+    SelectedMortgageProductSnapshot? SelectedProduct,
+    IReadOnlyList<MortgageDocument> Documents)
+{
+    public static MortgageApplicationSnapshot FromDomain(MortgageApplication application) => new(
+        application.Id,
+        application.Version,
+        application.OwnerId,
+        application.CreatedAtUtc,
+        application.UpdatedAtUtc,
+        application.Status,
+        application.FirstName,
+        application.LastName,
+        application.Email,
+        application.PhoneNumber,
+        application.PropertyValue,
+        application.Deposit,
+        application.AnnualIncome,
+        application.MonthlyCommitments,
+        application.EmploymentType,
+        application.CreditCheckConsent,
+        application.OpenBankingConsent,
+        application.ConsentsRecorded,
+        application.DecisionInPrinciple,
+        application.SelectedProductId,
+        application.SelectedProduct,
+        application.Documents.ToList());
+
+    public MortgageApplication ToDomain() => MortgageApplication.Rehydrate(
+        Id,
+        Version,
+        OwnerId,
+        CreatedAtUtc,
+        UpdatedAtUtc,
+        Status,
+        FirstName,
+        LastName,
+        Email,
+        PhoneNumber,
+        PropertyValue,
+        Deposit,
+        AnnualIncome,
+        MonthlyCommitments,
+        EmploymentType,
+        CreditCheckConsent,
+        OpenBankingConsent,
+        ConsentsRecorded,
+        DecisionInPrinciple,
+        SelectedProductId,
+        SelectedProduct,
+        Documents);
+}

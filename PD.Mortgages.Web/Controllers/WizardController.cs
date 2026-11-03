@@ -10,7 +10,9 @@ namespace PD.Mortgages.Web.Controllers;
 public sealed class WizardController(
     IMortgageApplicationService applicationService,
     IWizardSession wizardSession,
-    IDocumentUploadValidator documentUploadValidator) : Controller
+    IDocumentUploadValidator documentUploadValidator,
+    IWizardPrerequisiteService prerequisiteService,
+    WizardViewModelFactory viewModelFactory) : Controller
 {
 
     [HttpGet("start")]
@@ -72,15 +74,7 @@ public sealed class WizardController(
             ? null
             : await applicationService.GetProductAsync(application.SelectedProductId, cancellationToken);
         var loanAmount = (application.PropertyValue ?? 0) - (application.Deposit ?? 0);
-        return View(new DashboardViewModel
-        {
-            Application = application,
-            Product = product,
-            CurrentStep = wizardSession.CurrentStep,
-            EstimatedMonthlyPayment = product is null
-                ? null
-                : MortgagePaymentCalculator.MonthlyPayment(loanAmount, product.InterestRate)
-        });
+        return View(viewModelFactory.CreateDashboard(application, product, wizardSession.CurrentStep));
     }
 
     [HttpGet("qualification")]
@@ -89,11 +83,7 @@ public sealed class WizardController(
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
         SetStep(1);
-        return View(new QualificationViewModel
-        {
-            PropertyValue = application.PropertyValue,
-            Deposit = application.Deposit
-        });
+        return View(viewModelFactory.CreateQualification(application));
     }
 
     [HttpPost("qualification")]
@@ -121,13 +111,7 @@ public sealed class WizardController(
         var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 2);
         if (prerequisiteRedirect is not null) return prerequisiteRedirect;
         SetStep(2);
-        return View(new ApplicantViewModel
-        {
-            FirstName = application.FirstName ?? "",
-            LastName = application.LastName ?? "",
-            Email = application.Email ?? "",
-            PhoneNumber = application.PhoneNumber ?? ""
-        });
+        return View(viewModelFactory.CreateApplicant(application));
     }
 
     [HttpPost("applicant")]

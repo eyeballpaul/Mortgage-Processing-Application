@@ -39,6 +39,31 @@ public sealed class ProductsController(IProductService productService) : Control
         return product is null ? NotFound() : Ok(Map(product));
     }
 
+    [HttpGet("{id}/eligibility")]
+    public async Task<IActionResult> IsProductEligible(
+        string id,
+        [FromQuery] EligibleProductsRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (await productService.GetProductAsync(id, cancellationToken) is null)
+        {
+            return NotFound();
+        }
+
+        try
+        {
+            var eligibleProducts = await productService.GetEligibleProductsAsync(
+                request.PropertyValue,
+                request.Deposit,
+                cancellationToken);
+            return eligibleProducts.Any(product => product.Id == id) ? NoContent() : NotFound();
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            return BadRequest(new ProblemDetails { Detail = exception.Message });
+        }
+    }
+
     private static ProductResponse Map(MortgageProduct product) => new(
         product.Id,
         product.Name,
@@ -46,5 +71,6 @@ public sealed class ProductsController(IProductService productService) : Control
         product.Fee,
         product.Aprc,
         product.FixedTermYears,
-        product.MaximumLoanToValue);
+        product.MaximumLoanToValue,
+        "1");
 }

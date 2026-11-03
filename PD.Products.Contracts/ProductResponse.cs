@@ -7,4 +7,5 @@ public sealed record ProductResponse(
     decimal Fee,
     decimal Aprc,
     int FixedTermYears,
-    int MaximumLoanToValue);
+    int MaximumLoanToValue,
+    string CatalogVersion = "1");
