@@ -21,17 +21,27 @@ The application flow is: property and deposit → applicant details → income a
 
 ## Run
 
+### Run the solution with Aspire
+
+```bash
+dotnet run --project PD.Mortgages.AppHost --launch-profile https
+```
+
+Aspire starts the mortgage web app and Products API together and opens the Aspire dashboard. The web app uses the Products API in this mode. In VS Code, press **F5** and choose **PD Mortgages (Aspire)**, or use **Terminal → Run Task → run Aspire AppHost**.
+
+### Run only the mortgage web app
+
 ```bash
 dotnet restore PD.Mortgages.slnx
 dotnet build PD.Mortgages.slnx
 dotnet run --project PD.Mortgages.Web
 ```
 
-Open the local URL printed by `dotnet run`. Application progress and uploaded documents are held in memory and are cleared when the process restarts. Session cookies allow a customer to resume in the same browser while the process remains available.
+This standalone mode uses the development mock product catalog. Open the local URL printed by `dotnet run`. Application progress and uploaded documents are held in memory and are cleared when the process restarts. Session cookies allow a customer to resume in the same browser while the process remains available.
 
 ### Run and debug in VS Code
 
-Open the solution folder in VS Code and install the recommended C# Dev Kit extension. Press **F5** and choose **PD Mortgages (Development)** to build, launch the web app, and open it in your browser. Alternatively, use **Terminal → Run Task → run web app**. The VS Code launch and task configuration uses port `5085`.
+Open the solution folder in VS Code and install the recommended C# Dev Kit extension. Aspire runs the web app and Products API as separate .NET projects; it does not require Docker for these projects.
 
 ## Demonstration limitations
 

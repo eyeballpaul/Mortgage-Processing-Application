@@ -16,15 +16,15 @@
       }
     },
     {
-      "label": "run web app",
+      "label": "run Aspire AppHost",
       "type": "process",
       "command": "dotnet",
       "args": [
         "run",
         "--project",
-        "${workspaceFolder}/PD.Mortgages.Web/PD.Mortgages.Web.csproj",
-        "--urls",
-        "http://localhost:5085"
+        "${workspaceFolder}/PD.Mortgages.AppHost/PD.Mortgages.AppHost.csproj",
+        "--launch-profile",
+        "https"
       ],
       "options": {
         "cwd": "${workspaceFolder}"

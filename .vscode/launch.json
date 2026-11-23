@@ -2,7 +2,25 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "PD Mortgages (Development)",
+      "name": "PD Mortgages (Aspire)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build solution",
+      "program": "${workspaceFolder}/PD.Mortgages.AppHost/bin/Debug/net10.0/PD.Mortgages.AppHost.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/PD.Mortgages.AppHost",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DOTNET_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "https://localhost:17177;http://localhost:15116",
+        "ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL": "https://localhost:21167",
+        "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "https://localhost:22290"
+      },
+      "console": "integratedTerminal",
+      "stopAtEntry": false
+    },
+    {
+      "name": "PD Mortgages (Web only, mock products)",
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build solution",
