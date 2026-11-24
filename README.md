@@ -45,6 +45,18 @@ This standalone mode uses the development mock product catalog. Open the local U
 
 Open the solution folder in VS Code and install the recommended C# Dev Kit extension. Aspire runs the customer web app, staff web app, and Products API as separate .NET projects; it does not require Docker for these projects.
 
+## Azure DevOps and Azure Container Apps
+
+`azure-pipelines.yml` builds and tests the solution on pull requests and pushes to `main`. On `main`, it provisions the Azure foundation with `infra/main.bicep`, builds and pushes version-tagged images for all three web projects to Azure Container Registry, then deploys the customer web app and internal Products API to Azure Container Apps. Bicep provisions Azure Files for the file-backed demo data, a Log Analytics workspace, and managed identity-based registry pulls. The customer app uses a single replica and in-memory sessions; sessions are lost when that replica restarts.
+
+Before running the pipeline:
+
+1. Create an Azure Resource Group and an Azure DevOps Azure Resource Manager service connection scoped to it. The service connection identity needs Contributor and permission to create the narrowly scoped ACR role assignments in the Bicep template (for example, User Access Administrator at the resource-group scope).
+2. Edit the pipeline variables at the top of `azure-pipelines.yml`: service connection name, resource group, location, globally unique lowercase ACR and storage-account names, the service connection's service-principal object ID, and app/environment names.
+3. Run the pipeline from `main`. The first Bicep deployment provisions the registry and shared infrastructure, then the pipeline pushes images and deploys the app revisions. No credentials or API keys are stored in the repository; the pipeline generates the internal Products API key and passes it as a secure Bicep parameter.
+
+**Important:** this repository is a synthetic demonstration, not production mortgage software. The staff portal deliberately refuses to run outside Development and has no real staff authentication, so its image is built and pushed but the staff app is not deployed. The customer app also lacks configured production authentication. Do not put real customer, financial, or identity data into this deployment; configure and review real authentication/authorization and operational controls before exposing it for anything beyond a demo.
+
 ## Demonstration limitations
 
 PD Mortgages, its rates, products, estimates, and statuses are fictional. Credit checks, open banking, underwriting, and lender submission are not connected to external services. Uploaded PDFs and images are stored on local disk with size/type checks. File persistence is a local demonstration option, not production-grade shared storage; the employee portal is development-only until real authentication, authorization, audit retention, and production persistence are configured. Do not use this demonstration with real financial or identity data.
