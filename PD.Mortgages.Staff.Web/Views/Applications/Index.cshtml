@@ -1,0 +1,101 @@
+@model StaffDashboardViewModel
+@{
+    ViewData["Title"] = "Applications";
+}
+<section class="dashboard-welcome">
+    <div>
+        <p class="eyebrow">Employee workspace</p>
+        <h1>Mortgage applications</h1>
+        <p class="mb-0">Search recent applications or start one for a customer.</p>
+    </div>
+    <a class="btn btn-primary btn-lg" asp-action="Create">Create application</a>
+</section>
+<section class="dashboard-card staff-table-card" aria-labelledby="application-list-title">
+    <div class="staff-table-heading">
+        <div>
+            <h2 id="application-list-title">Latest applications</h2>
+            <p class="mb-0">Showing @Model.Applications.Count of @Model.TotalCount matching applications.</p>
+        </div>
+        <span class="staff-count">@Model.TotalCount result@(Model.TotalCount == 1 ? "" : "s")</span>
+    </div>
+    <form method="get" asp-action="Index" class="staff-search-form">
+        <div class="staff-search-field">
+            <label for="search" class="form-label">Search by applicant, email, reference or creator ID</label>
+            <input id="search" name="search" value="@Model.Search" class="form-control" type="search" placeholder="Name, email, application ID or employee ID" />
+        </div>
+        <div>
+            <label for="status" class="form-label">Status</label>
+            <select id="status" name="status" class="form-select">
+                <option value="">All statuses</option>
+                @foreach (var value in Enum.GetValues<ApplicationStatus>())
+                {
+                    <option value="@value" selected="@(Model.Status == value)">@value.GetDisplayName()</option>
+                }
+            </select>
+        </div>
+        <button class="btn btn-primary align-self-end" type="submit">Search</button>
+        <a class="btn btn-outline-secondary align-self-end" asp-action="Index">Clear</a>
+    </form>
+    @if (Model.Applications.Count == 0)
+    {
+        <div class="staff-empty-state">
+            <h3>No matching applications</h3>
+            <p>Try a different search or create a new application for a customer.</p>
+            <a class="btn btn-outline-primary" asp-action="Create">Create application</a>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table staff-table align-middle">
+                <thead>
+                    <tr>
+                        <th scope="col">Applicant</th>
+                        <th scope="col">Reference</th>
+                        <th scope="col">Created by</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Property value</th>
+                        <th scope="col">Last updated</th>
+                        <th scope="col"><span class="visually-hidden">Action</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var application in Model.Applications)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@(string.IsNullOrWhiteSpace(application.FirstName) ? "Applicant details pending" : $"{application.FirstName} {application.LastName}")</strong>
+                                @if (!string.IsNullOrWhiteSpace(application.Email))
+                                {
+                                    <small class="d-block text-secondary">@application.Email</small>
+                                }
+                            </td>
+                            <td><span class="staff-reference">@application.Id.ToString("N")[..8].ToUpperInvariant()</span></td>
+                            <td>@(application.CreatedByEmployeeId ?? "Customer")</td>
+                            <td><span class="status-pill @(application.Status == ApplicationStatus.InProgress ? "status-progress" : "status-complete")">@application.Status.GetDisplayName()</span></td>
+                            <td>@(application.PropertyValue.HasValue ? application.PropertyValue.Value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB")) : "—")</td>
+                            <td><time datetime="@application.UpdatedAtUtc.ToString("O")">@application.UpdatedAtUtc.ToLocalTime().ToString("d MMM yyyy, HH:mm")</time></td>
+                            <td><a class="btn btn-sm btn-outline-primary" asp-action="Edit" asp-route-id="@application.Id">View / edit</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (Model.TotalPages > 1)
+        {
+            <nav class="staff-pagination" aria-label="Application result pages">
+                <span>Page @Model.Page of @Model.TotalPages</span>
+                <div class="staff-pagination-actions">
+                    @if (Model.Page > 1)
+                    {
+                        <a class="btn btn-outline-secondary" asp-action="Index" asp-route-search="@Model.Search" asp-route-status="@Model.Status" asp-route-page="@(Model.Page - 1)">Previous</a>
+                    }
+                    @if (Model.Page < Model.TotalPages)
+                    {
+                        <a class="btn btn-outline-primary" asp-action="Index" asp-route-search="@Model.Search" asp-route-status="@Model.Status" asp-route-page="@(Model.Page + 1)">Next</a>
+                    }
+                </div>
+            </nav>
+        }
+    }
+</section>

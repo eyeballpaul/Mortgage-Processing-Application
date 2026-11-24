@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#005eb8" />
+    <title>@ViewData["Title"] - PD Mortgages Staff</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/PDMortgages.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/staff.css" asp-append-version="true" />
+</head>
+<body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+        <div class="header-inner">
+            <a class="brand" asp-controller="Applications" asp-action="Index" aria-label="PD Mortgages Staff dashboard">
+                <span class="brand-mark" aria-hidden="true">PD</span>
+                <span class="brand-name">PD <strong>Mortgages</strong><small>Employee workspace</small></span>
+            </a>
+            <nav class="header-nav" aria-label="Main navigation">
+                <a asp-controller="Applications" asp-action="Index">Applications</a>
+                <a asp-controller="Applications" asp-action="Create">New application</a>
+            </nav>
+        </div>
+    </header>
+    <main id="main-content" class="page-container main-content">
+        <div class="staff-demo-notice" role="note">Development demonstration only. Do not enter real customer information.</div>
+        @if (TempData["Notice"] is string notice)
+        {
+            <div class="alert alert-success notice-alert" role="status">@notice</div>
+        }
+        @if (TempData["Error"] is string error)
+        {
+            <div class="alert alert-danger" role="alert">@error</div>
+        }
+        @RenderBody()
+    </main>
+    <footer class="site-footer">
+        <div class="page-container footer-inner">
+            <a class="footer-brand" asp-controller="Applications" asp-action="Index">PD Mortgages Staff</a>
+            <p>Development demonstration. Employee authentication is required before deployment.</p>
+        </div>
+    </footer>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

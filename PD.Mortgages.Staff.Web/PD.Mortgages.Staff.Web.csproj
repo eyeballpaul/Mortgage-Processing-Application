@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+	<ProjectReference Include="..\PD.Mortgages.Application\PD.Mortgages.Application.csproj" />
+	<ProjectReference Include="..\PD.Mortgages.Infrastructure\PD.Mortgages.Infrastructure.csproj" />
+	<Content Include="..\PD.Mortgages.Web\wwwroot\lib\bootstrap\dist\css\bootstrap.min.css" Link="wwwroot\lib\bootstrap\dist\css\bootstrap.min.css" CopyToOutputDirectory="PreserveNewest" />
+	<Content Include="..\PD.Mortgages.Web\wwwroot\css\PDMortgages.css" Link="wwwroot\css\PDMortgages.css" CopyToOutputDirectory="PreserveNewest" />
+	<Content Update="wwwroot\css\staff.css" CopyToOutputDirectory="PreserveNewest" />
+	<Content Update="wwwroot\js\staff-decision-in-principle.js" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <PropertyGroup>
+	<TargetFramework>net10.0</TargetFramework>
+	<Nullable>enable</Nullable>
+	<ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,50 @@
+@model StaffAuditTrailViewModel
+@{
+    ViewData["Title"] = "Audit history · Application";
+}
+<div class="section-topline">
+    <div>
+        <p class="eyebrow">Application @Model.ApplicationId.ToString("N")[..8].ToUpperInvariant()</p>
+        <h1>Audit history</h1>
+        <p class="mb-0">@Model.TotalCount event(s), newest first.</p>
+    </div>
+    @if (Model.Status == ApplicationStatus.InProgress)
+    {
+        <a class="btn btn-outline-secondary" asp-controller="ApplicationWizard" asp-action="Step" asp-route-id="@Model.ApplicationId" asp-route-step="8">Back to application</a>
+    }
+    else
+    {
+        <a class="btn btn-outline-secondary" asp-action="Edit" asp-route-id="@Model.ApplicationId">Back to application</a>
+    }
+</div>
+<div class="wide-card staff-editor-card">
+    @if (Model.Events.Count == 0)
+    {
+        <p class="mb-0">No audit events have been recorded.</p>
+    }
+    else
+    {
+        <ol class="staff-audit-list">
+            @foreach (var entry in Model.Events)
+            {
+                <li><strong>@entry.Action</strong><span>@entry.ActorId</span><time datetime="@entry.RecordedAtUtc.ToString("O")">@entry.RecordedAtUtc.ToLocalTime().ToString("d MMM yyyy, HH:mm:ss")</time></li>
+            }
+        </ol>
+        @if (Model.TotalPages > 1)
+        {
+            <nav class="staff-audit-pagination" aria-label="Audit history pages">
+                <span>Page @Model.Page of @Model.TotalPages</span>
+                <div class="staff-pagination-actions">
+                    @if (Model.Page > 1)
+                    {
+                        <a class="btn btn-outline-secondary btn-sm" asp-action="AuditTrail" asp-route-id="@Model.ApplicationId" asp-route-page="@(Model.Page - 1)">Newer</a>
+                    }
+                    @if (Model.Page < Model.TotalPages)
+                    {
+                        <a class="btn btn-outline-secondary btn-sm" asp-action="AuditTrail" asp-route-id="@Model.ApplicationId" asp-route-page="@(Model.Page + 1)">Older</a>
+                    }
+                </div>
+            </nav>
+        }
+    }
+</div>

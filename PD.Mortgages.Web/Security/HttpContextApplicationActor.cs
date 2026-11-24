@@ -13,4 +13,6 @@ public sealed class HttpContextApplicationActor(IHttpContextAccessor httpContext
     public string? SubjectId =>
         User?.FindFirstValue(ClaimTypes.NameIdentifier)
         ?? User?.FindFirstValue("sub");
+
+    public bool IsStaff => User?.IsInRole("Staff") == true;
 }

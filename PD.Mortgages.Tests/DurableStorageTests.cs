@@ -15,18 +15,85 @@ public sealed class DurableStorageTests
         {
             var options = new MortgagePersistenceOptions { RootPath = root };
             var repository = new FileMortgageApplicationRepository(options);
-            var application = new MortgageApplication();
+            var auditRepository = new FileMortgageApplicationAuditRepository(options);
+            var application = MortgageApplication.CreateForEmployee("staff-42");
             application.AssignOwner("customer-123");
             application.UpdateQualification(300_000m, 30_000m);
             application.AddDocument(Guid.NewGuid(), "identity.pdf", 128);
+            application.RecordAudit("staff-42", "Application created");
 
             await repository.AddAsync(application);
+            await auditRepository.AppendAsync(application.Id, Assert.Single(application.AuditTrail));
             var restored = await repository.GetByIdAsync(application.Id);
+            var auditPage = await auditRepository.GetPageAsync(application.Id, 1, 25);
+            var listed = await repository.SearchAsync(null, null, 1, 25);
 
             Assert.NotNull(restored);
             Assert.Equal("customer-123", restored.OwnerId);
+            Assert.Equal("staff-42", restored.CreatedByEmployeeId);
             Assert.Equal(300_000m, restored.PropertyValue);
             Assert.Equal("identity.pdf", Assert.Single(restored.Documents).FileName);
+            Assert.Empty(restored.AuditTrail);
+            Assert.Equal("Application created", Assert.Single(auditPage.Events).Action);
+            Assert.Equal(1, listed.TotalCount);
+            Assert.Equal(application.Id, Assert.Single(listed.Applications).Id);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [Fact]
+    public async Task FileAuditRepositoryPagesNewestFirstAndMigratesLegacyEventsOnlyOnce()
+    {
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            var repository = new FileMortgageApplicationAuditRepository(new MortgagePersistenceOptions { RootPath = root });
+            var applicationId = Guid.NewGuid();
+            var events = Enumerable.Range(0, 31)
+                .Select(index => new MortgageApplicationAuditEntry(DateTime.UtcNow.AddSeconds(index), "staff-42", $"Event {index}"))
+                .ToList();
+
+            await repository.AppendLegacyAsync(applicationId, events);
+            await repository.AppendLegacyAsync(applicationId, events);
+            var firstPage = await repository.GetPageAsync(applicationId, 1, 25);
+            var secondPage = await repository.GetPageAsync(applicationId, 2, 25);
+
+            Assert.Equal(31, firstPage.TotalCount);
+            Assert.Equal(2, firstPage.TotalPages);
+            Assert.Equal("Event 30", firstPage.Events[0].Action);
+            Assert.Equal("Event 6", firstPage.Events[^1].Action);
+            Assert.Equal(6, secondPage.Events.Count);
+            Assert.Equal("Event 5", secondPage.Events[0].Action);
+            Assert.Equal("Event 0", secondPage.Events[^1].Action);
+        }
+        finally
+        {
+            DeleteTemporaryDirectory(root);
+        }
+    }
+
+    [Fact]
+    public async Task FileRepositoryRejectsAnUpdateBasedOnAStaleSnapshot()
+    {
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            var repository = new FileMortgageApplicationRepository(new MortgagePersistenceOptions { RootPath = root });
+            var application = new MortgageApplication();
+            await repository.AddAsync(application);
+            var firstCopy = await repository.GetByIdAsync(application.Id);
+            var staleCopy = await repository.GetByIdAsync(application.Id);
+
+            Assert.NotNull(firstCopy);
+            Assert.NotNull(staleCopy);
+            firstCopy.UpdateApplicant("Jane", "Doe", "jane@example.com", "07123456789");
+            await repository.UpdateAsync(firstCopy);
+            staleCopy.UpdateQualification(300_000m, 30_000m);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.UpdateAsync(staleCopy));
         }
         finally
         {

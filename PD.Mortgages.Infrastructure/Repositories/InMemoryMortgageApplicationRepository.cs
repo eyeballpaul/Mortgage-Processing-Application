@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using PD.Mortgages.Domain.Entities;
+using PD.Mortgages.Domain.Enums;
 using PD.Mortgages.Domain.Repositories;
 
 namespace PD.Mortgages.Infrastructure.Repositories;
@@ -13,6 +14,38 @@ public sealed class InMemoryMortgageApplicationRepository : IMortgageApplication
         cancellationToken.ThrowIfCancellationRequested();
         _applications.TryGetValue(id, out var application);
         return Task.FromResult(application);
+    }
+
+    public Task<MortgageApplicationSearchResult> SearchAsync(
+        string? search,
+        ApplicationStatus? status,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var normalizedSearch = search?.Trim();
+        var matches = _applications.Values
+            .Where(application => status is null || application.Status == status)
+            .Where(application => string.IsNullOrEmpty(normalizedSearch) ||
+                application.Id.ToString("D").Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase) ||
+                (application.CreatedByEmployeeId?.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                $"{application.FirstName} {application.LastName}".Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase) ||
+                (application.Email?.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase) ?? false))
+            .OrderByDescending(application => application.UpdatedAtUtc)
+            .ThenByDescending(application => application.Id)
+            .ToList();
+        var totalCount = matches.Count;
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+        page = Math.Clamp(page, 1, totalPages);
+        var result = new MortgageApplicationSearchResult(
+            matches.Skip((page - 1) * pageSize).Take(pageSize).ToList(),
+            totalCount,
+            page,
+            pageSize);
+        return Task.FromResult(result);
     }
 
     public Task AddAsync(MortgageApplication application, CancellationToken cancellationToken = default)

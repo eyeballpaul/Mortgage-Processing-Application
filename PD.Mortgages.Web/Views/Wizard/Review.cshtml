@@ -32,7 +32,7 @@
                 <dt>Deposit</dt><dd>@application.Deposit?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
                 <dt>Annual income</dt><dd>@application.AnnualIncome?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
                 <dt>Monthly commitments</dt><dd>@application.MonthlyCommitments?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
-                <dt>Employment</dt><dd>@application.EmploymentType</dd>
+                <dt>Employment</dt><dd>@(application.EmploymentType is { } employmentType ? employmentType.GetDisplayName() : "")</dd>
             </dl>
         </section>
         <section class="review-section">

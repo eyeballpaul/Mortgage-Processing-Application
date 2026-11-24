@@ -5,10 +5,12 @@ namespace PD.Mortgages.Domain.Entities;
 public sealed class MortgageApplication
 {
     private readonly List<MortgageDocument> _documents = [];
+    private readonly List<MortgageApplicationAuditEntry> _auditTrail = [];
 
     public Guid Id { get; private set; } = Guid.NewGuid();
     public long Version { get; private set; }
     public string? OwnerId { get; private set; }
+    public string? CreatedByEmployeeId { get; private set; }
     public DateTime CreatedAtUtc { get; private set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; private set; } = DateTime.UtcNow;
     public ApplicationStatus Status { get; private set; } = ApplicationStatus.InProgress;
@@ -28,6 +30,7 @@ public sealed class MortgageApplication
     public string? SelectedProductId { get; private set; }
     public SelectedMortgageProductSnapshot? SelectedProduct { get; private set; }
     public IReadOnlyCollection<MortgageDocument> Documents => _documents.AsReadOnly();
+    public IReadOnlyCollection<MortgageApplicationAuditEntry> AuditTrail => _auditTrail.AsReadOnly();
 
     public static MortgageApplication Rehydrate(
         Guid id,
@@ -51,13 +54,16 @@ public sealed class MortgageApplication
         DecisionInPrincipleResult? decisionInPrinciple,
         string? selectedProductId,
         SelectedMortgageProductSnapshot? selectedProduct,
-        IEnumerable<MortgageDocument> documents)
+        IEnumerable<MortgageDocument> documents,
+        IEnumerable<MortgageApplicationAuditEntry> auditTrail,
+        string? createdByEmployeeId = null)
     {
         var application = new MortgageApplication
         {
             Id = id,
             Version = version,
             OwnerId = ownerId,
+            CreatedByEmployeeId = createdByEmployeeId,
             CreatedAtUtc = createdAtUtc,
             UpdatedAtUtc = updatedAtUtc,
             Status = status,
@@ -78,8 +84,31 @@ public sealed class MortgageApplication
             SelectedProduct = selectedProduct
         };
         application._documents.AddRange(documents);
+        application._auditTrail.AddRange(auditTrail);
         return application;
     }
+
+    public static MortgageApplication CreateForEmployee(string employeeId)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId))
+        {
+            throw new ArgumentException("An employee identity is required.", nameof(employeeId));
+        }
+
+        return new MortgageApplication { CreatedByEmployeeId = employeeId };
+    }
+
+    public void RecordAudit(string actorId, string action)
+    {
+        if (string.IsNullOrWhiteSpace(actorId) || string.IsNullOrWhiteSpace(action))
+        {
+            throw new ArgumentException("An audit event requires an actor and action.");
+        }
+
+        _auditTrail.Add(new MortgageApplicationAuditEntry(DateTime.UtcNow, actorId, action));
+    }
+
+    public void ClearAuditTrail() => _auditTrail.Clear();
 
     public void AssignOwner(string ownerId)
     {
@@ -94,6 +123,23 @@ public sealed class MortgageApplication
         }
 
         OwnerId = ownerId;
+    }
+
+    public void LinkToCustomer(string customerSubjectId)
+    {
+        EnsureEditable();
+        if (string.IsNullOrWhiteSpace(customerSubjectId))
+        {
+            throw new ArgumentException("A customer identity is required.", nameof(customerSubjectId));
+        }
+
+        if (OwnerId is not null)
+        {
+            throw new InvalidOperationException("This application is already linked to a customer.");
+        }
+
+        OwnerId = customerSubjectId;
+        Touch();
     }
 
     public void UpdateApplicant(string firstName, string lastName, string email, string phoneNumber)
@@ -128,6 +174,11 @@ public sealed class MortgageApplication
         if (annualIncome <= 0 || monthlyCommitments < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(annualIncome), "Income must be positive and monthly commitments cannot be negative.");
+        }
+
+        if (!Enum.IsDefined(typeof(EmploymentType), employmentType))
+        {
+            throw new ArgumentOutOfRangeException(nameof(employmentType), "Select a valid employment type.");
         }
 
         AnnualIncome = annualIncome;

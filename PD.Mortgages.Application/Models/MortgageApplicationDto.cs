@@ -1,3 +1,4 @@
+using PD.Mortgages.Domain.Entities;
 using PD.Mortgages.Domain.Enums;
 
 namespace PD.Mortgages.Application.Models;
@@ -22,4 +23,5 @@ public sealed record MortgageApplicationDto(
     bool ConsentsRecorded,
     DecisionInPrincipleDto? DecisionInPrinciple,
     string? SelectedProductId,
-    IReadOnlyList<MortgageDocumentDto> Documents);
+    IReadOnlyList<MortgageDocumentDto> Documents,
+    string? CreatedByEmployeeId);

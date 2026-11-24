@@ -6,6 +6,18 @@ namespace PD.Mortgages.Tests;
 public sealed class MortgageApplicationTests
 {
     [Fact]
+    public void EnumDisplayNamesUseReadableLabelsForCompoundValues()
+    {
+        Assert.Equal("In progress", ApplicationStatus.InProgress.GetDisplayName());
+        Assert.Equal("Awaiting information", ApplicationStatus.AwaitingInformation.GetDisplayName());
+        Assert.Equal("Approved in principle", ApplicationStatus.ApprovedInPrinciple.GetDisplayName());
+        Assert.Equal("Self-employed", EmploymentType.SelfEmployed.GetDisplayName());
+        Assert.Equal("Credit check not selected", DecisionInPrincipleOutcome.CreditCheckNotSelected.GetDisplayName());
+        Assert.Equal("Within indicative range", DecisionInPrincipleOutcome.WithinIndicativeRange.GetDisplayName());
+        Assert.Equal("Above indicative range", DecisionInPrincipleOutcome.AboveIndicativeRange.GetDisplayName());
+    }
+
+    [Fact]
     public void UpdateQualificationRejectsDepositAtOrAbovePropertyValue()
     {
         var application = new MortgageApplication();
@@ -70,6 +82,16 @@ public sealed class MortgageApplicationTests
         application.AssignOwner("customer-1");
 
         Assert.Throws<InvalidOperationException>(() => application.AssignOwner("customer-2"));
+    }
+
+    [Fact]
+    public void EmployeeCreatedApplicationRequiresAndStoresEmployeeIdentity()
+    {
+        var application = MortgageApplication.CreateForEmployee("staff-1");
+
+        Assert.Equal("staff-1", application.CreatedByEmployeeId);
+        Assert.Null(application.OwnerId);
+        Assert.Throws<ArgumentException>(() => MortgageApplication.CreateForEmployee(" "));
     }
 
     [Fact]

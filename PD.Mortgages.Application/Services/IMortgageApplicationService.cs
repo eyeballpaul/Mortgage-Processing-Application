@@ -6,7 +6,17 @@ namespace PD.Mortgages.Application.Services;
 public interface IMortgageApplicationService
 {
     Task<MortgageApplicationDto> CreateAsync(CancellationToken cancellationToken = default);
+    Task<MortgageApplicationDto> CreateForStaffAsync(CancellationToken cancellationToken = default);
     Task<MortgageApplicationDto> GetAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<MortgageApplicationDto> GetForStaffAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<MortgageApplicationAuditPageDto> GetAuditTrailForStaffAsync(Guid id, int page, int pageSize, CancellationToken cancellationToken = default);
+    Task<MortgageApplicationSearchPageDto> SearchForStaffAsync(
+        string? search,
+        ApplicationStatus? status,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+    Task LinkToCustomerAsync(Guid id, string customerSubjectId, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
     Task SaveApplicantAsync(Guid id, string firstName, string lastName, string email, string phoneNumber, CancellationToken cancellationToken = default);
     Task SaveQualificationAsync(Guid id, decimal propertyValue, decimal deposit, CancellationToken cancellationToken = default);

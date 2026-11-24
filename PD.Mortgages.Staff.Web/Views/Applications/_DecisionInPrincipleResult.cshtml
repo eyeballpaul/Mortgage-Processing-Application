@@ -1,0 +1,24 @@
+@model PD.Mortgages.Application.Models.DecisionInPrincipleDto
+@using PD.Mortgages.Domain.Enums
+@{
+    var resultClass = Model.Outcome switch
+    {
+        DecisionInPrincipleOutcome.WithinIndicativeRange => "dip-positive",
+        DecisionInPrincipleOutcome.CreditCheckNotSelected => "dip-unavailable",
+        _ => "dip-review"
+    };
+}
+<div class="dip-result @resultClass">
+    <span class="dip-result-label">Indicative result</span>
+    <h2>@Model.Outcome.GetDisplayName()</h2>
+    <dl class="dip-figures">
+        <dt>Requested loan</dt>
+        <dd>@Model.RequestedLoanAmount.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
+        @if (Model.IndicativeMaximumBorrowing is decimal maximumBorrowing)
+        {
+            <dt>Indicative maximum</dt>
+            <dd>@maximumBorrowing.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
+        }
+    </dl>
+    <p class="mb-0">This is a simulated guide only. It is not a lender decision or an offer of credit.</p>
+</div>

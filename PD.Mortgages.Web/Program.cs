@@ -54,11 +54,13 @@ builder.Services.AddSingleton(persistenceOptions);
 if (string.Equals(persistenceOptions.Provider, "File", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddSingleton<IMortgageApplicationRepository, FileMortgageApplicationRepository>();
+    builder.Services.AddSingleton<IMortgageApplicationAuditRepository, FileMortgageApplicationAuditRepository>();
     builder.Services.AddSingleton<IMortgageDocumentStorage>(_ => new FileMortgageDocumentStorage(persistenceOptions.RootPath));
 }
 else
 {
     builder.Services.AddSingleton<IMortgageApplicationRepository, InMemoryMortgageApplicationRepository>();
+    builder.Services.AddSingleton<IMortgageApplicationAuditRepository, InMemoryMortgageApplicationAuditRepository>();
     builder.Services.AddSingleton<IMortgageDocumentStorage, InMemoryMortgageDocumentStorage>();
 }
 builder.Services.AddHttpContextAccessor();

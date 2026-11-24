@@ -3,7 +3,6 @@ using PD.Mortgages.Application.Security;
 using PD.Mortgages.Domain.Entities;
 using PD.Mortgages.Domain.Enums;
 using PD.Mortgages.Domain.Repositories;
-using PD.Mortgages.Domain.Entities;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 
@@ -11,6 +10,7 @@ namespace PD.Mortgages.Application.Services;
 
 public sealed class MortgageApplicationService(
     IMortgageApplicationRepository applicationRepository,
+    IMortgageApplicationAuditRepository auditRepository,
     IProductCatalogClient productCatalogClient,
     IMortgageDocumentStorage documentStorage,
     IApplicationActor applicationActor,
@@ -21,12 +21,76 @@ public sealed class MortgageApplicationService(
     {
         var application = new MortgageApplication();
         AssignOwner(application);
+        application.RecordAudit(GetActorId(application), "Application created");
         await applicationRepository.AddAsync(application, cancellationToken);
+        await AppendCurrentAuditAsync(application, cancellationToken);
+        return Map(application);
+    }
+
+    public async Task<MortgageApplicationDto> CreateForStaffAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureStaff();
+        var employeeId = applicationActor.SubjectId;
+        if (string.IsNullOrWhiteSpace(employeeId))
+        {
+            throw new UnauthorizedAccessException("A stable employee identity is required to create an application.");
+        }
+
+        var application = MortgageApplication.CreateForEmployee(employeeId);
+        application.RecordAudit(employeeId, "Application created by staff");
+        await applicationRepository.AddAsync(application, cancellationToken);
+        await AppendCurrentAuditAsync(application, cancellationToken);
         return Map(application);
     }
 
     public async Task<MortgageApplicationDto> GetAsync(Guid id, CancellationToken cancellationToken = default) =>
         Map(await FindAsync(id, cancellationToken));
+
+    public async Task<MortgageApplicationDto> GetForStaffAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        EnsureStaff();
+        var application = await applicationRepository.GetByIdAsync(id, cancellationToken)
+            ?? throw new KeyNotFoundException($"Mortgage application '{id}' was not found.");
+        return Map(application);
+    }
+
+    public async Task<MortgageApplicationAuditPageDto> GetAuditTrailForStaffAsync(Guid id, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        EnsureStaff();
+        var application = await applicationRepository.GetByIdAsync(id, cancellationToken)
+            ?? throw new KeyNotFoundException($"Mortgage application '{id}' was not found.");
+        await MigrateLegacyAuditAsync(application, cancellationToken);
+        var result = await auditRepository.GetPageAsync(id, page, pageSize, cancellationToken);
+        return new MortgageApplicationAuditPageDto(result.Events, result.TotalCount, result.Page, result.PageSize, result.TotalPages);
+    }
+
+    public async Task<MortgageApplicationSearchPageDto> SearchForStaffAsync(
+        string? search,
+        ApplicationStatus? status,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureStaff();
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var results = await applicationRepository.SearchAsync(search?.Trim(), status, page, pageSize, cancellationToken);
+        return new MortgageApplicationSearchPageDto(
+            results.Applications.Select(Map).ToList(),
+            results.TotalCount,
+            results.Page,
+            results.PageSize);
+    }
+
+    public async Task LinkToCustomerAsync(Guid id, string customerSubjectId, CancellationToken cancellationToken = default)
+    {
+        EnsureStaff();
+        await ChangeAsync(
+            id,
+            application => application.LinkToCustomer(customerSubjectId),
+            "Application linked to customer",
+            cancellationToken);
+    }
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -35,16 +99,16 @@ public sealed class MortgageApplicationService(
     }
 
     public Task SaveApplicantAsync(Guid id, string firstName, string lastName, string email, string phoneNumber, CancellationToken cancellationToken = default) =>
-        ChangeAsync(id, application => application.UpdateApplicant(firstName, lastName, email, phoneNumber), cancellationToken);
+        ChangeAsync(id, application => application.UpdateApplicant(firstName, lastName, email, phoneNumber), "Applicant details updated", cancellationToken);
 
     public Task SaveQualificationAsync(Guid id, decimal propertyValue, decimal deposit, CancellationToken cancellationToken = default) =>
-        ChangeAsync(id, application => application.UpdateQualification(propertyValue, deposit), cancellationToken);
+        ChangeAsync(id, application => application.UpdateQualification(propertyValue, deposit), "Qualification updated", cancellationToken);
 
     public Task SaveFinancesAsync(Guid id, decimal annualIncome, decimal monthlyCommitments, EmploymentType employmentType, CancellationToken cancellationToken = default) =>
-        ChangeAsync(id, application => application.UpdateFinances(annualIncome, monthlyCommitments, employmentType), cancellationToken);
+        ChangeAsync(id, application => application.UpdateFinances(annualIncome, monthlyCommitments, employmentType), "Finances updated", cancellationToken);
 
     public Task SaveConsentsAsync(Guid id, bool creditCheckConsent, bool openBankingConsent, CancellationToken cancellationToken = default) =>
-        ChangeAsync(id, application => application.RecordConsents(creditCheckConsent, openBankingConsent), cancellationToken);
+        ChangeAsync(id, application => application.RecordConsents(creditCheckConsent, openBankingConsent), "Customer consents recorded", cancellationToken);
 
     public async Task<MortgageApplicationDto> GenerateDecisionInPrincipleAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -66,7 +130,10 @@ public sealed class MortgageApplicationService(
         }
 
         application.GenerateIndicativeDecisionInPrinciple();
+        await MigrateLegacyAuditAsync(application, cancellationToken);
+        application.RecordAudit(GetActorId(application), "Decision in Principle generated");
         await applicationRepository.UpdateAsync(application, cancellationToken);
+        await AppendCurrentAuditAsync(application, cancellationToken);
         return Map(application);
         }
         finally
@@ -111,7 +178,10 @@ public sealed class MortgageApplicationService(
             product.FixedTermYears,
             product.MaximumLoanToValue,
             product.CatalogVersion));
+        await MigrateLegacyAuditAsync(application, cancellationToken);
+        application.RecordAudit(GetActorId(application), $"Product '{productId}' selected");
         await applicationRepository.UpdateAsync(application, cancellationToken);
+        await AppendCurrentAuditAsync(application, cancellationToken);
         }
         finally
         {
@@ -124,22 +194,30 @@ public sealed class MortgageApplicationService(
         var gate = MutationGates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken);
         var documentId = Guid.Empty;
+        var applicationUpdated = false;
         try
         {
         var application = await FindAsync(id, cancellationToken);
+        await MigrateLegacyAuditAsync(application, cancellationToken);
         documentId = Guid.NewGuid();
         await documentStorage.SaveAsync(id, documentId, contents, cancellationToken);
         application.AddDocument(documentId, fileName, contents.LongLength);
+        application.RecordAudit(GetActorId(application), "Document uploaded");
         await applicationRepository.UpdateAsync(application, cancellationToken);
+        applicationUpdated = true;
+        await AppendCurrentAuditAsync(application, cancellationToken);
         }
         catch
         {
-            try
+            if (!applicationUpdated)
             {
-                await documentStorage.DeleteAsync(id, documentId, cancellationToken);
-            }
-            catch
-            {
+                try
+                {
+                    await documentStorage.DeleteAsync(id, documentId, cancellationToken);
+                }
+                catch
+                {
+                }
             }
 
             throw;
@@ -159,7 +237,7 @@ public sealed class MortgageApplicationService(
     }
 
     public Task SubmitAsync(Guid id, CancellationToken cancellationToken = default) =>
-        ChangeAsync(id, application => application.Submit(), cancellationToken);
+        ChangeAsync(id, application => application.Submit(), "Application submitted", cancellationToken);
 
     public async Task<IReadOnlyList<MortgageProductDto>> GetProductsAsync(CancellationToken cancellationToken = default) =>
         await productCatalogClient.GetProductsAsync(cancellationToken);
@@ -183,20 +261,40 @@ public sealed class MortgageApplicationService(
         return await productCatalogClient.GetProductAsync(id, cancellationToken);
     }
 
-    private async Task ChangeAsync(Guid id, Action<MortgageApplication> change, CancellationToken cancellationToken)
+    private async Task ChangeAsync(Guid id, Action<MortgageApplication> change, string auditAction, CancellationToken cancellationToken)
     {
         var gate = MutationGates.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken);
         try
         {
         var application = await FindAsync(id, cancellationToken);
+        await MigrateLegacyAuditAsync(application, cancellationToken);
         change(application);
+        application.RecordAudit(GetActorId(application), auditAction);
         await applicationRepository.UpdateAsync(application, cancellationToken);
+        await AppendCurrentAuditAsync(application, cancellationToken);
         }
         finally
         {
             gate.Release();
         }
+    }
+
+    private async Task MigrateLegacyAuditAsync(MortgageApplication application, CancellationToken cancellationToken)
+    {
+        if (application.AuditTrail.Count == 0)
+        {
+            return;
+        }
+
+        await auditRepository.AppendLegacyAsync(application.Id, application.AuditTrail.ToList(), cancellationToken);
+        application.ClearAuditTrail();
+    }
+
+    private async Task AppendCurrentAuditAsync(MortgageApplication application, CancellationToken cancellationToken)
+    {
+        await auditRepository.AppendAsync(application.Id, application.AuditTrail.Last(), cancellationToken);
+        application.ClearAuditTrail();
     }
 
     private async Task<MortgageApplication> FindAsync(Guid id, CancellationToken cancellationToken) =>
@@ -212,14 +310,32 @@ public sealed class MortgageApplicationService(
             throw new UnauthorizedAccessException("An authenticated user is required.");
         }
 
+        if (applicationActor.IsStaff)
+        {
+            EnsureStaff();
+            return application;
+        }
+
         if (securityOptions.Value.RequireAuthenticatedUser &&
-            application.OwnerId is not null &&
             !string.Equals(application.OwnerId, applicationActor.SubjectId, StringComparison.Ordinal))
         {
             throw new UnauthorizedAccessException("The application does not belong to the current user.");
         }
 
         return application;
+    }
+
+    private string GetActorId(MortgageApplication application) =>
+        !string.IsNullOrWhiteSpace(applicationActor.SubjectId)
+            ? applicationActor.SubjectId
+            : application.OwnerId ?? "development-anonymous";
+
+    private void EnsureStaff()
+    {
+        if (!applicationActor.IsAuthenticated || !applicationActor.IsStaff)
+        {
+            throw new UnauthorizedAccessException("An authenticated staff member is required.");
+        }
     }
 
     private void AssignOwner(MortgageApplication application)
@@ -270,6 +386,7 @@ public sealed class MortgageApplicationService(
                 document.FileName,
                 document.SizeInBytes,
                 document.UploadedAtUtc))
-            .ToList());
+            .ToList(),
+        application.CreatedByEmployeeId);
 
 }

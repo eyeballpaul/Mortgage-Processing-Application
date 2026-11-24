@@ -1,21 +1,21 @@
 # PD Mortgages
 
-A .NET 10 ASP.NET Core MVC demonstration of a UK mortgage application journey. It uses Razor views, Bootstrap 5, server-side DataAnnotations validation, session state, and in-memory repositories. No database or external financial integrations are required.
+A .NET 10 ASP.NET Core MVC demonstration of a UK mortgage application journey. It uses Razor views, Bootstrap 5, server-side DataAnnotations validation, session state, and configurable in-memory or file-backed repositories. No database or external financial integrations are required.
 
 ## Architecture
 
 ```text
-PD.Mortgages.Web
-  -> PD.Mortgages.Application
-       -> PD.Mortgages.Domain
-  -> PD.Mortgages.Infrastructure
-       -> PD.Mortgages.Domain
+PD.Mortgages.Web ─────┐
+                      ├-> PD.Mortgages.Application -> PD.Mortgages.Domain
+PD.Mortgages.Staff.Web┘          |
+                                 └-> PD.Mortgages.Infrastructure -> PD.Mortgages.Domain
 ```
 
 - **Domain** contains the mortgage application aggregate, product and document entities, application enums, the `LoanToValue` value object, eligibility domain service, and repository/storage contracts. It has no project dependencies.
 - **Application** contains DTOs and the application service that coordinates persistence, product eligibility, document storage, and submission.
-- **Infrastructure** implements the domain contracts with thread-safe in-memory collections and realistic example mortgage products.
-- **Web** contains the MVC controllers, annotated view models, strongly typed Razor pages, session configuration, layout, and responsive design system.
+- **Infrastructure** implements the domain contracts with thread-safe in-memory and file-backed repositories, document storage, and realistic example mortgage products.
+- **Web** contains the customer MVC controllers, annotated view models, strongly typed Razor pages, session configuration, layout, and responsive design system.
+- **Staff.Web** is the employee-facing MVC portal. It reuses the same application service, domain rules, repository, product catalog, styling, and application files.
 
 The application flow is: property and deposit → applicant details → income and commitments → optional credit/open-banking consent → an indicative Decision in Principle guide → eligible example products → optional document upload → review and submission. The DIP page displays a loading state while the backend runs a simulated assessment with a two-second delay. The resulting guide is a simple 4.5× annual-income illustration only; it is not a lender decision, does not contact a credit agency, and is not an offer or guarantee. A dashboard summarizes status, timeline, DIP guide, product, and documents.
 
@@ -27,7 +27,9 @@ The application flow is: property and deposit → applicant details → income a
 dotnet run --project PD.Mortgages.AppHost --launch-profile https
 ```
 
-Aspire starts the mortgage web app and Products API together and opens the Aspire dashboard. The web app uses the Products API in this mode. In VS Code, press **F5** and choose **PD Mortgages (Aspire)**, or use **Terminal → Run Task → run Aspire AppHost**.
+Aspire starts the customer mortgage web app, employee portal, and Products API together and opens the Aspire dashboard. Both web apps use the same application services and shared file-backed application data, so employee staff can access applications created by either app. Customer account access follows the application's existing owner identity; employee-created applications remain unassigned until staff explicitly links the customer's stable authentication subject ID. In VS Code, press **F5** and choose **PD Mortgages (Aspire)**, or use **Terminal → Run Task → run Aspire AppHost**.
+
+The employee portal opens at its `mortgages-staff-web` URL. It provides a recent-application dashboard with applicant/email/reference/creator search, status filtering, and 25-result pages. Creating or editing a draft follows the same eight-step sequence as the customer journey: property, applicant, finances, consents, Decision in Principle, product, optional documents, and review. Employees use the existing domain workflow rules, including Decision in Principle generation and eligible-product validation. The staff Decision in Principle step shows a loading spinner during the simulated assessment and enables a direct, guarded link to mortgage options when it completes. Staff-created applications store the creating employee's stable identity ID separately from the customer owner, show it in the staff dashboard and application details, and allow searching by creator. Customer-created applications have no employee creator. Staff can link an unassigned application to a customer's exact authentication subject ID; the link is audited and cannot be changed after assignment. Customer sign-in and identity lookup are not configured in this local build, so linking stores an ID but cannot verify or create a customer account. The portal uses a development staff identity and deliberately refuses to run outside the Development environment. Configure real employee authentication/authorization and a trusted customer identity lookup before any non-development use.
 
 ### Run only the mortgage web app
 
@@ -37,12 +39,12 @@ dotnet build PD.Mortgages.slnx
 dotnet run --project PD.Mortgages.Web
 ```
 
-This standalone mode uses the development mock product catalog. Open the local URL printed by `dotnet run`. Application progress and uploaded documents are held in memory and are cleared when the process restarts. Session cookies allow a customer to resume in the same browser while the process remains available.
+This standalone mode uses the development mock product catalog. Open the local URL printed by `dotnet run`. Application records and uploaded documents are stored in the project's local `data` directory; session state is held by the configured session provider. Session cookies allow a customer to resume in the same browser while the session store remains available.
 
 ### Run and debug in VS Code
 
-Open the solution folder in VS Code and install the recommended C# Dev Kit extension. Aspire runs the web app and Products API as separate .NET projects; it does not require Docker for these projects.
+Open the solution folder in VS Code and install the recommended C# Dev Kit extension. Aspire runs the customer web app, staff web app, and Products API as separate .NET projects; it does not require Docker for these projects.
 
 ## Demonstration limitations
 
-PD Mortgages, its rates, products, estimates, and statuses are fictional. Credit checks, open banking, underwriting, and lender submission are not connected to external services. Uploaded PDFs and images are stored only in process memory with size/type checks; this is not a production document portal and must not be used for real financial or identity data.
+PD Mortgages, its rates, products, estimates, and statuses are fictional. Credit checks, open banking, underwriting, and lender submission are not connected to external services. Uploaded PDFs and images are stored on local disk with size/type checks. File persistence is a local demonstration option, not production-grade shared storage; the employee portal is development-only until real authentication, authorization, audit retention, and production persistence are configured. Do not use this demonstration with real financial or identity data.

@@ -1,0 +1,238 @@
+@model StaffApplicationStepViewModel
+@using PD.Mortgages.Application.Services
+@{
+    var titles = new[] { "Property", "Applicant", "Finances", "Consent", "Decision", "Mortgage", "Documents", "Review" };
+    ViewData["Title"] = titles[Model.Step - 1] + " · Application";
+    var application = Model.Application;
+    var loanAmount = (application.PropertyValue ?? 0) - (application.Deposit ?? 0);
+}
+<div class="section-topline">
+    <div>
+        <p class="eyebrow">Employee workspace · Application @application.Id.ToString("N")[..8].ToUpperInvariant()</p>
+        <h1>@(Model.Step == 8 ? "Review application" : titles[Model.Step - 1])</h1>
+        <p class="mb-0">Created by @(application.CreatedByEmployeeId ?? "Customer") · @(application.OwnerId is null ? "Not linked to a customer" : "Linked to a customer account")</p>
+    </div>
+    <a class="btn btn-outline-secondary" asp-controller="Applications" asp-action="Index">Back to applications</a>
+</div>
+<div class="staff-wizard-progress" aria-label="Application steps">
+    @for (var index = 0; index < titles.Length; index++)
+    {
+        <span class="@(index + 1 == Model.Step ? "active" : index + 1 < Model.Step ? "complete" : "")">
+            <span class="staff-step-number">@(index + 1)</span>@titles[index]
+        </span>
+    }
+</div>
+<div class="wide-card staff-editor-card">
+    @if (TempData["UploadError"] is string uploadError)
+    {
+        <div class="alert alert-danger" role="alert">@uploadError</div>
+    }
+    <form asp-controller="ApplicationWizard" asp-action="SaveStep" asp-route-id="@Model.Id" asp-route-step="@Model.Step" method="post">
+        <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
+        @if (Model.Step == 1)
+        {
+            <section class="staff-form-section">
+                <p class="eyebrow">Step 1 · Property and deposit</p>
+                <h2>Tell us about the customer's plans</h2>
+                <p>This helps identify example mortgage options. The estimate is not an offer of credit.</p>
+                <div class="row g-3">
+                    <div class="col-md-6"><label asp-for="PropertyValue" class="form-label">Property value</label><div class="input-group"><span class="input-group-text">£</span><input asp-for="PropertyValue" class="form-control" inputmode="decimal" /></div><span asp-validation-for="PropertyValue" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="Deposit" class="form-label">Customer deposit</label><div class="input-group"><span class="input-group-text">£</span><input asp-for="Deposit" class="form-control" inputmode="decimal" /></div><span asp-validation-for="Deposit" class="field-validation"></span></div>
+                </div>
+            </section>
+        }
+        else if (Model.Step == 2)
+        {
+            <section class="staff-form-section">
+                <p class="eyebrow">Step 2 · Applicant details</p>
+                <h2>Enter the customer's details</h2>
+                <div class="row g-3">
+                    <div class="col-md-6"><label asp-for="FirstName" class="form-label">First name</label><input asp-for="FirstName" class="form-control" autocomplete="given-name" /><span asp-validation-for="FirstName" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="LastName" class="form-label">Last name</label><input asp-for="LastName" class="form-control" autocomplete="family-name" /><span asp-validation-for="LastName" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="Email" class="form-label">Email address</label><input asp-for="Email" class="form-control" autocomplete="email" /><span asp-validation-for="Email" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="PhoneNumber" class="form-label">Phone number</label><input asp-for="PhoneNumber" class="form-control" autocomplete="tel" /><span asp-validation-for="PhoneNumber" class="field-validation"></span></div>
+                </div>
+                @if (application.OwnerId is null)
+                {
+                    <div class="staff-link-section mt-4">
+                        <h3>Link to customer account (optional)</h3>
+                        <p class="staff-link-warning">Customer sign-in and identity lookup are not configured in this local build. Email does not verify account ownership; an entered subject ID cannot be verified.</p>
+                        <label asp-for="CustomerSubjectId" class="form-label">Customer authentication subject ID</label>
+                        <input asp-for="CustomerSubjectId" class="form-control" autocomplete="off" />
+                        <span asp-validation-for="CustomerSubjectId" class="field-validation"></span>
+                    </div>
+                }
+            </section>
+        }
+        else if (Model.Step == 3)
+        {
+            <section class="staff-form-section">
+                <p class="eyebrow">Step 3 · Income and commitments</p>
+                <h2>A little about the customer's finances</h2>
+                <p>These details provide an illustrative view of affordability.</p>
+                <div class="row g-3">
+                    <div class="col-md-6"><label asp-for="AnnualIncome" class="form-label">Annual household income</label><div class="input-group"><span class="input-group-text">£</span><input asp-for="AnnualIncome" class="form-control" inputmode="decimal" /></div><span asp-validation-for="AnnualIncome" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="MonthlyCommitments" class="form-label">Monthly commitments</label><div class="input-group"><span class="input-group-text">£</span><input asp-for="MonthlyCommitments" class="form-control" inputmode="decimal" /></div><span asp-validation-for="MonthlyCommitments" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="EmploymentType" class="form-label">Employment status</label><select asp-for="EmploymentType" asp-items="Html.GetEnumSelectList<EmploymentType>()" class="form-select"><option value="">Choose an option</option></select><span asp-validation-for="EmploymentType" class="field-validation"></span></div>
+                </div>
+            </section>
+        }
+        else if (Model.Step == 4)
+        {
+            <section class="staff-form-section">
+                <p class="eyebrow">Step 4 · Credit and banking</p>
+                <h2>Record the customer's choices</h2>
+                <div class="notice-box mb-4"><strong>For this demonstration</strong><p class="mb-0">These choices are saved with the application only. No credit bureau or bank is contacted.</p></div>
+                <div class="form-check mb-3"><input asp-for="CreditCheckConsent" class="form-check-input" /><label asp-for="CreditCheckConsent" class="form-check-label">Customer agrees to a credit check</label></div>
+                <div class="form-check"><input asp-for="OpenBankingConsent" class="form-check-input" /><label asp-for="OpenBankingConsent" class="form-check-label">Customer would like to use open banking</label></div>
+                <p class="form-text mt-3">Record the customer's choices; do not select consent without their agreement.</p>
+            </section>
+        }
+        else if (Model.Step == 5)
+        {
+            <section class="staff-form-section">
+                <p class="eyebrow">Step 5 · Decision in Principle</p>
+                <h2>Indicative borrowing guide</h2>
+                <p>This illustrative guide uses the information recorded so far. It is not a lender decision.</p>
+                <div id="staff-dip-assessment"
+                     data-needs-assessment="@(application.DecisionInPrinciple is null ? "true" : "false")"
+                     data-credit-check-consented="@application.CreditCheckConsent.ToString().ToLowerInvariant()"
+                     data-assessment-url="@Url.Action("AssessDecisionInPrinciple", "ApplicationWizard", new { id = Model.Id })">
+                    @if (application.DecisionInPrinciple is not null)
+                    {
+                        await Html.RenderPartialAsync("~/Views/Applications/_DecisionInPrincipleResult.cshtml", application.DecisionInPrinciple);
+                    }
+                    else
+                    {
+                        <div class="notice-box" role="status">Preparing the indicative guide…</div>
+                    }
+                </div>
+            </section>
+        }
+        else if (Model.Step == 6)
+        {
+            <section class="staff-form-section">
+                <p class="eyebrow">Step 6 · Mortgage options</p>
+                <h2>Choose an eligible example product</h2>
+                <p>Estimated loan: @loanAmount.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</p>
+                @if (Model.EligibleProducts.Count == 0)
+                {
+                    <div class="notice-box"><strong>No example products match these details yet</strong><p class="mb-0">Review the property value or deposit to see if another option is available.</p></div>
+                }
+                <div class="product-grid">
+                    @foreach (var product in Model.EligibleProducts)
+                    {
+                        var payment = MortgagePaymentCalculator.MonthlyPayment(loanAmount, product.InterestRate);
+                        var selected = Model.SelectedProductId == product.Id;
+                        <label class="product-card @(selected ? "selected" : "")">
+                            <input class="form-check-input product-radio" type="radio" asp-for="SelectedProductId" value="@product.Id" />
+                            <span class="product-choice">@(selected ? "Selected" : "Choose this")</span>
+                            <span class="product-name">@product.Name</span>
+                            <span class="product-rate">@product.InterestRate.ToString("0.00")<small>%</small></span>
+                            <span class="product-caption">@(product.Id.StartsWith("tracker", StringComparison.OrdinalIgnoreCase) ? $"Tracker for {product.FixedTermYears} years" : $"Fixed for {product.FixedTermYears} years") · Up to @product.MaximumLoanToValue% LTV</span>
+                            <span class="product-divider"></span>
+                            <span class="product-detail"><span>Product fee</span><strong>@(product.Fee == 0 ? "No fee" : product.Fee.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB")))</strong></span>
+                            <span class="product-detail"><span>APRC</span><strong>@product.Aprc.ToString("0.00")%</strong></span>
+                            <span class="product-payment">@payment.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))<small> estimated monthly payment</small></span>
+                        </label>
+                    }
+                </div>
+                <span asp-validation-for="SelectedProductId" class="field-validation"></span>
+                <p class="estimate-disclaimer mt-3">Illustrative only. Rates and monthly payments are examples, not an offer or advice.</p>
+            </section>
+        }
+        else if (Model.Step == 7)
+        {
+            <section class="staff-form-section">
+                <p class="eyebrow">Step 7 · Supporting documents</p>
+                <h2>Add any supporting documents</h2>
+                <p>Documents are optional. Accepts PDF, PNG and JPEG files up to 5 MB each, with a limit of 10 files or 25 MB total.</p>
+                @if (application.Documents.Count > 0)
+                {
+                    <ul class="document-list">
+                        @foreach (var document in application.Documents)
+                        {
+                            <li><span><strong>@document.FileName</strong><small>@(document.SizeInBytes / 1024) KB · uploaded @document.UploadedAtUtc.ToLocalTime().ToString("d MMM yyyy")</small></span><a asp-controller="Applications" asp-action="DownloadDocument" asp-route-id="@Model.Id" asp-route-documentId="@document.Id" class="btn btn-sm btn-outline-primary">Download</a></li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p>No documents added.</p>
+                }
+            </section>
+        }
+        else
+        {
+            <section class="staff-form-section">
+                <p class="eyebrow">Step 8 · Final check</p>
+                <h2>Review the application before submitting</h2>
+                <div class="review-grid">
+                    <section class="review-section"><div class="review-heading"><h3>Applicant details</h3><a asp-action="Step" asp-route-id="@Model.Id" asp-route-step="2">Change</a></div><dl class="review-list"><dt>Name</dt><dd>@application.FirstName @application.LastName</dd><dt>Email</dt><dd>@application.Email</dd><dt>Phone</dt><dd>@application.PhoneNumber</dd></dl></section>
+                    <section class="review-section"><div class="review-heading"><h3>Property and finances</h3><a asp-action="Step" asp-route-id="@Model.Id" asp-route-step="1">Change</a></div><dl class="review-list"><dt>Property value</dt><dd>@application.PropertyValue?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd><dt>Deposit</dt><dd>@application.Deposit?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd><dt>Annual income</dt><dd>@application.AnnualIncome?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd><dt>Monthly commitments</dt><dd>@application.MonthlyCommitments?.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd><dt>Employment</dt><dd>@(application.EmploymentType is { } employmentType ? employmentType.GetDisplayName() : "")</dd></dl></section>
+                    <section class="review-section"><div class="review-heading"><h3>Decision in Principle</h3><a asp-action="Step" asp-route-id="@Model.Id" asp-route-step="5">View</a></div><p>@(application.DecisionInPrinciple is { } decision ? decision.Outcome.GetDisplayName() : "Not assessed") · requested loan @application.DecisionInPrinciple?.RequestedLoanAmount.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</p></section>
+                    <section class="review-section"><div class="review-heading"><h3>Mortgage product</h3><a asp-action="Step" asp-route-id="@Model.Id" asp-route-step="6">Change</a></div><p>@(Model.SelectedProduct?.Name ?? application.SelectedProductId ?? "No product selected")</p></section>
+                    <section class="review-section"><div class="review-heading"><h3>Documents</h3><a asp-action="Step" asp-route-id="@Model.Id" asp-route-step="7">Manage</a></div><p>@(application.Documents.Count == 0 ? "No documents added." : $"{application.Documents.Count} document(s) added.")</p></section>
+                </div>
+                <div class="staff-link-section mt-4">
+                    <h3>Customer account</h3>
+                    @if (application.OwnerId is not null)
+                    {
+                        <p>Linked to customer subject ID <code>@application.OwnerId</code>. This link cannot be changed.</p>
+                    }
+                    else
+                    {
+                        <p class="staff-link-warning">Customer sign-in and identity lookup are not configured in this local build. Entering an ID does not verify the customer.</p>
+                        <label asp-for="CustomerSubjectId" class="form-label">Customer authentication subject ID</label>
+                        <input asp-for="CustomerSubjectId" class="form-control" autocomplete="off" />
+                        <button type="submit" formaction="/applications/@Model.Id/link-customer" class="btn btn-outline-primary mt-2">Save customer link</button>
+                    }
+                </div>
+                <h3 class="staff-audit-heading">Audit history</h3>
+                <a asp-controller="Applications" asp-action="AuditTrail" asp-route-id="@Model.Id">View audit history</a>
+                <div class="notice-box mt-4"><strong>Before submission</strong><p class="mb-0">Confirm the details and the customer's choices. This demonstration does not send the application to a lender or third party.</p></div>
+            </section>
+        }
+        @if (Model.Step is >= 1 and <= 6)
+        {
+            <div class="form-actions mt-4">
+                @if (Model.Step > 1)
+                {
+                    <a class="btn btn-outline-secondary btn-lg" asp-action="Step" asp-route-id="@Model.Id" asp-route-step="@(Model.Step - 1)">Back</a>
+                }
+                else
+                {
+                    <a class="btn btn-outline-secondary btn-lg" asp-controller="Applications" asp-action="Index">Cancel</a>
+                }
+                @if (Model.Step == 5)
+                {
+                    <button id="continue-to-mortgages" type="submit" formaction="@Url.Action("ContinueToMortgageOptions", "ApplicationWizard", new { id = Model.Id })" class="btn btn-primary btn-lg" disabled="@(application.DecisionInPrinciple is null)">Continue to mortgage options →</button>
+                }
+                else
+                {
+                    <button type="submit" class="btn btn-primary btn-lg">@(Model.Step == 6 ? "Continue" : "Continue →")</button>
+                }
+            </div>
+        }
+        else if (Model.Step == 8)
+        {
+            <div class="form-actions mt-4">
+                <a class="btn btn-outline-secondary btn-lg" asp-action="Step" asp-route-id="@Model.Id" asp-route-step="7">Back</a>
+                <button type="submit" class="btn btn-primary btn-lg">Submit application →</button>
+            </div>
+        }
+    </form>
+    @if (Model.Step == 7)
+    {
+        <form asp-controller="ApplicationWizard" asp-action="UploadDocument" asp-route-id="@Model.Id" method="post" enctype="multipart/form-data" class="staff-upload-form">
+            <label for="document" class="form-label fw-semibold">Choose a file</label>
+            <input id="document" name="document" type="file" class="form-control" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" />
+            <button type="submit" class="btn btn-outline-primary mt-3">Upload document</button>
+        </form>
+        <div class="form-actions mt-4"><a class="btn btn-outline-secondary btn-lg" asp-action="Step" asp-route-id="@Model.Id" asp-route-step="6">Back</a><a class="btn btn-primary btn-lg" asp-action="Step" asp-route-id="@Model.Id" asp-route-step="8">Continue to review →</a></div>
+    }
+</div>
+@if (Model.Step == 5)
+{
+    <script src="~/js/staff-decision-in-principle.js" asp-append-version="true"></script>
+}

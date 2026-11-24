@@ -25,7 +25,9 @@ public sealed record MortgageApplicationSnapshot(
     DecisionInPrincipleResult? DecisionInPrinciple,
     string? SelectedProductId,
     SelectedMortgageProductSnapshot? SelectedProduct,
-    IReadOnlyList<MortgageDocument> Documents)
+    IReadOnlyList<MortgageDocument> Documents,
+    IReadOnlyList<MortgageApplicationAuditEntry> AuditTrail,
+    string? CreatedByEmployeeId = null)
 {
     public static MortgageApplicationSnapshot FromDomain(MortgageApplication application) => new(
         application.Id,
@@ -49,7 +51,9 @@ public sealed record MortgageApplicationSnapshot(
         application.DecisionInPrinciple,
         application.SelectedProductId,
         application.SelectedProduct,
-        application.Documents.ToList());
+        application.Documents.ToList(),
+        [],
+        application.CreatedByEmployeeId);
 
     public MortgageApplication ToDomain() => MortgageApplication.Rehydrate(
         Id,
@@ -73,5 +77,7 @@ public sealed record MortgageApplicationSnapshot(
         DecisionInPrinciple,
         SelectedProductId,
         SelectedProduct,
-        Documents);
+        Documents,
+        AuditTrail,
+        CreatedByEmployeeId);
 }

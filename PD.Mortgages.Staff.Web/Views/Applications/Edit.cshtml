@@ -1,0 +1,147 @@
+@model StaffApplicationViewModel
+@{
+    var isNew = Model.Id is null;
+    var readOnly = Model.Status is not null && Model.Status != ApplicationStatus.InProgress;
+    ViewData["Title"] = isNew ? "Create application" : "Application details";
+}
+<div class="section-topline">
+    <div>
+        <p class="eyebrow">@(isNew ? "New customer application" : "Application record")</p>
+        <h1>@(isNew ? "Create an application" : "Application details")</h1>
+        @if (Model.Id.HasValue)
+        {
+            <p class="mb-0">Reference <span class="staff-reference">@Model.Id.Value.ToString("N")[..8].ToUpperInvariant()</span> · @(Model.Status is { } status ? status.GetDisplayName() : "")</p>
+        }
+        else
+        {
+            <p class="mb-0">Complete the customer's details and record the required consents.</p>
+        }
+    </div>
+    <a class="btn btn-outline-secondary" asp-action="Index">Back to applications</a>
+</div>
+<div class="wide-card staff-editor-card">
+    @if (readOnly)
+    {
+        <div class="alert alert-info" role="status">This application has been submitted and is read-only.</div>
+    }
+    <form asp-action="@(isNew ? "Create" : "Edit")" asp-route-id="@Model.Id" method="post">
+        <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
+        <fieldset disabled="@readOnly">
+            <section class="staff-form-section" aria-labelledby="applicant-heading">
+                <h2 id="applicant-heading">Applicant details</h2>
+                <div class="row g-3">
+                    <div class="col-md-6"><label asp-for="FirstName" class="form-label"></label><input asp-for="FirstName" class="form-control" /><span asp-validation-for="FirstName" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="LastName" class="form-label"></label><input asp-for="LastName" class="form-control" /><span asp-validation-for="LastName" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="Email" class="form-label"></label><input asp-for="Email" class="form-control" /><span asp-validation-for="Email" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="PhoneNumber" class="form-label"></label><input asp-for="PhoneNumber" class="form-control" /><span asp-validation-for="PhoneNumber" class="field-validation"></span></div>
+                </div>
+            </section>
+            <section class="staff-form-section" aria-labelledby="property-heading">
+                <h2 id="property-heading">Property and finances</h2>
+                <div class="row g-3">
+                    <div class="col-md-6"><label asp-for="PropertyValue" class="form-label"></label><div class="input-group"><span class="input-group-text">£</span><input asp-for="PropertyValue" class="form-control" inputmode="decimal" /></div><span asp-validation-for="PropertyValue" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="Deposit" class="form-label"></label><div class="input-group"><span class="input-group-text">£</span><input asp-for="Deposit" class="form-control" inputmode="decimal" /></div><span asp-validation-for="Deposit" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="AnnualIncome" class="form-label"></label><div class="input-group"><span class="input-group-text">£</span><input asp-for="AnnualIncome" class="form-control" inputmode="decimal" /></div><span asp-validation-for="AnnualIncome" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="MonthlyCommitments" class="form-label"></label><div class="input-group"><span class="input-group-text">£</span><input asp-for="MonthlyCommitments" class="form-control" inputmode="decimal" /></div><span asp-validation-for="MonthlyCommitments" class="field-validation"></span></div>
+                    <div class="col-md-6"><label asp-for="EmploymentType" class="form-label"></label><select asp-for="EmploymentType" asp-items="Html.GetEnumSelectList<EmploymentType>()" class="form-select"><option value="">Choose employment status</option></select><span asp-validation-for="EmploymentType" class="field-validation"></span></div>
+                </div>
+            </section>
+            <section class="staff-form-section" aria-labelledby="consent-heading">
+                <h2 id="consent-heading">Customer consent</h2>
+                <p>Record the customer's choices; do not select consent on their behalf without their agreement.</p>
+                <div class="form-check mb-3"><input asp-for="CreditCheckConsent" class="form-check-input" /><label asp-for="CreditCheckConsent" class="form-check-label"></label></div>
+                <div class="form-check"><input asp-for="OpenBankingConsent" class="form-check-input" /><label asp-for="OpenBankingConsent" class="form-check-label"></label></div>
+            </section>
+            <section class="staff-form-section" aria-labelledby="product-heading">
+                <h2 id="product-heading">Eligible products</h2>
+                <p>The indicative Decision in Principle is generated when you save. Product options are checked against the customer's property and deposit.</p>
+                @if (Model.Id is null)
+                {
+                    <p class="form-text">Save the draft to calculate eligible product options.</p>
+                }
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="SelectedProductId" class="form-label"></label>
+                        <select asp-for="SelectedProductId" class="form-select">
+                            <option value="">No product selected yet</option>
+                            @foreach (var product in Model.EligibleProducts)
+                            {
+                                <option value="@product.Id">@product.Name — @product.InterestRate.ToString("0.00")% (APRC @product.Aprc.ToString("0.00")%)</option>
+                            }
+                        </select>
+                        <span asp-validation-for="SelectedProductId" class="field-validation"></span>
+                        @if (Model.Id is not null && Model.EligibleProducts.Count == 0 && Model.PropertyValue.HasValue && Model.Deposit.HasValue)
+                        {
+                            <p class="form-text">No eligible products are currently available for these property and deposit details.</p>
+                        }
+                    </div>
+                </div>
+            </section>
+            @if (!isNew)
+            {
+                <div class="form-check staff-submit-check"><input asp-for="SubmitApplication" class="form-check-input" /><label asp-for="SubmitApplication" class="form-check-label">Submit this application after saving</label></div>
+            }
+        </fieldset>
+        @if (!readOnly)
+        {
+            <section class="staff-form-section staff-link-section" aria-labelledby="customer-link-heading">
+                <h2 id="customer-link-heading">Link to customer account</h2>
+                @if (Model.OwnerId is not null)
+                {
+                    <p>This application is linked to customer subject ID <code>@Model.OwnerId</code>. Ownership cannot be changed here.</p>
+                }
+                else
+                {
+                    <p class="staff-link-warning">Enter the customer's exact authentication subject ID. Email addresses do not verify account ownership. Customer sign-in and identity lookup are not configured in this local build, so this portal cannot verify the ID or create a customer account.</p>
+                    <label asp-for="CustomerSubjectId" class="form-label"></label>
+                    <input asp-for="CustomerSubjectId" class="form-control" autocomplete="off" />
+                    <span asp-validation-for="CustomerSubjectId" class="field-validation"></span>
+                }
+            </section>
+        }
+        else if (Model.OwnerId is not null)
+        {
+            <p>Linked customer subject ID: <code>@Model.OwnerId</code></p>
+        }
+        @if (!readOnly)
+        {
+            <div class="form-actions">
+                <a class="btn btn-outline-secondary" asp-action="Index">Cancel</a>
+                <button class="btn btn-primary btn-lg" type="submit">@(isNew ? "Create draft" : "Save changes")</button>
+            </div>
+        }
+    </form>
+    @if (!isNew && Model.Id.HasValue)
+    {
+        <section class="staff-form-section" aria-labelledby="decision-heading">
+            <h2 id="decision-heading">Application progress</h2>
+            <dl class="summary-list mb-0">
+                <dt>Application created</dt><dd>@Model.Id</dd>
+                <dt>Created by</dt><dd>@(Model.CreatedByEmployeeId ?? "Customer")</dd>
+                <dt>Current status</dt><dd>@(Model.Status is { } status ? status.GetDisplayName() : "")</dd>
+                <dt>Requested loan</dt><dd>@(Model.DecisionInPrinciple is null ? "Not assessed" : Model.DecisionInPrinciple.RequestedLoanAmount.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB")))</dd>
+                <dt>Decision in Principle</dt><dd>@(Model.DecisionInPrinciple is { } decision ? decision.Outcome.GetDisplayName() : "Not assessed")</dd>
+                @if (Model.DecisionInPrinciple?.IndicativeMaximumBorrowing is decimal maximumBorrowing)
+                {
+                    <dt>Indicative maximum borrowing</dt><dd>@maximumBorrowing.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
+                }
+            </dl>
+            <h3 class="staff-audit-heading">Customer documents</h3>
+            @if (Model.Documents.Count == 0)
+            {
+                <p>No documents have been uploaded.</p>
+            }
+            else
+            {
+                <ul class="document-list">
+                    @foreach (var document in Model.Documents)
+                    {
+                        <li><span><strong>@document.FileName</strong><small>@(document.SizeInBytes / 1024) KB · uploaded @document.UploadedAtUtc.ToLocalTime().ToString("d MMM yyyy")</small></span><a asp-action="DownloadDocument" asp-route-id="@Model.Id" asp-route-documentId="@document.Id" class="btn btn-sm btn-outline-primary">Download</a></li>
+                    }
+                </ul>
+            }
+            <h3 class="staff-audit-heading">Audit history</h3>
+            <a asp-action="AuditTrail" asp-route-id="@Model.Id">View audit history</a>
+        </section>
+    }
+</div>
