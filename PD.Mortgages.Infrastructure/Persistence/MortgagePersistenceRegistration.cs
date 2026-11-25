@@ -22,7 +22,7 @@ public static class MortgagePersistenceRegistration
             services.AddDbContext<MortgageDbContext>(dbOptions => dbOptions.UseSqlServer(connectionString));
             services.AddScoped<IMortgageApplicationRepository, SqlMortgageApplicationRepository>();
             services.AddScoped<IMortgageApplicationAuditRepository, SqlMortgageApplicationAuditRepository>();
-            services.AddScoped<IMortgageDocumentStorage, SqlMortgageDocumentStorage>();
+            services.AddSingleton<IMortgageDocumentStorage>(_ => new FileMortgageDocumentStorage(options.RootPath));
             return;
         }
 

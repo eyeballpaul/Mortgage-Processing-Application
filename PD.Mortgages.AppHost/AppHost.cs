@@ -3,6 +3,9 @@ var builder = DistributedApplication.CreateBuilder(args);
 var mortgagesDatabase = builder.AddSqlServer("mortgages-sql")
     .WithDataVolume("mortgages-sql-data")
     .AddDatabase("mortgages");
+var documentStorageRootPath = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    "PD.Mortgages");
 
 var productsApi = builder.AddDotnetProject("products-api", "../PD.Products.Api/PD.Products.Api.csproj")
     .WithHttpHealthCheck("/health/ready");
@@ -13,6 +16,7 @@ builder.AddDotnetProject("mortgages-web", "../PD.Mortgages.Web/PD.Mortgages.Web.
     .WithEnvironment("ProductService__UseMock", "false")
     .WithEnvironment("ProductService__BaseUrl", productsApi.GetEndpoint("https"))
     .WithEnvironment("Persistence__Provider", "SqlServer")
+    .WithEnvironment("Persistence__RootPath", documentStorageRootPath)
     .WaitFor(mortgagesDatabase)
     .WaitFor(productsApi);
 
@@ -22,6 +26,7 @@ builder.AddDotnetProject("mortgages-staff-web", "../PD.Mortgages.Staff.Web/PD.Mo
     .WithEnvironment("ProductService__UseMock", "false")
     .WithEnvironment("ProductService__BaseUrl", productsApi.GetEndpoint("https"))
     .WithEnvironment("Persistence__Provider", "SqlServer")
+    .WithEnvironment("Persistence__RootPath", documentStorageRootPath)
     .WaitFor(mortgagesDatabase)
     .WaitFor(productsApi);
 

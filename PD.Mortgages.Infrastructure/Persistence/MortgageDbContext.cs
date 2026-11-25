@@ -6,7 +6,6 @@ public sealed class MortgageDbContext(DbContextOptions<MortgageDbContext> option
 {
     public DbSet<MortgageApplicationRecord> Applications => Set<MortgageApplicationRecord>();
     public DbSet<MortgageApplicationAuditRecord> AuditEntries => Set<MortgageApplicationAuditRecord>();
-    public DbSet<MortgageDocumentContentRecord> DocumentContents => Set<MortgageDocumentContentRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,15 +38,5 @@ public sealed class MortgageDbContext(DbContextOptions<MortgageDbContext> option
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        modelBuilder.Entity<MortgageDocumentContentRecord>(entity =>
-        {
-            entity.ToTable("MortgageDocumentContents");
-            entity.HasKey(document => new { document.ApplicationId, document.DocumentId });
-            entity.Property(document => document.Contents).HasColumnType("varbinary(max)").IsRequired();
-            entity.HasOne<MortgageApplicationRecord>()
-                .WithMany()
-                .HasForeignKey(document => document.ApplicationId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
     }
 }
