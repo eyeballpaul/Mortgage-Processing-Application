@@ -11,7 +11,6 @@ public sealed class WizardController(
     IMortgageApplicationService applicationService,
     IWizardSession wizardSession,
     IDocumentUploadValidator documentUploadValidator,
-    IWizardPrerequisiteService prerequisiteService,
     WizardViewModelFactory viewModelFactory) : Controller
 {
 

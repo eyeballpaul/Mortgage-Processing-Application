@@ -48,7 +48,6 @@ builder.Services.AddSession(options =>
 builder.Services.AddMortgagePersistence(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IWizardSession, WizardSession>();
-builder.Services.AddSingleton<IWizardPrerequisiteService, WizardPrerequisiteService>();
 builder.Services.AddSingleton<WizardViewModelFactory>();
 builder.Services.AddSingleton<IDocumentUploadValidator, DocumentUploadValidator>();
 builder.Services.AddSingleton<LocalProductCatalogFallback>();

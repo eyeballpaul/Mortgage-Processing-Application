@@ -16,7 +16,7 @@ Both mortgage web apps -> PD.Mortgages.Infrastructure -> PD.Mortgages.Domain
 
 - **Domain** contains the mortgage application aggregate, product and document entities, application enums, the `LoanToValue` value object, eligibility domain service, and repository/storage contracts. It has no project dependencies.
 - **Application** contains DTOs and the application service that coordinates persistence, product eligibility, document storage, and submission.
-- **Infrastructure** implements in-memory, file-backed, and EF Core SQL Server persistence for applications and audit history, plus file document storage and product-service clients.
+- **Infrastructure** implements in-memory, file-backed, and EF Core SQL Server persistence for applications and audit history, in-memory and file document storage, and product-service clients.
 - **Web** contains the customer MVC controllers, annotated view models, strongly typed Razor pages, session configuration, layout, and responsive design system.
 - **Staff.Web** is the employee-facing MVC portal. It reuses the same application service, domain rules, repository, product catalog, styling, and application files.
 
