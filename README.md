@@ -4,6 +4,8 @@ A .NET 10 ASP.NET Core MVC demonstration of a UK mortgage application journey. I
 
 ## Architecture
 
+See [docs/architecture.md](docs/architecture.md) for local runtime diagrams, persistence modes, and the current Azure deployment.
+
 ```text
 PD.Mortgages.AppHost
 ├── PD.Mortgages.Web ────────────┐
