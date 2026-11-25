@@ -53,25 +53,6 @@ namespace PD.Mortgages.Infrastructure.Persistence.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
-            migrationBuilder.CreateTable(
-                name: "MortgageDocumentContents",
-                columns: table => new
-                {
-                    ApplicationId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    DocumentId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Contents = table.Column<byte[]>(type: "varbinary(max)", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_MortgageDocumentContents", x => new { x.ApplicationId, x.DocumentId });
-                    table.ForeignKey(
-                        name: "FK_MortgageDocumentContents_MortgageApplications_ApplicationId",
-                        column: x => x.ApplicationId,
-                        principalTable: "MortgageApplications",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
             migrationBuilder.CreateIndex(
                 name: "IX_MortgageApplicationAuditEntries_ApplicationId_RecordedAtUtc_Id",
                 table: "MortgageApplicationAuditEntries",
@@ -93,9 +74,6 @@ namespace PD.Mortgages.Infrastructure.Persistence.Migrations
         {
             migrationBuilder.DropTable(
                 name: "MortgageApplicationAuditEntries");
-
-            migrationBuilder.DropTable(
-                name: "MortgageDocumentContents");
 
             migrationBuilder.DropTable(
                 name: "MortgageApplications");

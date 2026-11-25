@@ -12,7 +12,7 @@ using PD.Mortgages.Infrastructure.Persistence;
 namespace PD.Mortgages.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MortgageDbContext))]
-    [Migration("20261125211308_InitialCreate")]
+    [Migration("20261125212642_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -108,33 +108,7 @@ namespace PD.Mortgages.Infrastructure.Persistence.Migrations
                     b.ToTable("MortgageApplications", (string)null);
                 });
 
-            modelBuilder.Entity("PD.Mortgages.Infrastructure.Persistence.MortgageDocumentContentRecord", b =>
-                {
-                    b.Property<Guid>("ApplicationId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("DocumentId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<byte[]>("Contents")
-                        .IsRequired()
-                        .HasColumnType("varbinary(max)");
-
-                    b.HasKey("ApplicationId", "DocumentId");
-
-                    b.ToTable("MortgageDocumentContents", (string)null);
-                });
-
             modelBuilder.Entity("PD.Mortgages.Infrastructure.Persistence.MortgageApplicationAuditRecord", b =>
-                {
-                    b.HasOne("PD.Mortgages.Infrastructure.Persistence.MortgageApplicationRecord", null)
-                        .WithMany()
-                        .HasForeignKey("ApplicationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("PD.Mortgages.Infrastructure.Persistence.MortgageDocumentContentRecord", b =>
                 {
                     b.HasOne("PD.Mortgages.Infrastructure.Persistence.MortgageApplicationRecord", null)
                         .WithMany()
