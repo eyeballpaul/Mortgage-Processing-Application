@@ -18,13 +18,27 @@
                 <span class="brand-name">PD <strong>Mortgages</strong><small>Employee workspace</small></span>
             </a>
             <nav class="header-nav" aria-label="Main navigation">
-                <a asp-controller="Applications" asp-action="Index">Applications</a>
-                <a asp-controller="Applications" asp-action="Create">New application</a>
+                @if (User.IsInRole(StaffAuthorization.StaffRole))
+                {
+                    <a asp-controller="Applications" asp-action="Index">Applications</a>
+                    <a asp-controller="Applications" asp-action="Create">New application</a>
+                }
+                @if (User.Identity?.IsAuthenticated == true)
+                {
+                    <span>@(User.FindFirst("name")?.Value ?? User.Identity.Name)</span>
+                    <form asp-controller="Account" asp-action="SignOutUser" method="post">
+                        <button class="nav-link" type="submit">Sign out</button>
+                    </form>
+                }
+                else
+                {
+                    <a asp-controller="Account" asp-action="SignIn">Sign in</a>
+                }
             </nav>
         </div>
     </header>
     <main id="main-content" class="page-container main-content">
-        <div class="staff-demo-notice" role="note">Development demonstration only. Do not enter real customer information.</div>
+        <div class="staff-demo-notice" role="note">Authorized employee access only.</div>
         @if (TempData["Notice"] is string notice)
         {
             <div class="alert alert-success notice-alert" role="status">@notice</div>
@@ -38,7 +52,7 @@
     <footer class="site-footer">
         <div class="page-container footer-inner">
             <a class="footer-brand" asp-controller="Applications" asp-action="Index">PD Mortgages Staff</a>
-            <p>Development demonstration. Employee authentication is required before deployment.</p>
+            <p>Staff access is restricted to assigned organization accounts.</p>
         </div>
     </footer>
     @await RenderSectionAsync("Scripts", required: false)
