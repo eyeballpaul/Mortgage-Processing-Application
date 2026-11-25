@@ -1,18 +1,28 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
+var mortgagesDatabase = builder.AddSqlServer("mortgages-sql")
+    .WithDataVolume("mortgages-sql-data")
+    .AddDatabase("mortgages");
+
 var productsApi = builder.AddDotnetProject("products-api", "../PD.Products.Api/PD.Products.Api.csproj")
     .WithHttpHealthCheck("/health/ready");
 
 builder.AddDotnetProject("mortgages-web", "../PD.Mortgages.Web/PD.Mortgages.Web.csproj")
     .WithHttpHealthCheck("/health/ready")
+    .WithReference(mortgagesDatabase)
     .WithEnvironment("ProductService__UseMock", "false")
     .WithEnvironment("ProductService__BaseUrl", productsApi.GetEndpoint("https"))
+    .WithEnvironment("Persistence__Provider", "SqlServer")
+    .WaitFor(mortgagesDatabase)
     .WaitFor(productsApi);
 
 builder.AddDotnetProject("mortgages-staff-web", "../PD.Mortgages.Staff.Web/PD.Mortgages.Staff.Web.csproj")
     .WithHttpHealthCheck("/health/ready")
+    .WithReference(mortgagesDatabase)
     .WithEnvironment("ProductService__UseMock", "false")
     .WithEnvironment("ProductService__BaseUrl", productsApi.GetEndpoint("https"))
+    .WithEnvironment("Persistence__Provider", "SqlServer")
+    .WaitFor(mortgagesDatabase)
     .WaitFor(productsApi);
 
 builder.Build().Run();

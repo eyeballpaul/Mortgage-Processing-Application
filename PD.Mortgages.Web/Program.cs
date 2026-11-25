@@ -2,14 +2,11 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using PD.Mortgages.Application.Services;
 using PD.Mortgages.Application.Security;
-using PD.Mortgages.Domain.Repositories;
 using PD.Mortgages.Web.Health;
 using PD.Mortgages.Web.Middleware;
 using PD.Mortgages.Web.Services;
 using PD.Mortgages.Web.Security;
 using PD.Mortgages.Web.Configuration;
-using PD.Mortgages.Infrastructure.Repositories;
-using PD.Mortgages.Infrastructure.Storage;
 using PD.Mortgages.Infrastructure.Products;
 using PD.Mortgages.Infrastructure.Persistence;
 
@@ -48,21 +45,7 @@ builder.Services.AddSession(options =>
     options.Cookie.SameSite = SameSiteMode.Lax;
 });
 
-var persistenceOptions = builder.Configuration.GetSection(MortgagePersistenceOptions.SectionName)
-    .Get<MortgagePersistenceOptions>() ?? new MortgagePersistenceOptions();
-builder.Services.AddSingleton(persistenceOptions);
-if (string.Equals(persistenceOptions.Provider, "File", StringComparison.OrdinalIgnoreCase))
-{
-    builder.Services.AddSingleton<IMortgageApplicationRepository, FileMortgageApplicationRepository>();
-    builder.Services.AddSingleton<IMortgageApplicationAuditRepository, FileMortgageApplicationAuditRepository>();
-    builder.Services.AddSingleton<IMortgageDocumentStorage>(_ => new FileMortgageDocumentStorage(persistenceOptions.RootPath));
-}
-else
-{
-    builder.Services.AddSingleton<IMortgageApplicationRepository, InMemoryMortgageApplicationRepository>();
-    builder.Services.AddSingleton<IMortgageApplicationAuditRepository, InMemoryMortgageApplicationAuditRepository>();
-    builder.Services.AddSingleton<IMortgageDocumentStorage, InMemoryMortgageDocumentStorage>();
-}
+builder.Services.AddMortgagePersistence(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IWizardSession, WizardSession>();
 builder.Services.AddSingleton<IWizardPrerequisiteService, WizardPrerequisiteService>();
@@ -95,6 +78,7 @@ else
 builder.Services.AddScoped<IMortgageApplicationService, MortgageApplicationService>();
 
 var app = builder.Build();
+await app.Services.MigrateMortgageDatabaseAsync();
 
 if (!app.Environment.IsDevelopment())
 {

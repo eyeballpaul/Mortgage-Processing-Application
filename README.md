@@ -27,7 +27,7 @@ The application flow is: property and deposit → applicant details → income a
 dotnet run --project PD.Mortgages.AppHost --launch-profile https
 ```
 
-Aspire starts the customer mortgage web app, employee portal, and Products API together and opens the Aspire dashboard. Both web apps use the same application services, but each process has its own in-memory applications, audit history, documents, and session state. Records are not shared between the portals and are lost when their respective process restarts. Customer account access follows the application's existing owner identity; employee-created applications remain unassigned until staff explicitly links the customer's stable authentication subject ID. In VS Code, press **F5** and choose **PD Mortgages (Aspire)**, or use **Terminal → Run Task → run Aspire AppHost**.
+Aspire starts a SQL Server container, the customer mortgage web app, employee portal, and Products API, then opens the Aspire dashboard. Both web apps use the same Azure SQL-compatible persistence provider and database for applications, audit history, and uploaded document contents. Aspire applies EF Core migrations at startup, and a Docker data volume preserves the database across restarts. Wizard session state remains in each web process and is lost if that process restarts. Customer account access follows the application's existing owner identity; employee-created applications remain unassigned until staff explicitly links the customer's stable authentication subject ID. In VS Code, press **F5** and choose **PD Mortgages (Aspire)**, or use **Terminal → Run Task → run Aspire AppHost**. Docker Desktop must be running.
 
 The employee portal opens at its `mortgages-staff-web` URL. It provides a recent-application dashboard with applicant/email/reference/creator search, status filtering, and 25-result pages. Creating or editing a draft follows the same eight-step sequence as the customer journey: property, applicant, finances, consents, Decision in Principle, product, optional documents, and review. Employees use the existing domain workflow rules, including Decision in Principle generation and eligible-product validation. The staff Decision in Principle step shows a loading spinner during the simulated assessment and enables a direct, guarded link to mortgage options when it completes. Staff-created applications store the creating employee's stable identity ID separately from the customer owner, show it in the staff dashboard and application details, and allow searching by creator. Customer-created applications have no employee creator. Staff can link an unassigned application to a customer's exact authentication subject ID; the link is audited and cannot be changed after assignment. Customer sign-in and identity lookup are not configured in this local build, so linking stores an ID but cannot verify or create a customer account. The portal uses a development staff identity and deliberately refuses to run outside the Development environment. Configure real employee authentication/authorization and a trusted customer identity lookup before any non-development use.
 
@@ -39,11 +39,11 @@ dotnet build PD.Mortgages.slnx
 dotnet run --project PD.Mortgages.Web
 ```
 
-This standalone mode uses the development mock product catalog and in-memory application, audit, document, and session stores. Open the local URL printed by `dotnet run`. All application data is lost when the web app restarts.
+This standalone mode uses the development mock product catalog and in-memory application, audit, document, and session stores; it does not start SQL Server. Open the local URL printed by `dotnet run`. All application data is lost when the web app restarts.
 
 ### Run and debug in VS Code
 
-Open the solution folder in VS Code and install the recommended C# Dev Kit extension. Aspire runs the customer web app, staff web app, and Products API as separate .NET projects; it does not require Docker for these projects.
+Open the solution folder in VS Code and install the recommended C# Dev Kit extension. Aspire runs the customer web app, staff web app, and Products API as .NET projects and SQL Server in a Docker container.
 
 ## Azure DevOps and Azure Container Apps
 
@@ -59,4 +59,4 @@ Before running the pipeline:
 
 ## Demonstration limitations
 
-PD Mortgages, its rates, products, estimates, and statuses are fictional. Credit checks, open banking, underwriting, and lender submission are not connected to external services. Uploaded PDFs and images are stored on local disk with size/type checks. File persistence is a local demonstration option, not production-grade shared storage; the employee portal is development-only until real authentication, authorization, audit retention, and production persistence are configured. Do not use this demonstration with real financial or identity data.
+PD Mortgages, its rates, products, estimates, and statuses are fictional. Credit checks, open banking, underwriting, and lender submission are not connected to external services. Local Aspire stores uploaded document bytes in SQL Server; the existing Azure deployment still uses file-backed persistence and Azure Files. Configure Azure SQL and Azure Blob Storage, real authentication, authorization, and audit retention before production use. Do not use this demonstration with real financial or identity data.
