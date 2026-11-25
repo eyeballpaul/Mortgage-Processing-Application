@@ -4,6 +4,7 @@
 	<ProjectReference Include="..\PD.Products.Application\PD.Products.Application.csproj" />
 	<ProjectReference Include="..\PD.Products.Api\PD.Products.Api.csproj" />
 	<ProjectReference Include="..\PD.Products.Domain\PD.Products.Domain.csproj" />
+	<ProjectReference Include="..\PD.Products.Infrastructure\PD.Products.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

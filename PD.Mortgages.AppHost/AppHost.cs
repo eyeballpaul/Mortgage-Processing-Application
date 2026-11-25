@@ -1,13 +1,17 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var mortgagesDatabase = builder.AddSqlServer("mortgages-sql")
-    .WithDataVolume("mortgages-sql-data")
-    .AddDatabase("mortgages");
+var sqlServer = builder.AddSqlServer("mortgages-sql")
+    .WithDataVolume("mortgages-sql-data");
+var mortgagesDatabase = sqlServer.AddDatabase("mortgages");
+var productsDatabase = sqlServer.AddDatabase("products");
 var documentStorageRootPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
     "PD.Mortgages");
 
 var productsApi = builder.AddDotnetProject("products-api", "../PD.Products.Api/PD.Products.Api.csproj")
+    .WithReference(productsDatabase)
+    .WithEnvironment("Persistence__Provider", "SqlServer")
+    .WaitFor(productsDatabase)
     .WithHttpHealthCheck("/health/ready");
 
 builder.AddDotnetProject("mortgages-web", "../PD.Mortgages.Web/PD.Mortgages.Web.csproj")

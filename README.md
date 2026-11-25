@@ -1,6 +1,6 @@
 # PD Mortgages
 
-A .NET 10 ASP.NET Core MVC demonstration of a UK mortgage application journey. It uses Razor views, Bootstrap 5, server-side DataAnnotations validation, and session state. Standalone development can use in-memory storage; Aspire runs the web apps against a shared SQL Server database for applications and audit history, with document contents stored as files. No live lender, credit-check, or open-banking integrations are connected.
+A .NET 10 ASP.NET Core MVC demonstration of a UK mortgage application journey. It uses Razor views, Bootstrap 5, server-side DataAnnotations validation, and session state. Standalone development can use in-memory storage; Aspire runs the apps against separate mortgage and product databases on one local SQL Server container, with document contents stored as files. No live lender, credit-check, or open-banking integrations are connected.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ PD.Mortgages.AppHost
 ├── PD.Mortgages.Web ────────────┐
 ├── PD.Mortgages.Staff.Web ──────┴──> PD.Mortgages.Application -> PD.Mortgages.Domain
 ├── PD.Products.Api
-└── SQL Server (local Aspire; mortgage applications and audit)
+└── SQL Server (local Aspire; mortgages and products databases)
 
 Both mortgage web apps -> PD.Mortgages.Infrastructure -> PD.Mortgages.Domain
 ```
@@ -21,6 +21,7 @@ Both mortgage web apps -> PD.Mortgages.Infrastructure -> PD.Mortgages.Domain
 - **Infrastructure** implements in-memory, file-backed, and EF Core SQL Server persistence for applications and audit history, in-memory and file document storage, and product-service clients.
 - **Web** contains the customer MVC controllers, annotated view models, strongly typed Razor pages, session configuration, layout, and responsive design system.
 - **Staff.Web** is the employee-facing MVC portal. It reuses the same application service, domain rules, repository, product catalog, styling, and application files.
+- **Products.Api** exposes the product catalog over HTTP. Aspire uses a SQL-backed catalog; standalone runs and the current Azure deployment use the in-memory catalog.
 
 The application flow is: property and deposit → applicant details → income and commitments → optional credit/open-banking consent → an indicative Decision in Principle guide → eligible example products → optional document upload → review and submission. The DIP page displays a loading state while the backend runs a simulated assessment with a two-second delay. The resulting guide is a simple 4.5× annual-income illustration only; it is not a lender decision, does not contact a credit agency, and is not an offer or guarantee. A dashboard summarizes status, timeline, DIP guide, product, and documents.
 
@@ -32,7 +33,7 @@ The application flow is: property and deposit → applicant details → income a
 dotnet run --project PD.Mortgages.AppHost --launch-profile https
 ```
 
-Before starting Aspire, configure staff sign-in as described below. Aspire starts a local SQL Server container, the customer mortgage web app, employee portal, and Products API, then opens the Aspire dashboard. Both web apps share the database for mortgage applications and audit history. Uploaded document contents are stored as shared local files under the current user's application-data directory, not in SQL. The current `InitialCreate` migration is intended for a fresh database; it does not upgrade older schemas. Back up an older database and prepare a deliberate migration or reset before using this baseline. A Docker data volume preserves the database across restarts. Customer wizard session state is in memory and is lost if the customer web process restarts. Customer account access follows the application's existing owner identity; employee-created applications remain unassigned until staff explicitly links the customer's stable authentication subject ID. In VS Code, press **F5** and choose **PD Mortgages (Aspire)**, or use **Terminal → Run Task → run Aspire AppHost**. Docker Desktop must be running.
+Before starting Aspire, configure staff sign-in as described below. Aspire starts a local SQL Server container, the customer mortgage web app, employee portal, and Products API, then opens the Aspire dashboard. The web apps share the `mortgages` database for application and audit data; the API uses a separate `products` database in the same SQL Server container. Its migration seeds the current example products. Uploaded document contents are stored as shared local files under the current user's application-data directory, not in SQL. The mortgage and product `InitialCreate` migrations are baselines for fresh databases; they do not upgrade older schemas. Back up older databases and prepare deliberate migrations or resets before using these baselines. A Docker data volume preserves both databases across restarts. Customer wizard session state is in memory and is lost if the customer web process restarts. Customer account access follows the application's existing owner identity; employee-created applications remain unassigned until staff explicitly links the customer's stable authentication subject ID. In VS Code, press **F5** and choose **PD Mortgages (Aspire)**, or use **Terminal → Run Task → run Aspire AppHost**. Docker Desktop must be running.
 
 ### Configure staff sign-in
 
@@ -70,11 +71,11 @@ Run the test suite with:
 dotnet test PD.Mortgages.slnx
 ```
 
-Tests run without starting Aspire or connecting to SQL Server. Most mortgage service tests use in-memory repositories; durable-storage tests use isolated temporary files. The SQL persistence test checks service registration only and does not connect to a database. Products API tests run in-process with the API's in-memory product catalog. SQL queries and migrations are not currently covered by database integration tests.
+Tests run without starting Aspire or connecting to SQL Server. Most mortgage service tests use in-memory repositories; durable-storage tests use isolated temporary files. SQL persistence tests check service registration only and do not connect to a database. Products API tests run in-process with its in-memory catalog. SQL queries and migrations are not currently covered by database integration tests.
 
 ## Azure DevOps and Azure Container Apps
 
-`azure-pipelines.yml` builds and tests the solution on pull requests and pushes to `main`. On `main`, it provisions the Azure foundation with `infra/main.bicep`, builds and pushes version-tagged images for the customer web app, staff web app, and Products API to Azure Container Registry, then deploys the customer web app and internal Products API to Azure Container Apps. Bicep provisions Azure Files for the file-backed demo data, a Log Analytics workspace, and managed-identity-based registry pulls. The customer app uses a single replica and in-memory sessions; sessions are lost when that replica restarts.
+`azure-pipelines.yml` builds and tests the solution on pull requests and pushes to `main`. On `main`, it provisions the Azure foundation with `infra/main.bicep`, builds and pushes version-tagged images for the customer web app, staff web app, and Products API to Azure Container Registry, then deploys the customer web app and internal Products API to Azure Container Apps. Bicep provisions Azure Files for the file-backed demo data, a Log Analytics workspace, and managed-identity-based registry pulls. The customer app uses a single replica and in-memory sessions; sessions are lost when that replica restarts. The deployed Products API still uses its in-memory catalog; the local `products` SQL database is not deployed to Azure.
 
 Before running the pipeline:
 

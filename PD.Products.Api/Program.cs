@@ -1,10 +1,9 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using PD.Products.Application.Services;
-using PD.Products.Domain.Repositories;
 using PD.Products.Domain.Services;
 using PD.Products.Api.Health;
 using PD.Products.Api.Middleware;
-using PD.Products.Infrastructure.Repositories;
+using PD.Products.Infrastructure.Persistence;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -26,11 +25,12 @@ builder.Services.AddRateLimiter(options =>
 });
 builder.Services.AddHealthChecks()
     .AddCheck<ProductCatalogHealthCheck>("product-catalog", tags: ["ready"]);
-builder.Services.AddSingleton<IMortgageProductRepository, InMemoryMortgageProductRepository>();
+builder.Services.AddProductPersistence(builder.Configuration);
 builder.Services.AddSingleton<ProductEligibilityService>();
-builder.Services.AddSingleton<IProductService, ProductService>();
+builder.Services.AddScoped<IProductService, ProductService>();
 
 var app = builder.Build();
+await app.Services.MigrateProductDatabaseAsync(builder.Configuration);
 
 app.UseHttpsRedirection();
 app.UseExceptionHandler();
