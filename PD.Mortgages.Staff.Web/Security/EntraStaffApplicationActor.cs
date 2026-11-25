@@ -16,8 +16,8 @@ public sealed class EntraStaffApplicationActor(IHttpContextAccessor httpContextA
         get
         {
             if (!IsAuthenticated ||
-                !Guid.TryParse(User?.FindFirst("tid")?.Value, out var tenantId) ||
-                !Guid.TryParse(User?.FindFirst("oid")?.Value, out var objectId))
+                !Guid.TryParse(User?.FindFirst(StaffAuthorization.TenantIdClaim)?.Value, out var tenantId) ||
+                !Guid.TryParse(User?.FindFirst(StaffAuthorization.ObjectIdClaim)?.Value, out var objectId))
             {
                 return null;
             }

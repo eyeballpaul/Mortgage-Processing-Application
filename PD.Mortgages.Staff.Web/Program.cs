@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using PD.Mortgages.Application.Security;
 using PD.Mortgages.Application.Services;
 using PD.Mortgages.Infrastructure.Persistence;
@@ -41,17 +42,18 @@ builder.Services.Configure<CookieAuthenticationOptions>(CookieAuthenticationDefa
 });
 builder.Services.Configure<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme, options =>
 {
-    options.MapInboundClaims = false;
+    options.ResponseType = OpenIdConnectResponseType.Code;
+    options.MapInboundClaims = true;
     options.TokenValidationParameters.NameClaimType = "name";
-    options.TokenValidationParameters.RoleClaimType = "roles";
+    options.TokenValidationParameters.RoleClaimType = StaffAuthorization.RoleClaimType;
 });
 builder.Services.AddAuthorization(options =>
 {
     var staffPolicy = new AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
         .RequireRole(StaffAuthorization.StaffRole)
-        .RequireClaim("tid")
-        .RequireClaim("oid")
+        .RequireClaim(StaffAuthorization.TenantIdClaim)
+        .RequireClaim(StaffAuthorization.ObjectIdClaim)
         .Build();
     options.DefaultPolicy = staffPolicy;
     options.FallbackPolicy = staffPolicy;

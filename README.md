@@ -31,7 +31,7 @@ Before starting Aspire, configure staff sign-in as described below. Aspire then 
 
 ### Configure staff sign-in
 
-The staff portal uses single-tenant Microsoft Entra ID OpenID Connect. Create a development app registration with Web redirect URI `https://localhost:7241/signin-oidc` and front-channel sign-out callback `https://localhost:7241/signout-callback-oidc`. Add an app role whose value is `MortgageStaff`, require assignment on the enterprise application, and assign your staff account or group to the role. Then store the registration values locally with User Secrets:
+The staff portal uses single-tenant Microsoft Entra ID OpenID Connect with the authorization-code flow. Create a development app registration with Web redirect URI `https://localhost:7241/signin-oidc` and front-channel sign-out callback `https://localhost:7241/signout-callback-oidc`; the app does not require the implicit ID-token grant. Add an app role whose value is `MortgageStaff`, require assignment on the enterprise application, and assign your staff account or group to the role. Then store the registration values locally with User Secrets:
 
 ```bash
 dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>" --project PD.Mortgages.Staff.Web

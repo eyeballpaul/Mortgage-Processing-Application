@@ -12,9 +12,9 @@ public sealed class EntraStaffApplicationActorTests
         var tenantId = Guid.NewGuid();
         var objectId = Guid.NewGuid();
         var actor = CreateActor(
-            new Claim("tid", tenantId.ToString()),
-            new Claim("oid", objectId.ToString()),
-            new Claim("roles", StaffAuthorization.StaffRole));
+            new Claim(StaffAuthorization.TenantIdClaim, tenantId.ToString()),
+            new Claim(StaffAuthorization.ObjectIdClaim, objectId.ToString()),
+            new Claim(StaffAuthorization.RoleClaimType, StaffAuthorization.StaffRole));
 
         Assert.True(actor.IsAuthenticated);
         Assert.True(actor.IsStaff);
@@ -25,8 +25,8 @@ public sealed class EntraStaffApplicationActorTests
     public void AuthenticatedUserWithoutStaffRoleIsNotStaff()
     {
         var actor = CreateActor(
-            new Claim("tid", Guid.NewGuid().ToString()),
-            new Claim("oid", Guid.NewGuid().ToString()));
+            new Claim(StaffAuthorization.TenantIdClaim, Guid.NewGuid().ToString()),
+            new Claim(StaffAuthorization.ObjectIdClaim, Guid.NewGuid().ToString()));
 
         Assert.True(actor.IsAuthenticated);
         Assert.False(actor.IsStaff);
@@ -34,7 +34,11 @@ public sealed class EntraStaffApplicationActorTests
 
     private static EntraStaffApplicationActor CreateActor(params Claim[] claims)
     {
-        var identity = new ClaimsIdentity(claims, "test", "name", "roles");
+        var identity = new ClaimsIdentity(
+            claims,
+            "test",
+            "name",
+            StaffAuthorization.RoleClaimType);
         var context = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
         return new EntraStaffApplicationActor(new HttpContextAccessor { HttpContext = context });
     }
