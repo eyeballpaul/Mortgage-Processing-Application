@@ -18,7 +18,6 @@ variables:
   pipelinePrincipalName: 'REPLACE-WITH-SERVICE-PRINCIPAL-DISPLAY-NAME'
   containerAppEnvironmentName: 'pd-mortgages-env'
   sqlServerName: 'REPLACEWITHUNIQUESQLSERVER'
-  storageAccountName: 'REPLACEWITHUNIQUESTORAGE'
   documentStorageAccountName: 'REPLACEWITHUNIQUEDOCUMENTS'
   mortgagesWebAppName: 'pd-mortgages-web'
   productsApiAppName: 'pd-products-api'
@@ -87,7 +86,6 @@ stages:
                   "containerRegistryName=$ACR_NAME"
                   "containerAppEnvironmentName=$CONTAINER_APP_ENVIRONMENT"
                   "sqlServerName=$SQL_SERVER_NAME"
-                  "storageAccountName=$STORAGE_ACCOUNT_NAME"
                   "documentStorageAccountName=$DOCUMENT_STORAGE_ACCOUNT_NAME"
                   "mortgagesWebAppName=$MORTGAGES_WEB_APP"
                   "productsApiAppName=$PRODUCTS_API_APP"
@@ -111,17 +109,17 @@ stages:
                   --output json)"
                 databaseServerName="$(jq -r '.databaseServerName.value' <<< "$deploymentOutputs")"
                 mortgagesIdentityName="$(jq -r '.mortgagesIdentityName.value' <<< "$deploymentOutputs")"
-                mortgagesIdentityPrincipalId="$(jq -r '.mortgagesIdentityPrincipalId.value' <<< "$deploymentOutputs")"
+                mortgagesIdentityClientId="$(jq -r '.mortgagesIdentityClientId.value' <<< "$deploymentOutputs")"
                 productsIdentityName="$(jq -r '.productsIdentityName.value' <<< "$deploymentOutputs")"
-                productsIdentityPrincipalId="$(jq -r '.productsIdentityPrincipalId.value' <<< "$deploymentOutputs")"
+                productsIdentityClientId="$(jq -r '.productsIdentityClientId.value' <<< "$deploymentOutputs")"
 
                 dotnet run --project PD.Mortgages.DatabaseBootstrap/PD.Mortgages.DatabaseBootstrap.csproj \
                   --configuration Release --no-restore -- \
                   --server "$databaseServerName" \
                   --mortgages-identity-name "$mortgagesIdentityName" \
-                  --mortgages-identity-object-id "$mortgagesIdentityPrincipalId" \
+                  --mortgages-identity-client-id "$mortgagesIdentityClientId" \
                   --products-identity-name "$productsIdentityName" \
-                  --products-identity-object-id "$productsIdentityPrincipalId"
+                  --products-identity-client-id "$productsIdentityClientId"
 
                 loginServer="$(az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query loginServer --output tsv)"
                 for attempt in $(seq 1 10); do
@@ -156,7 +154,6 @@ stages:
               PIPELINE_PRINCIPAL_NAME: $(pipelinePrincipalName)
               CONTAINER_APP_ENVIRONMENT: $(containerAppEnvironmentName)
               SQL_SERVER_NAME: $(sqlServerName)
-              STORAGE_ACCOUNT_NAME: $(storageAccountName)
               DOCUMENT_STORAGE_ACCOUNT_NAME: $(documentStorageAccountName)
               MORTGAGES_WEB_APP: $(mortgagesWebAppName)
               PRODUCTS_API_APP: $(productsApiAppName)

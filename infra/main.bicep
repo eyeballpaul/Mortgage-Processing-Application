@@ -17,11 +17,6 @@ param containerAppEnvironmentName string
 @maxLength(63)
 param sqlServerName string
 
-@description('Globally unique, lowercase storage account name (3-24 alphanumeric characters).')
-@minLength(3)
-@maxLength(24)
-param storageAccountName string
-
 @description('Globally unique, lowercase storage account name for private mortgage document blobs.')
 @minLength(3)
 @maxLength(24)
@@ -109,33 +104,6 @@ resource imagePullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 	roleDefinitionId: acrPullRoleDefinitionId
 	principalId: imagePullIdentity.properties.principalId
 	principalType: 'ServicePrincipal'
-  }
-}
-
-// Kept intact for exporting records from an earlier Azure Files demo deployment.
-resource fileStorage 'Microsoft.Storage/storageAccounts@2026-09-01' = {
-  name: storageAccountName
-  location: location
-  sku: {
-	name: 'Standard_LRS'
-  }
-  kind: 'StorageV2'
-  properties: {
-	accessTier: 'Hot'
-	allowBlobPublicAccess: false
-	allowSharedKeyAccess: true
-	minimumTlsVersion: 'TLS1_2'
-	publicNetworkAccess: 'Enabled'
-	supportsHttpsTrafficOnly: true
-  }
-  tags: appTags
-}
-
-resource legacyFileShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2026-09-01' = {
-  name: '${fileStorage.name}/default/mortgage-data'
-  properties: {
-	accessTier: 'TransactionOptimized'
-	shareQuota: 100
   }
 }
 
@@ -244,7 +212,6 @@ resource mortgagesDatabase 'Microsoft.Sql/servers/databases@2023-08-01' = {
 	family: 'Gen5'
 	capacity: 2
   }
-  kind: 'v12.0,user,vcore,serverless'
   properties: {
 	autoPauseDelay: 60
 	minCapacity: json('0.5')
@@ -262,7 +229,6 @@ resource productsDatabase 'Microsoft.Sql/servers/databases@2023-08-01' = {
 	family: 'Gen5'
 	capacity: 2
   }
-  kind: 'v12.0,user,vcore,serverless'
   properties: {
 	autoPauseDelay: 60
 	minCapacity: json('0.5')
@@ -550,6 +516,6 @@ output mortgagesWebUrl string = deployApps ? 'https://${mortgagesWeb!.properties
 output productsApiInternalUrl string = deployApps ? 'https://${productsApi!.properties.configuration.ingress.fqdn}' : ''
 output databaseServerName string = sqlServer.properties.fullyQualifiedDomainName
 output mortgagesIdentityName string = mortgagesIdentity.name
-output mortgagesIdentityPrincipalId string = mortgagesIdentity.properties.principalId
+output mortgagesIdentityClientId string = mortgagesIdentity.properties.clientId
 output productsIdentityName string = productsIdentity.name
-output productsIdentityPrincipalId string = productsIdentity.properties.principalId
+output productsIdentityClientId string = productsIdentity.properties.clientId

@@ -30,11 +30,15 @@ static async Task EnsureApplicationAccessAsync(
     await connection.OpenAsync();
     var safeName = identity.Name.Replace("]", "]]", StringComparison.Ordinal);
     var escapedName = identity.Name.Replace("'", "''", StringComparison.Ordinal);
-    var identitySid = Convert.ToHexString(identity.ObjectId.ToByteArray());
+    var identitySid = Convert.ToHexString(identity.ClientId.ToByteArray());
     await using var command = connection.CreateCommand();
     command.CommandText = $"""
         IF DATABASE_PRINCIPAL_ID(N'{escapedName}') IS NULL
             CREATE USER [{safeName}] WITH SID = 0x{identitySid}, TYPE = E;
+        ELSE IF NOT EXISTS (
+            SELECT 1 FROM sys.database_principals
+            WHERE name = N'{escapedName}' AND type = 'E' AND sid = 0x{identitySid})
+            THROW 50000, 'Existing database principal does not match the managed identity client ID.', 1;
         """;
     await command.ExecuteNonQueryAsync();
     await EnsureRoleMembershipAsync(connection, safeName, escapedName, "db_datareader");
@@ -108,7 +112,7 @@ static BootstrapOptions ParseArguments(string[] arguments)
     {
         if (index + 1 >= arguments.Length || !arguments[index].StartsWith("--", StringComparison.Ordinal))
         {
-            throw new ArgumentException("Expected --server, --identity-name, and --identity-object-id arguments.");
+            throw new ArgumentException("Expected --server, --identity-name, and --identity-client-id arguments.");
         }
 
         values[arguments[index][2..]] = arguments[index + 1];
@@ -116,19 +120,19 @@ static BootstrapOptions ParseArguments(string[] arguments)
 
     if (!values.TryGetValue("server", out var server) ||
         !values.TryGetValue("mortgages-identity-name", out var mortgagesIdentityName) ||
-        !values.TryGetValue("mortgages-identity-object-id", out var mortgagesIdentityObjectIdText) ||
-        !Guid.TryParse(mortgagesIdentityObjectIdText, out var mortgagesIdentityObjectId) ||
+        !values.TryGetValue("mortgages-identity-client-id", out var mortgagesIdentityClientIdText) ||
+        !Guid.TryParse(mortgagesIdentityClientIdText, out var mortgagesIdentityClientId) ||
         !values.TryGetValue("products-identity-name", out var productsIdentityName) ||
-        !values.TryGetValue("products-identity-object-id", out var productsIdentityObjectIdText) ||
-        !Guid.TryParse(productsIdentityObjectIdText, out var productsIdentityObjectId))
+        !values.TryGetValue("products-identity-client-id", out var productsIdentityClientIdText) ||
+        !Guid.TryParse(productsIdentityClientIdText, out var productsIdentityClientId))
     {
-        throw new ArgumentException("Provide --server and valid identity names and object IDs for mortgages and products.");
+        throw new ArgumentException("Provide --server and valid identity names and client IDs for mortgages and products.");
     }
 
     return new BootstrapOptions(
         server,
-        new ApplicationIdentity(mortgagesIdentityName, mortgagesIdentityObjectId, CanWrite: true),
-        new ApplicationIdentity(productsIdentityName, productsIdentityObjectId, CanWrite: false));
+        new ApplicationIdentity(mortgagesIdentityName, mortgagesIdentityClientId, CanWrite: true),
+        new ApplicationIdentity(productsIdentityName, productsIdentityClientId, CanWrite: false));
 }
 
 sealed record BootstrapOptions(
@@ -136,4 +140,4 @@ sealed record BootstrapOptions(
     ApplicationIdentity MortgagesIdentity,
     ApplicationIdentity ProductsIdentity);
 
-sealed record ApplicationIdentity(string Name, Guid ObjectId, bool CanWrite);
+sealed record ApplicationIdentity(string Name, Guid ClientId, bool CanWrite);

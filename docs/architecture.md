@@ -74,7 +74,7 @@ Staff MVC routes require an authenticated Entra identity with the `MortgageStaff
 | Staff web standalone | Files under `data` | Files under `data` | In-process mock | No staff wizard session |
 | Current Azure deployment | Azure SQL `mortgages` database | Private Azure Blob container | Azure SQL `products` database | SQL distributed cache; Data Protection keys in private Blob container |
 
-The mortgage and product EF Core `InitialCreate` migrations are baselines for fresh databases; later migrations are applied by the deployment bootstrap tool, not by application replicas. The SQL-backed audit write commits an application change and its audit event in one transaction. File/in-memory providers remain local/demo options. Tests do not connect to SQL Server; see the [test notes in the README](../README.md#tests).
+The mortgage and product EF Core `InitialCreate` migrations are baselines for fresh databases. The mortgage session-cache migration follows its baseline; both remain in history so existing databases can upgrade. The deployment bootstrap applies migrations before app deployment, not in Azure application replicas. The SQL-backed audit write commits an application change and its audit event in one transaction. File/in-memory providers remain local/demo options. Tests do not connect to SQL Server; see the [test notes in the README](../README.md#tests).
 
 ## Current Azure deployment
 
@@ -95,7 +95,5 @@ flowchart LR
 ```
 
 The pipeline builds and pushes images for all three projects, but deploys only the customer app and internal Products API. Azure SQL is Entra-only: the pipeline service principal bootstraps the two application identities and applies EF migrations; runtime identities are separately scoped, with product-catalog read access and mortgage-data read/write access. Blob shared-key access and anonymous container access are disabled. The SQL server and Blob endpoint currently use Azure public endpoints with Azure SQL's trusted-Azure-services firewall rule; use private endpoints/VNet integration before a production deployment.
-
-The old Azure Files account/share is retained for export and rollback, but the new app revisions no longer mount or read it. Existing file-backed applications, audit logs, and document bytes are **not copied automatically** into SQL/Blob. Back up and migrate any data before switching an existing deployment.
 
 The staff image still has no Container App deployment or production Entra configuration. Both portals support persistent Data Protection keys when `DataProtection:BlobUri` is configured; the mortgage app is configured to use its Blob key object in Azure. Customer authentication remains intentionally unconfigured in this demonstration: production configuration still requires an authenticated customer, so the customer journey is not usable until a customer identity scheme is implemented.
