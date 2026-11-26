@@ -50,8 +50,12 @@ param staffClientSecret string
 @description('Image tag produced by the pipeline.')
 param imageTag string = 'latest'
 
-@description('Object ID of the Azure DevOps service connection service principal.')
+@description('Object ID of the user or service principal granted AcrPush.')
 param pipelinePrincipalId string
+
+@allowed(['User', 'ServicePrincipal'])
+@description('Directory principal type of the identity granted AcrPush.')
+param pipelinePrincipalType string = 'ServicePrincipal'
 
 @description('Bootstrap SQL administrator password. SQL authentication is disabled after server provisioning.')
 @secure()
@@ -122,6 +126,9 @@ resource privateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-0
     addressPrefix: '10.42.1.0/24'
     privateEndpointNetworkPolicies: 'Disabled'
   }
+  dependsOn: [
+    appSubnet
+  ]
 }
 
 resource sqlPrivateDns 'Microsoft.Network/privateDnsZones@2024-06-01' = {
@@ -176,7 +183,7 @@ resource pipelinePushRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   properties: {
 	roleDefinitionId: acrPushRoleDefinitionId
 	principalId: pipelinePrincipalId
-	principalType: 'ServicePrincipal'
+	principalType: pipelinePrincipalType
   }
 }
 
@@ -376,6 +383,9 @@ resource blobPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
     ]
   }
   tags: appTags
+  dependsOn: [
+    sqlPrivateEndpoint
+  ]
 }
 
 resource blobPrivateDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = {
@@ -540,6 +550,9 @@ resource containerEnvironment 'Microsoft.App/managedEnvironments@2026-07-01' = {
 	}
   }
   tags: appTags
+  dependsOn: [
+    blobPrivateEndpoint
+  ]
 }
 
 resource databaseBootstrap 'Microsoft.App/jobs@2025-01-01' = if (deployBootstrap) {

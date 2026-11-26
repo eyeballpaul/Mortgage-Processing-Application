@@ -1,5 +1,9 @@
 # Azure Deployment Scripts
 
+> **Warning:** These scripts and the cost estimates below are not verified. Do not
+> use them to pause, resume, deploy, or estimate charges. See
+> [AZURE_DEPLOYMENT.md](../../AZURE_DEPLOYMENT.md) for current guidance.
+
 Utility scripts for managing the mortgage processing application deployment on Azure.
 
 ## Quick Start

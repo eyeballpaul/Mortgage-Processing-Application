@@ -1,5 +1,9 @@
 # Azure Deployment Environment Variables Reference
 
+> **Warning:** This older reference contains unverified commands and cost estimates.
+> Use [AZURE_DEPLOYMENT.md](../AZURE_DEPLOYMENT.md) instead. In particular,
+> `az account show --query id` returns a subscription ID, not a principal object ID.
+
 This document explains all the environment variables and parameters needed for deploying the mortgage processing application to Azure.
 
 ## Network Architecture

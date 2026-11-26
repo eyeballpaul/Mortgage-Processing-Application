@@ -74,6 +74,10 @@ Tests include API authorization, cross-session isolation, submission, staff audi
 
 ## Azure DevOps deployment
 
+> The pipeline below has not been validated with the current private SQL setup:
+> its hosted agent cannot reach the private database bootstrap endpoint. For the
+> experimental interactive deployment, see [AZURE_DEPLOYMENT.md](AZURE_DEPLOYMENT.md).
+
 The pipeline builds and tests the solution, provisions infrastructure, applies migrations and deploys five Container Apps: customer web, staff web, internal Mortgage API, Products API and Eligibility API. It uses three separate serverless Azure SQL databases, scoped managed identities, private Blob containers and Azure Container Registry. The Eligibility API has no database, but its additional running Container App incurs cost. Review Azure pricing and delete the resource group when finished.
 
 Although the databases specify a 60-minute auto-pause delay, the always-running replicas, database-backed readiness probes and draft maintenance regularly access them, so do not budget on auto-pause occurring. Estimate the always-on costs, configure an Azure budget and delete the explicitly selected demo resource group when it is no longer needed. Scale-to-zero would require a separately scheduled retention job and tested cold-start behavior; this template deliberately does not pretend to provide that.
