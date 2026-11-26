@@ -8,6 +8,7 @@
     <h1>Tell us about your plans</h1>
     <p class="text-secondary">This helps us show you mortgage options that could fit your plans. Your estimate is not an offer of credit.</p>
     <form asp-action="Qualification" method="post" class="mt-4">
+        @await Html.PartialAsync("_ExpectedVersion")
         <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
         <div class="mb-4">
             <label asp-for="PropertyValue" class="form-label"></label>

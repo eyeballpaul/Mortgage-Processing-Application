@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 using PD.Mortgages.Application.Models;
 using PD.Mortgages.Application.Services;
 using PD.Mortgages.Domain.Enums;
@@ -6,12 +7,29 @@ using PD.Mortgages.Staff.Web.Models;
 
 namespace PD.Mortgages.Staff.Web.Controllers;
 
+public sealed class StaffConcurrencyFilterAttribute : ExceptionFilterAttribute
+{
+    public override void OnException(ExceptionContext context)
+    {
+        if (context.Exception is not MortgageConcurrencyException) return;
+        context.ExceptionHandled = true;
+        context.Result = new ContentResult
+        {
+            StatusCode = 409,
+            ContentType = "text/html; charset=utf-8",
+            Content = "This application was changed elsewhere. Your changes were not saved. Return to the application list and reopen it before trying again. <a href=\"/\">Application list</a>"
+        };
+    }
+}
+
 [Route("applications")]
+[StaffConcurrencyFilter]
 public sealed class ApplicationWizardController(
     IMortgageApplicationService applicationService,
     IDocumentUploadValidator documentUploadValidator) : Controller
 {
-    [HttpGet("start")]
+    [HttpPost("start")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Start(CancellationToken cancellationToken)
     {
         var application = await applicationService.CreateForStaffAsync(cancellationToken);
@@ -49,7 +67,7 @@ public sealed class ApplicationWizardController(
 
     [HttpPost("{id:guid}/decision-in-principle")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AssessDecisionInPrinciple(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> AssessDecisionInPrinciple(Guid id, long? expectedVersion, CancellationToken cancellationToken)
     {
         var application = await GetApplicationAsync(id, cancellationToken);
         if (application is null)
@@ -67,7 +85,8 @@ public sealed class ApplicationWizardController(
             return Conflict("Complete the earlier application steps before running this assessment.");
         }
 
-        var result = await applicationService.GenerateDecisionInPrincipleAsync(id, cancellationToken);
+        var result = await applicationService.GenerateDecisionInPrincipleAsync(id, RequireVersion(expectedVersion), cancellationToken);
+        Response.Headers["X-Application-Version"] = result.Version.ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (Request.Headers.XRequestedWith == "XMLHttpRequest")
         {
             return PartialView("~/Views/Applications/_DecisionInPrincipleResult.cshtml", result.DecisionInPrinciple
@@ -79,7 +98,7 @@ public sealed class ApplicationWizardController(
 
     [HttpPost("{id:guid}/step/5/continue")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ContinueToMortgageOptions(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> ContinueToMortgageOptions(Guid id, long? expectedVersion, CancellationToken cancellationToken)
     {
         var application = await GetApplicationAsync(id, cancellationToken);
         if (application is null)
@@ -100,7 +119,7 @@ public sealed class ApplicationWizardController(
 
         if (application.DecisionInPrinciple is null)
         {
-            await applicationService.GenerateDecisionInPrincipleAsync(id, cancellationToken);
+            await applicationService.GenerateDecisionInPrincipleAsync(id, RequireVersion(expectedVersion), cancellationToken);
         }
 
         return RedirectToAction(nameof(Step), new { id, step = 6 });
@@ -144,7 +163,7 @@ public sealed class ApplicationWizardController(
             switch (step)
             {
                 case 1:
-                    await applicationService.SaveQualificationAsync(id, model.PropertyValue!.Value, model.Deposit!.Value, cancellationToken);
+                    await applicationService.SaveQualificationAsync(id, model.PropertyValue!.Value, model.Deposit!.Value, RequireVersion(model.ExpectedVersion), cancellationToken);
                     return RedirectToAction(nameof(Step), new { id, step = 2 });
                 case 2:
                     await applicationService.SaveApplicantAsync(
@@ -153,6 +172,7 @@ public sealed class ApplicationWizardController(
                         model.LastName!.Trim(),
                         model.Email!.Trim(),
                         model.PhoneNumber!.Trim(),
+                        RequireVersion(model.ExpectedVersion),
                         cancellationToken);
                     return RedirectToAction(nameof(Step), new { id, step = 3 });
                 case 3:
@@ -161,17 +181,18 @@ public sealed class ApplicationWizardController(
                         model.AnnualIncome!.Value,
                         model.MonthlyCommitments!.Value,
                         model.EmploymentType!.Value,
+                        RequireVersion(model.ExpectedVersion),
                         cancellationToken);
                     return RedirectToAction(nameof(Step), new { id, step = 4 });
                 case 4:
-                    await applicationService.SaveConsentsAsync(id, model.CreditCheckConsent, model.OpenBankingConsent, cancellationToken);
+                    await applicationService.SaveConsentsAsync(id, model.CreditCheckConsent, model.OpenBankingConsent, RequireVersion(model.ExpectedVersion), cancellationToken);
                     return RedirectToAction(nameof(Step), new { id, step = 5 });
                 case 5:
                     application = await GetApplicationAsync(id, cancellationToken)
                         ?? throw new KeyNotFoundException($"Mortgage application '{id}' was not found.");
                     if (application.DecisionInPrinciple is null)
                     {
-                        await applicationService.GenerateDecisionInPrincipleAsync(id, cancellationToken);
+                        await applicationService.GenerateDecisionInPrincipleAsync(id, RequireVersion(model.ExpectedVersion), cancellationToken);
                     }
 
                     return RedirectToAction(nameof(Step), new { id, step = 6 });
@@ -184,12 +205,12 @@ public sealed class ApplicationWizardController(
                         return await RenderStepAsync(application, model, cancellationToken);
                     }
 
-                    await applicationService.SelectProductAsync(id, model.SelectedProductId, cancellationToken);
+                    await applicationService.SelectProductAsync(id, model.SelectedProductId, RequireVersion(model.ExpectedVersion), cancellationToken);
                     return RedirectToAction(nameof(Step), new { id, step = 7 });
                 case 7:
                     return RedirectToAction(nameof(Step), new { id, step = 8 });
                 case 8:
-                    await applicationService.SubmitAsync(id, cancellationToken);
+                    await applicationService.SubmitAsync(id, RequireVersion(model.ExpectedVersion), cancellationToken);
                     TempData["Notice"] = "The mortgage application was submitted.";
                     return RedirectToAction("Index", "Applications");
                 default:
@@ -207,7 +228,7 @@ public sealed class ApplicationWizardController(
     [HttpPost("{id:guid}/documents")]
     [ValidateAntiForgeryToken]
     [RequestSizeLimit(DocumentUploadLimits.MaximumFileBytes + 1024)]
-    public async Task<IActionResult> UploadDocument(Guid id, IFormFile? document, CancellationToken cancellationToken)
+    public async Task<IActionResult> UploadDocument(Guid id, IFormFile? document, long? expectedVersion, CancellationToken cancellationToken)
     {
         var application = await GetApplicationAsync(id, cancellationToken);
         if (application is null)
@@ -234,7 +255,7 @@ public sealed class ApplicationWizardController(
             return RedirectToAction(nameof(Step), new { id, step = 7 });
         }
 
-        await applicationService.AddDocumentAsync(id, validation.SafeFileName!, validation.Contents!, cancellationToken);
+        await applicationService.AddDocumentAsync(id, validation.SafeFileName!, validation.Contents!, RequireVersion(expectedVersion), cancellationToken);
         TempData["Notice"] = "The document was added to the application.";
         return RedirectToAction(nameof(Step), new { id, step = 7 });
     }
@@ -258,6 +279,7 @@ public sealed class ApplicationWizardController(
         page.CreditCheckConsent = model.CreditCheckConsent;
         page.OpenBankingConsent = model.OpenBankingConsent;
         page.SelectedProductId = model.SelectedProductId;
+        page.ExpectedVersion = model.ExpectedVersion;
         return View("~/Views/Applications/Step.cshtml", page);
     }
 
@@ -268,6 +290,7 @@ public sealed class ApplicationWizardController(
     {
         Id = application.Id,
         Step = step,
+        ExpectedVersion = application.Version,
         Application = application,
         PropertyValue = application.PropertyValue,
         Deposit = application.Deposit,
@@ -282,11 +305,13 @@ public sealed class ApplicationWizardController(
         OpenBankingConsent = application.OpenBankingConsent,
         SelectedProductId = application.SelectedProductId,
         EligibleProducts = eligibleProducts,
-        SelectedProduct = eligibleProducts.FirstOrDefault(product => product.Id == application.SelectedProductId)
+        SelectedProduct = application.SelectedProduct
     };
 
     private Task<IReadOnlyList<MortgageProductDto>> GetEligibleProductsAsync(Guid id, int step, CancellationToken cancellationToken) =>
-        step >= 6 ? applicationService.GetEligibleProductsAsync(id, cancellationToken) : Task.FromResult<IReadOnlyList<MortgageProductDto>>([]);
+        step == 6 ? applicationService.GetEligibleProductsAsync(id, cancellationToken) : Task.FromResult<IReadOnlyList<MortgageProductDto>>([]);
+
+    private static long RequireVersion(long? version) => version ?? throw new MortgageConcurrencyException();
 
     private async Task<MortgageApplicationDto?> GetApplicationAsync(Guid id, CancellationToken cancellationToken)
     {

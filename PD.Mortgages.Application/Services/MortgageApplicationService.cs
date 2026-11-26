@@ -4,6 +4,7 @@ using PD.Mortgages.Domain.Entities;
 using PD.Mortgages.Domain.Enums;
 using PD.Mortgages.Domain.Repositories;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 
 namespace PD.Mortgages.Application.Services;
 
@@ -11,9 +12,13 @@ public sealed class MortgageApplicationService(
     IMortgageApplicationRepository applicationRepository,
     IMortgageApplicationAuditRepository auditRepository,
     IProductCatalogClient productCatalogClient,
+    IEligibilityClient eligibilityClient,
     IMortgageDocumentStorage documentStorage,
     IApplicationActor applicationActor,
-    IOptions<MortgageWorkflowOptions> workflowOptions) : IMortgageApplicationService
+    IOptions<MortgageWorkflowOptions> workflowOptions,
+    IDocumentUploadValidator documentValidator,
+    IMortgageDraftLifecycle draftLifecycle,
+    ILogger<MortgageApplicationService> logger) : IMortgageApplicationService
 {
     public async Task<MortgageApplicationDto> CreateAsync(CancellationToken cancellationToken = default)
     {
@@ -51,17 +56,25 @@ public sealed class MortgageApplicationService(
         EnsureStaff();
         var application = await applicationRepository.GetByIdAsync(id, cancellationToken)
             ?? throw new KeyNotFoundException($"Mortgage application '{id}' was not found.");
+        await TouchDraftAsync(application, cancellationToken);
         return Map(application);
     }
 
     public async Task<MortgageApplicationAuditPageDto> GetAuditTrailForStaffAsync(Guid id, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         EnsureStaff();
-        var application = await applicationRepository.GetByIdAsync(id, cancellationToken)
-            ?? throw new KeyNotFoundException($"Mortgage application '{id}' was not found.");
-        await MigrateLegacyAuditAsync(application, cancellationToken);
+        var application = await applicationRepository.GetByIdAsync(id, cancellationToken);
+        if (application is not null)
+        {
+            await TouchDraftAsync(application, cancellationToken);
+            await MigrateLegacyAuditAsync(application, cancellationToken);
+        }
         var result = await auditRepository.GetPageAsync(id, page, pageSize, cancellationToken);
-        return new MortgageApplicationAuditPageDto(result.Events, result.TotalCount, result.Page, result.PageSize, result.TotalPages);
+        if (application is null && result.TotalCount == 0)
+            throw new KeyNotFoundException($"Mortgage application '{id}' was not found.");
+        return new MortgageApplicationAuditPageDto(
+            result.Events.Select(entry => new MortgageApplicationAuditEntryDto(entry.RecordedAtUtc, entry.ActorId, entry.Action)).ToList(),
+            result.TotalCount, result.Page, result.PageSize, result.TotalPages);
     }
 
     public async Task<MortgageApplicationSearchPageDto> SearchForStaffAsync(
@@ -82,25 +95,36 @@ public sealed class MortgageApplicationService(
             results.PageSize);
     }
 
-    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(Guid id, long expectedVersion, CancellationToken cancellationToken = default)
     {
-        await FindOwnedAsync(id, cancellationToken);
-        await documentStorage.DeleteAllAsync(id, cancellationToken);
-        await applicationRepository.DeleteAsync(id, cancellationToken);
+        var application = await FindOwnedAsync(id, cancellationToken);
+        CheckVersion(application, expectedVersion);
+        if (application.Status != ApplicationStatus.InProgress)
+        {
+            throw new InvalidOperationException("Only in-progress applications can be deleted.");
+        }
+
+        await MigrateLegacyAuditAsync(application, cancellationToken);
+        var auditEntry = new MortgageApplicationAuditEntry(DateTime.UtcNow, GetActorId(), "Draft deleted");
+        if (!await draftLifecycle.TryDeleteDraftAsync(id, expectedVersion, auditEntry, null, cancellationToken))
+        {
+            throw new MortgageConcurrencyException();
+        }
     }
 
-    public Task SaveApplicantAsync(Guid id, string firstName, string lastName, string email, string phoneNumber, CancellationToken cancellationToken = default) =>
-        ChangeAsync(id, application => application.UpdateApplicant(firstName, lastName, email, phoneNumber), "Applicant details updated", cancellationToken);
+    public Task SaveApplicantAsync(Guid id, string firstName, string lastName, string email, string phoneNumber, long expectedVersion, CancellationToken cancellationToken = default) =>
+        ChangeAsync(id, expectedVersion, application => application.UpdateApplicant(firstName, lastName, email, phoneNumber), "Applicant details updated", cancellationToken);
 
-    public Task SaveQualificationAsync(Guid id, decimal propertyValue, decimal deposit, CancellationToken cancellationToken = default) =>
-        ChangeAsync(id, application => application.UpdateQualification(propertyValue, deposit), "Qualification updated", cancellationToken);
+    public Task SaveQualificationAsync(Guid id, decimal propertyValue, decimal deposit, long expectedVersion, CancellationToken cancellationToken = default) =>
+        ChangeAsync(id, expectedVersion, application => application.UpdateQualification(propertyValue, deposit), "Qualification updated", cancellationToken);
 
-    public Task SaveFinancesAsync(Guid id, decimal annualIncome, decimal monthlyCommitments, EmploymentType employmentType, CancellationToken cancellationToken = default) =>
-        ChangeAsync(id, application => application.UpdateFinances(annualIncome, monthlyCommitments, employmentType), "Finances updated", cancellationToken);
+    public Task SaveFinancesAsync(Guid id, decimal annualIncome, decimal monthlyCommitments, EmploymentType employmentType, long expectedVersion, CancellationToken cancellationToken = default) =>
+        ChangeAsync(id, expectedVersion, application => application.UpdateFinances(annualIncome, monthlyCommitments, employmentType), "Finances updated", cancellationToken);
 
-    public Task SaveConsentsAsync(Guid id, bool creditCheckConsent, bool openBankingConsent, CancellationToken cancellationToken = default) =>
+    public Task SaveConsentsAsync(Guid id, bool creditCheckConsent, bool openBankingConsent, long expectedVersion, CancellationToken cancellationToken = default) =>
         ChangeAsync(
             id,
+            expectedVersion,
             application => application.RecordConsents(
                 creditCheckConsent,
                 openBankingConsent,
@@ -109,53 +133,40 @@ public sealed class MortgageApplicationService(
             "Customer consents recorded",
             cancellationToken);
 
-    public async Task<MortgageApplicationDto> GenerateDecisionInPrincipleAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<MortgageApplicationDto> GenerateDecisionInPrincipleAsync(Guid id, long expectedVersion, CancellationToken cancellationToken = default)
     {
         var application = await FindAsync(id, cancellationToken);
+        CheckVersion(application, expectedVersion);
         if (application.DecisionInPrinciple is not null)
         {
             return Map(application);
         }
 
-        if (application.CreditCheckConsent)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
-            application = await FindAsync(id, cancellationToken);
-            if (application.DecisionInPrinciple is not null)
-            {
-                return Map(application);
-            }
-        }
-
-        application.GenerateIndicativeDecisionInPrinciple();
+        var inputs = application.GetDecisionInputs();
+        var decision = await eligibilityClient.AssessAsync(inputs.PropertyValue, inputs.Deposit, inputs.AnnualIncome,
+            inputs.CreditCheckConsent, cancellationToken);
+        application = await FindAsync(id, cancellationToken);
+        CheckVersion(application, expectedVersion);
+        application.RecordIndicativeDecision(decision);
         await MigrateLegacyAuditAsync(application, cancellationToken);
         application.RecordAudit(GetActorId(), "Decision in Principle generated");
         await PersistMutationAsync(application, cancellationToken);
         return Map(application);
     }
 
-    public async Task SelectProductAsync(Guid id, string productId, CancellationToken cancellationToken = default)
+    public async Task SelectProductAsync(Guid id, string productId, long expectedVersion, CancellationToken cancellationToken = default)
     {
         var application = await FindAsync(id, cancellationToken);
-        var product = await productCatalogClient.GetProductAsync(productId, cancellationToken);
-        if (product is null)
-        {
-            throw new ArgumentException("The selected mortgage product is not available.", nameof(productId));
-        }
-
+        CheckVersion(application, expectedVersion);
         if (application.PropertyValue is null || application.Deposit is null)
         {
             throw new InvalidOperationException("Complete the property and deposit details before selecting a product.");
         }
 
-        if (!await productCatalogClient.IsProductEligibleAsync(
-                productId,
-                application.PropertyValue.Value,
-                application.Deposit.Value,
-                cancellationToken))
-        {
-            throw new ArgumentException("The selected mortgage product is not eligible for this application.", nameof(productId));
-        }
+        var eligibleProducts = await productCatalogClient.GetEligibleProductsAsync(
+            application.PropertyValue.Value, application.Deposit.Value, cancellationToken);
+        var product = eligibleProducts.SingleOrDefault(item => item.Id == productId)
+            ?? throw new ArgumentException("The selected mortgage product is not available or eligible for this application.", nameof(productId));
 
         application.SelectProduct(productId, new SelectedMortgageProductSnapshot(
             product.Id,
@@ -171,24 +182,35 @@ public sealed class MortgageApplicationService(
         await PersistMutationAsync(application, cancellationToken);
     }
 
-    public async Task AddDocumentAsync(Guid id, string fileName, byte[] contents, CancellationToken cancellationToken = default)
+    public async Task<Guid> AddDocumentAsync(Guid id, string fileName, byte[] contents, long expectedVersion, CancellationToken cancellationToken = default)
     {
         var documentId = Guid.Empty;
         var documentStored = false;
+        var persistenceAttempted = false;
         try
         {
             var application = await FindAsync(id, cancellationToken);
+            CheckVersion(application, expectedVersion);
+            await using var stream = new MemoryStream(contents, writable: false);
+            var validation = await documentValidator.ValidateAsync(fileName, contents.LongLength, stream,
+                application.Documents.Count, application.Documents.Sum(document => document.SizeInBytes), cancellationToken);
+            if (!validation.IsValid)
+            {
+                throw new ArgumentException(validation.ErrorMessage, nameof(fileName));
+            }
             await MigrateLegacyAuditAsync(application, cancellationToken);
             documentId = Guid.NewGuid();
-            await documentStorage.SaveAsync(id, documentId, contents, cancellationToken);
+            await documentStorage.SaveAsync(id, documentId, validation.Contents!, cancellationToken);
             documentStored = true;
-            application.AddDocument(documentId, fileName, contents.LongLength);
+            application.AddDocument(documentId, validation.SafeFileName!, validation.Contents!.LongLength);
             application.RecordAudit(GetActorId(), "Document uploaded");
+            persistenceAttempted = true;
             await PersistMutationAsync(application, cancellationToken);
+            return documentId;
         }
         catch (Exception operationException)
         {
-            if (documentStored)
+            if (documentStored && (!persistenceAttempted || operationException is MortgageConcurrencyException))
             {
                 try
                 {
@@ -201,6 +223,12 @@ public sealed class MortgageApplicationService(
                         operationException,
                         cleanupException);
                 }
+            }
+            else if (documentId != Guid.Empty)
+            {
+                logger.LogWarning(
+                    "Document upload outcome is uncertain for application {ApplicationId}, document {DocumentId}; stored content was retained for reconciliation.",
+                    id, documentId);
             }
 
             throw;
@@ -215,8 +243,64 @@ public sealed class MortgageApplicationService(
             : null;
     }
 
-    public Task SubmitAsync(Guid id, CancellationToken cancellationToken = default) =>
-        ChangeAsync(id, application => application.Submit(), "Application submitted", cancellationToken);
+    public Task SubmitAsync(Guid id, long expectedVersion, CancellationToken cancellationToken = default)
+    {
+        EnsureStaff();
+        return ChangeAsync(id, expectedVersion, application => application.Submit(), "Application submitted", cancellationToken);
+    }
+
+    public async Task<SubmissionReceiptDto> SubmitCustomerAsync(Guid id, long expectedVersion, Guid submissionKey, CancellationToken cancellationToken = default)
+    {
+        if (submissionKey == Guid.Empty) throw new ArgumentException("A valid submission key is required.", nameof(submissionKey));
+        var application = await FindCustomerSubmissionAsync(id, cancellationToken);
+        var receipt = GetReceipt(application, submissionKey);
+        if (receipt is not null && application.SubmissionExpectedVersion == expectedVersion) return receipt;
+        if (application.Status != ApplicationStatus.InProgress)
+            throw new UnauthorizedAccessException("The application is not available in this session.");
+
+        CheckVersion(application, expectedVersion);
+        await MigrateLegacyAuditAsync(application, cancellationToken);
+        application.Submit(submissionKey);
+        application.RecordAudit(GetActorId(), "Application submitted");
+        try
+        {
+            await PersistMutationAsync(application, cancellationToken);
+        }
+        catch (MortgageConcurrencyException)
+        {
+            var latest = await FindCustomerSubmissionAsync(id, cancellationToken);
+            var concurrentReceipt = GetReceipt(latest, submissionKey);
+            if (concurrentReceipt is not null && latest.SubmissionExpectedVersion == expectedVersion) return concurrentReceipt;
+            throw;
+        }
+        return GetReceipt(application, submissionKey)
+            ?? throw new InvalidOperationException("The submission receipt could not be created.");
+    }
+
+    public async Task<SubmissionReceiptDto?> GetSubmissionReceiptAsync(Guid id, Guid submissionKey, CancellationToken cancellationToken = default)
+    {
+        if (submissionKey == Guid.Empty) throw new ArgumentException("A valid submission key is required.", nameof(submissionKey));
+        return GetReceipt(await FindCustomerSubmissionAsync(id, cancellationToken), submissionKey);
+    }
+
+    private async Task<MortgageApplication> FindCustomerSubmissionAsync(Guid id, CancellationToken cancellationToken)
+    {
+        if (applicationActor.IsStaff || string.IsNullOrWhiteSpace(applicationActor.SubjectId))
+            throw new UnauthorizedAccessException("An active customer session is required.");
+        var application = await applicationRepository.GetByIdAsync(id, cancellationToken)
+            ?? throw new KeyNotFoundException($"Mortgage application '{id}' was not found.");
+        if (!string.Equals(application.OwnerId, applicationActor.SubjectId, StringComparison.Ordinal))
+            throw new UnauthorizedAccessException("The application is not available in this session.");
+        await TouchDraftAsync(application, cancellationToken);
+        return application;
+    }
+
+    private static SubmissionReceiptDto? GetReceipt(MortgageApplication application, Guid submissionKey) =>
+        application.Status == ApplicationStatus.Submitted &&
+        application.SubmissionKey == submissionKey &&
+        application.UpdatedAtUtc >= DateTime.UtcNow.AddHours(-24)
+            ? new SubmissionReceiptDto(application.Id, new DateTimeOffset(DateTime.SpecifyKind(application.UpdatedAtUtc, DateTimeKind.Utc)))
+            : null;
 
     public async Task<IReadOnlyList<MortgageProductDto>> GetProductsAsync(CancellationToken cancellationToken = default) =>
         await productCatalogClient.GetProductsAsync(cancellationToken);
@@ -240,9 +324,10 @@ public sealed class MortgageApplicationService(
         return await productCatalogClient.GetProductAsync(id, cancellationToken);
     }
 
-    private async Task ChangeAsync(Guid id, Action<MortgageApplication> change, string auditAction, CancellationToken cancellationToken)
+    private async Task ChangeAsync(Guid id, long expectedVersion, Action<MortgageApplication> change, string auditAction, CancellationToken cancellationToken)
     {
         var application = await FindAsync(id, cancellationToken);
+        CheckVersion(application, expectedVersion);
         await MigrateLegacyAuditAsync(application, cancellationToken);
         change(application);
         application.RecordAudit(GetActorId(), auditAction);
@@ -264,7 +349,20 @@ public sealed class MortgageApplicationService(
     {
         var auditEntry = application.AuditTrail.Last();
         application.ClearAuditTrail();
-        await applicationRepository.UpdateAsync(application, auditEntry, cancellationToken);
+        try
+        {
+            await applicationRepository.UpdateAsync(application, auditEntry, cancellationToken);
+        }
+        catch (InvalidOperationException exception) when (exception.Message == MortgageConcurrencyException.ConflictMessage)
+        {
+            throw new MortgageConcurrencyException(exception);
+        }
+    }
+
+    private static void CheckVersion(MortgageApplication application, long expectedVersion)
+    {
+        if (application.Version != expectedVersion)
+            throw new MortgageConcurrencyException();
     }
 
     private async Task<MortgageApplication> FindAsync(Guid id, CancellationToken cancellationToken) =>
@@ -278,6 +376,7 @@ public sealed class MortgageApplicationService(
         if (applicationActor.IsStaff)
         {
             EnsureStaff();
+            await TouchDraftAsync(application, cancellationToken);
             return application;
         }
 
@@ -288,7 +387,15 @@ public sealed class MortgageApplicationService(
             throw new UnauthorizedAccessException("The application is not available in this session.");
         }
 
+        await TouchDraftAsync(application, cancellationToken);
         return application;
+    }
+
+    private async Task TouchDraftAsync(MortgageApplication application, CancellationToken cancellationToken)
+    {
+        if (application.Status == ApplicationStatus.InProgress &&
+            !await draftLifecycle.TouchActivityAsync(application.Id, cancellationToken))
+            throw new MortgageConcurrencyException();
     }
 
     private string GetActorId() =>
@@ -348,6 +455,18 @@ public sealed class MortgageApplicationService(
                 document.SizeInBytes,
                 document.UploadedAtUtc))
             .ToList(),
-        application.CreatedByEmployeeId);
+        application.CreatedByEmployeeId,
+        application.Version,
+        application.SelectedProduct is null
+            ? null
+            : new MortgageProductDto(
+                application.SelectedProduct.Id,
+                application.SelectedProduct.Name,
+                application.SelectedProduct.InterestRate,
+                application.SelectedProduct.Fee,
+                application.SelectedProduct.Aprc,
+                application.SelectedProduct.FixedTermYears,
+                application.SelectedProduct.MaximumLoanToValue,
+                application.SelectedProduct.CatalogVersion));
 
 }

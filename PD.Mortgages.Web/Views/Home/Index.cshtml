@@ -9,7 +9,9 @@
         <h1>A mortgage that moves you forward.</h1>
         <p class="hero-lede">A clearer way to find your home loan. Tell us a little about your plans and we’ll guide you through each step.</p>
         <div class="hero-actions">
-            <a class="btn btn-primary btn-lg" asp-controller="Wizard" asp-action="Start">Get started <span aria-hidden="true">→</span></a>
+            <form asp-controller="Wizard" asp-action="Start" method="post">
+                <button class="btn btn-primary btn-lg" type="submit">Get started <span aria-hidden="true">→</span></button>
+            </form>
             @if (hasApplication)
             {
                 <a class="btn btn-outline-primary btn-lg" asp-controller="Wizard" asp-action="Resume">Resume your application</a>
@@ -58,5 +60,7 @@
         <h2>Not sure where to begin?</h2>
         <p>Our guided application explains what you’ll need, one simple step at a time.</p>
     </div>
-    <a class="btn btn-light" asp-controller="Wizard" asp-action="Start">Explore your options</a>
+    <form asp-controller="Wizard" asp-action="Start" method="post">
+        <button class="btn btn-light" type="submit">Explore your options</button>
+    </form>
 </section>

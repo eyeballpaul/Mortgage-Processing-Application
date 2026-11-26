@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging.Abstractions;
 using PD.Mortgages.Application.Security;
 using PD.Mortgages.Application.Services;
 using PD.Mortgages.Domain.Entities;
@@ -18,8 +19,8 @@ public sealed class StaffApplicationServiceTests
         var repository = new InMemoryMortgageApplicationRepository();
         var service = CreateService(repository, new TestApplicationActor("staff-42", true, true));
         var created = await service.CreateForStaffAsync();
-        await service.SaveApplicantAsync(created.Id, "Jane", "Doe", "jane@example.com", "07123456789");
-        await service.SaveQualificationAsync(created.Id, 300_000m, 30_000m);
+        await service.SaveApplicantAsync(created.Id, "Jane", "Doe", "jane@example.com", "07123456789", created.Version);
+        await service.SaveQualificationAsync(created.Id, 300_000m, 30_000m, (await service.GetForStaffAsync(created.Id)).Version);
 
         var matching = await service.SearchForStaffAsync("jane@example.com", ApplicationStatus.InProgress, 1, 25);
         var result = Assert.Single(matching.Applications);
@@ -43,7 +44,7 @@ public sealed class StaffApplicationServiceTests
         var application = await service.CreateForStaffAsync();
         for (var index = 0; index < 5; index++)
         {
-            await service.SaveApplicantAsync(application.Id, "Jane", "Doe", $"jane{index}@example.com", "07123456789");
+            await service.SaveApplicantAsync(application.Id, "Jane", "Doe", $"jane{index}@example.com", "07123456789", (await service.GetForStaffAsync(application.Id)).Version);
         }
 
         var firstPage = await service.GetAuditTrailForStaffAsync(application.Id, 1, 2);
@@ -105,7 +106,7 @@ public sealed class StaffApplicationServiceTests
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.GetForStaffAsync(application.Id));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.GetAsync(application.Id));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.SaveQualificationAsync(application.Id, 300_000m, 30_000m));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version));
     }
 
     [Fact]
@@ -139,7 +140,7 @@ public sealed class StaffApplicationServiceTests
         foreach (var email in new[] { "one@example.com", "two@example.com", "three@example.com" })
         {
             var application = await service.CreateForStaffAsync();
-            await service.SaveApplicantAsync(application.Id, "Test", "Applicant", email, "07123456789");
+            await service.SaveApplicantAsync(application.Id, "Test", "Applicant", email, "07123456789", application.Version);
         }
 
         var firstPage = await service.SearchForStaffAsync(null, ApplicationStatus.InProgress, 1, 2);
@@ -176,9 +177,13 @@ public sealed class StaffApplicationServiceTests
             repository,
             repository.AuditRepository,
             new MockProductCatalogClient(new LocalProductCatalogFallback()),
+            new TestEligibilityClient(),
             new InMemoryMortgageDocumentStorage(),
             actor,
-            Options.Create(new MortgageWorkflowOptions()));
+            Options.Create(new MortgageWorkflowOptions()),
+            new DocumentUploadValidator(),
+            repository,
+            NullLogger<MortgageApplicationService>.Instance);
 
     private sealed class TestApplicationActor(string? subjectId, bool isAuthenticated, bool isStaff) : IApplicationActor
     {

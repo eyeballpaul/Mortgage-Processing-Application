@@ -3,10 +3,19 @@ using PD.Products.Application.Services;
 using PD.Products.Domain.Services;
 using PD.Products.Api.Health;
 using PD.Products.Api.Middleware;
+using PD.Shared;
 using PD.Products.Infrastructure.Persistence;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddOptionalTracing(builder.Environment, "products-api");
+
+if (!builder.Environment.IsDevelopment() &&
+    (!string.Equals(builder.Configuration["Persistence:Provider"], "SqlServer", StringComparison.OrdinalIgnoreCase) ||
+     string.IsNullOrWhiteSpace(builder.Configuration["ProductService:ApiKey"])))
+{
+    throw new InvalidOperationException("The Products API requires SQL Server and a product service API key outside Development.");
+}
 
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
@@ -41,11 +50,11 @@ app.MapControllers();
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
     Predicate = _ => false
-});
+}).DisableRateLimiting();
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready")
-});
+}).DisableRateLimiting();
 
 app.Run();
 

@@ -10,20 +10,24 @@ public static class ProductionConfigurationValidator
         }
 
         var failures = new List<string>();
+        if (!string.Equals(configuration["Session:Provider"], "Redis", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(configuration["Session:Provider"], "SqlServer", StringComparison.OrdinalIgnoreCase))
+        {
+            failures.Add("Session:Provider must be Redis or SqlServer outside Development.");
+        }
         if (string.Equals(configuration["Session:Provider"], "Redis", StringComparison.OrdinalIgnoreCase) &&
             string.IsNullOrWhiteSpace(configuration.GetConnectionString("Redis")))
         {
             failures.Add("ConnectionStrings:Redis is required when Session:Provider is Redis.");
         }
         if (string.Equals(configuration["Session:Provider"], "SqlServer", StringComparison.OrdinalIgnoreCase) &&
-            string.IsNullOrWhiteSpace(configuration.GetConnectionString("mortgages")))
+            string.IsNullOrWhiteSpace(configuration.GetConnectionString("customersessions")))
         {
-            failures.Add("ConnectionStrings:mortgages is required when Session:Provider is SqlServer.");
+            failures.Add("ConnectionStrings:customersessions is required when Session:Provider is SqlServer.");
         }
-
-        if (string.IsNullOrWhiteSpace(configuration["ProductService:BaseUrl"]))
+        if (string.IsNullOrWhiteSpace(configuration["DataProtection:BlobUri"]))
         {
-            failures.Add("ProductService:BaseUrl is required outside Development.");
+            failures.Add("DataProtection:BlobUri is required outside Development.");
         }
 
         if (failures.Count > 0)

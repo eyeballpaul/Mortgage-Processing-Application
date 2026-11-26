@@ -6,9 +6,11 @@ using PD.Mortgages.Infrastructure.Persistence;
 
 namespace PD.Mortgages.Infrastructure.Repositories;
 
-public sealed class InMemoryMortgageApplicationRepository : IMortgageApplicationRepository
+public sealed class InMemoryMortgageApplicationRepository : IMortgageApplicationRepository, IMortgageDraftLifecycle
 {
     private readonly ConcurrentDictionary<Guid, MortgageApplication> _applications = new();
+    private readonly Dictionary<Guid, DateTime> _activity = new();
+    private readonly Dictionary<Guid, DateTime?> _deleted = new();
     private readonly object _sync = new();
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly IMortgageApplicationAuditRepository _auditRepository;
@@ -25,7 +27,23 @@ public sealed class InMemoryMortgageApplicationRepository : IMortgageApplication
         cancellationToken.ThrowIfCancellationRequested();
         lock (_sync)
         {
-            return Task.FromResult(_applications.TryGetValue(id, out var application) ? Copy(application) : null);
+            if (!_applications.TryGetValue(id, out var application))
+            {
+                return Task.FromResult<MortgageApplication?>(null);
+            }
+            return Task.FromResult<MortgageApplication?>(Copy(application));
+        }
+    }
+
+    public Task<bool> TouchActivityAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_sync)
+        {
+            if (!_applications.TryGetValue(id, out var application) || application.Status != ApplicationStatus.InProgress)
+                return Task.FromResult(false);
+            _activity[id] = DateTime.UtcNow;
+            return Task.FromResult(true);
         }
     }
 
@@ -99,6 +117,7 @@ public sealed class InMemoryMortgageApplicationRepository : IMortgageApplication
                 lock (_sync)
                 {
                     _applications.TryRemove(application.Id, out _);
+                    _activity.Remove(application.Id);
                 }
             }
 
@@ -165,12 +184,92 @@ public sealed class InMemoryMortgageApplicationRepository : IMortgageApplication
             lock (_sync)
             {
                 _applications.TryRemove(id, out _);
+                _activity.Remove(id);
             }
         }
         finally
         {
             _writeGate.Release();
         }
+    }
+
+    public async Task<bool> TryDeleteDraftAsync(Guid id, long version, MortgageApplicationAuditEntry auditEntry,
+                DateTime? inactiveBeforeUtc, CancellationToken cancellationToken = default)
+    {
+        await _writeGate.WaitAsync(cancellationToken);
+        MortgageApplication? removed = null;
+        DateTime activity = default;
+        try
+        {
+            lock (_sync)
+            {
+                if (!_applications.TryGetValue(id, out var application) || application.Version != version ||
+                    application.Status != ApplicationStatus.InProgress ||
+                    (inactiveBeforeUtc is not null && _activity[id] >= inactiveBeforeUtc.Value))
+                {
+                    return false;
+                }
+                removed = Copy(application);
+                activity = _activity[id];
+                _applications.TryRemove(id, out _);
+                _activity.Remove(id);
+                _deleted[id] = null;
+            }
+            await _auditRepository.AppendAsync(id, auditEntry, cancellationToken);
+            return true;
+        }
+        catch
+        {
+            if (removed is not null)
+            {
+                lock (_sync)
+                {
+                    _applications[id] = removed;
+                    _activity[id] = activity;
+                    _deleted.Remove(id);
+                }
+            }
+            throw;
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    public Task<IReadOnlyList<ExpiredMortgageDraft>> FindExpiredDraftsAsync(
+        DateTime inactiveBeforeUtc, int limit, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_sync)
+        {
+            return Task.FromResult<IReadOnlyList<ExpiredMortgageDraft>>(_applications.Values
+                .Where(application => application.Status == ApplicationStatus.InProgress && _activity[application.Id] < inactiveBeforeUtc)
+                .OrderBy(application => _activity[application.Id]).Take(limit)
+                .Select(application => new ExpiredMortgageDraft(application.Id, application.Version)).ToList());
+        }
+    }
+
+    public Task<IReadOnlyList<Guid>> FindDocumentsDueForCleanupAsync(
+        DateTime cleanedBeforeUtc, int limit, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_sync)
+        {
+            return Task.FromResult<IReadOnlyList<Guid>>(_deleted
+                .Where(entry => entry.Value is null || entry.Value < cleanedBeforeUtc)
+                .OrderBy(entry => entry.Value).Take(limit).Select(entry => entry.Key).ToList());
+        }
+    }
+
+    public Task MarkDocumentsCleanedAsync(Guid id, DateTime cleanedAtUtc, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_sync)
+        {
+            if (_deleted.ContainsKey(id)) _deleted[id] = cleanedAtUtc;
+        }
+        return Task.CompletedTask;
     }
 
     private void AddCore(MortgageApplication application)
@@ -181,6 +280,7 @@ public sealed class InMemoryMortgageApplicationRepository : IMortgageApplication
             {
                 throw new InvalidOperationException($"Mortgage application '{application.Id}' already exists.");
             }
+            _activity[application.Id] = DateTime.UtcNow;
         }
     }
 
@@ -199,6 +299,7 @@ public sealed class InMemoryMortgageApplicationRepository : IMortgageApplication
             }
 
             _applications[application.Id] = Copy(application);
+            _activity[application.Id] = DateTime.UtcNow;
         }
     }
 

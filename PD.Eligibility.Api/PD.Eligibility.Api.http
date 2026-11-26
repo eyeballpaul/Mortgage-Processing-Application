@@ -1,0 +1,16 @@
+@baseUrl = http://localhost:5210
+@apiKey = REPLACE_WITH_32_CHARACTER_KEY
+
+### Indicative assessment (fictional data)
+POST {{baseUrl}}/api/v1/eligibility/assess
+X-Eligibility-Service-Key: {{apiKey}}
+Content-Type: application/json
+
+{"propertyValue":300000,"deposit":30000,"annualIncome":100000,"creditCheckConsent":true}
+
+### Invalid input
+POST {{baseUrl}}/api/v1/eligibility/assess
+X-Eligibility-Service-Key: {{apiKey}}
+Content-Type: application/json
+
+{"propertyValue":100,"deposit":200,"annualIncome":0,"creditCheckConsent":false}

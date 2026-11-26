@@ -27,9 +27,6 @@ public sealed class ApplicationsController(IMortgageApplicationService applicati
         return View(model);
     }
 
-    [HttpGet("applications/new")]
-    public IActionResult Create() => RedirectToAction("Start", "ApplicationWizard");
-
     [HttpGet("applications/{id:guid}")]
     public async Task<IActionResult> Edit(Guid id, CancellationToken cancellationToken)
     {
@@ -42,7 +39,6 @@ public sealed class ApplicationsController(IMortgageApplicationService applicati
             }
 
             var model = FromApplication(application);
-            await PopulateProductsAsync(model, id, cancellationToken);
             return View(model);
         }
         catch (KeyNotFoundException)
@@ -51,18 +47,34 @@ public sealed class ApplicationsController(IMortgageApplicationService applicati
         }
     }
 
+    [HttpGet("applications/audit")]
+    public IActionResult FindAudit(Guid? id)
+    {
+        if (!ModelState.IsValid || id is null || id == Guid.Empty)
+            return BadRequest("Enter a valid full application ID.");
+        return RedirectToAction(nameof(AuditTrail), new { id });
+    }
+
     [HttpGet("applications/{id:guid}/audit")]
     public async Task<IActionResult> AuditTrail(Guid id, int page = 1, CancellationToken cancellationToken = default)
     {
         const int pageSize = 25;
         try
         {
-            var application = await applicationService.GetForStaffAsync(id, cancellationToken);
             var audit = await applicationService.GetAuditTrailForStaffAsync(id, page, pageSize, cancellationToken);
+            ApplicationStatus? status;
+            try
+            {
+                status = (await applicationService.GetForStaffAsync(id, cancellationToken)).Status;
+            }
+            catch (KeyNotFoundException)
+            {
+                status = null;
+            }
             return View(new StaffAuditTrailViewModel
             {
                 ApplicationId = id,
-                Status = application.Status,
+                Status = status,
                 Events = audit.Events,
                 TotalCount = audit.TotalCount,
                 Page = audit.Page,
@@ -99,13 +111,6 @@ public sealed class ApplicationsController(IMortgageApplicationService applicati
         }
     }
 
-    private async Task PopulateProductsAsync(StaffApplicationViewModel model, Guid? id, CancellationToken cancellationToken)
-    {
-        model.EligibleProducts = id.HasValue
-            ? await applicationService.GetEligibleProductsAsync(id.Value, cancellationToken)
-            : [];
-    }
-
     private static StaffApplicationViewModel FromApplication(MortgageApplicationDto application) => new()
     {
         Id = application.Id,
@@ -123,6 +128,7 @@ public sealed class ApplicationsController(IMortgageApplicationService applicati
         CreditCheckConsent = application.CreditCheckConsent,
         OpenBankingConsent = application.OpenBankingConsent,
         SelectedProductId = application.SelectedProductId,
+        SelectedProduct = application.SelectedProduct,
         DecisionInPrinciple = application.DecisionInPrinciple,
         Documents = application.Documents
     };

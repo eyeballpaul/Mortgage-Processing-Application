@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/Eligibility/">
+    <Project Path="PD.Eligibility.Api/PD.Eligibility.Api.csproj" />
+    <Project Path="PD.Eligibility.Contracts/PD.Eligibility.Contracts.csproj" />
+  </Folder>
   <Folder Name="/Products/">
     <Project Path="PD.Products.Api/PD.Products.Api.csproj" />
     <Project Path="PD.Products.Application/PD.Products.Application.csproj" />
@@ -9,9 +13,16 @@
   </Folder>
   <Project Path="PD.Mortgages.DatabaseBootstrap/PD.Mortgages.DatabaseBootstrap.csproj" />
   <Project Path="PD.Mortgages.AppHost/PD.Mortgages.AppHost.csproj" />
+  <Project Path="PD.Mortgages.Api/PD.Mortgages.Api.csproj" />
   <Project Path="PD.Mortgages.Application/PD.Mortgages.Application.csproj" />
+  <Project Path="PD.Mortgages.Abstractions/PD.Mortgages.Abstractions.csproj" />
+  <Project Path="PD.Mortgages.Client/PD.Mortgages.Client.csproj" />
+  <Project Path="PD.Mortgages.Contracts/PD.Mortgages.Contracts.csproj" />
+  <Project Path="PD.Mortgages.CustomerSessions/PD.Mortgages.CustomerSessions.csproj" />
   <Project Path="PD.Mortgages.Domain/PD.Mortgages.Domain.csproj" />
   <Project Path="PD.Mortgages.Infrastructure/PD.Mortgages.Infrastructure.csproj" />
+  <Project Path="PD.Mortgages.SharedKernel/PD.Mortgages.SharedKernel.csproj" />
+  <Project Path="PD.Mortgages.Transport/PD.Mortgages.Transport.csproj" />
   <Project Path="PD.Mortgages.Staff.Web/PD.Mortgages.Staff.Web.csproj" />
   <Project Path="PD.Mortgages.Tests/PD.Mortgages.Tests.csproj" />
   <Project Path="PD.Mortgages.Web/PD.Mortgages.Web.csproj" />

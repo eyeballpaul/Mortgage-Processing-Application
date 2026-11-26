@@ -17,6 +17,7 @@
         }
     </div>
     <form asp-action="Products" method="post">
+        @await Html.PartialAsync("_ExpectedVersion")
         <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
         @if (Model.DipOutcome == PD.Mortgages.Domain.Enums.DecisionInPrincipleOutcome.AboveIndicativeRange)
         {

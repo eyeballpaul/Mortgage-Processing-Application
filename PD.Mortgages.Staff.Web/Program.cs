@@ -5,19 +5,19 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using PD.Mortgages.Client;
 using PD.Mortgages.Application.Security;
 using PD.Mortgages.Application.Services;
-using PD.Mortgages.Infrastructure.Persistence;
-using PD.Mortgages.Infrastructure.Products;
 using PD.Mortgages.Staff.Web.Configuration;
-using PD.Mortgages.Staff.Web.Health;
 using PD.Mortgages.Staff.Web.Security;
+using PD.Shared;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
     WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot")
 });
+builder.Services.AddOptionalTracing(builder.Environment, "staff-web");
 
 if (!Guid.TryParse(builder.Configuration["AzureAd:TenantId"], out _) ||
     !Guid.TryParse(builder.Configuration["AzureAd:ClientId"], out _) ||
@@ -26,12 +26,19 @@ if (!Guid.TryParse(builder.Configuration["AzureAd:TenantId"], out _) ||
     throw new InvalidOperationException(
         "Single-tenant Entra ID settings are required. Configure GUID values for AzureAd:TenantId and AzureAd:ClientId, plus AzureAd:ClientSecret, using User Secrets locally or secure environment settings in Azure.");
 }
+if (!builder.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(builder.Configuration["DataProtection:BlobUri"]))
+{
+    throw new InvalidOperationException("DataProtection:BlobUri is required outside Development.");
+}
 
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews(options =>
+    options.Filters.Add(new AuthorizeForScopesAttribute { ScopeKeySection = "MortgageApi:Scope" }));
 builder.Services.AddProblemDetails();
 builder.Services.AddAzureBlobDataProtection(builder.Configuration);
 builder.Services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
-    .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("AzureAd"));
+    .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("AzureAd"))
+    .EnableTokenAcquisitionToCallDownstreamApi()
+    .AddInMemoryTokenCaches();
 builder.Services.Configure<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme, options =>
 {
     options.Cookie.Name = "__Host-PDMortgages.Staff";
@@ -47,6 +54,11 @@ builder.Services.Configure<OpenIdConnectOptions>(OpenIdConnectDefaults.Authentic
     options.MapInboundClaims = true;
     options.TokenValidationParameters.NameClaimType = "name";
     options.TokenValidationParameters.RoleClaimType = StaffAuthorization.RoleClaimType;
+    var mortgageScope = builder.Configuration["MortgageApi:Scope"];
+    if (!string.IsNullOrWhiteSpace(mortgageScope))
+    {
+        options.Scope.Add(mortgageScope);
+    }
 });
 builder.Services.AddAuthorization(options =>
 {
@@ -60,46 +72,19 @@ builder.Services.AddAuthorization(options =>
     options.FallbackPolicy = staffPolicy;
 });
 builder.Services.AddHealthChecks()
-    .AddCheck<ApplicationHealthCheck>("application", tags: ["ready"]);
+    .AddCheck<MortgageApiHealthCheck>("mortgage-api", tags: ["ready"]);
 builder.Services.AddOptions<ApplicationSecurityOptions>()
     .BindConfiguration(ApplicationSecurityOptions.SectionName)
     .ValidateOnStart();
-builder.Services.AddOptions<MortgageWorkflowOptions>()
-    .BindConfiguration(MortgageWorkflowOptions.SectionName)
-    .Validate(options => !string.IsNullOrWhiteSpace(options.ConsentTermsVersion), "MortgageWorkflow:ConsentTermsVersion is required.");
 builder.Services.AddSingleton<IDocumentUploadValidator, DocumentUploadValidator>();
 
-builder.Services.AddMortgagePersistence(builder.Configuration);
-
-if (bool.TryParse(builder.Configuration["ProductService:UseMock"], out var useMockProductService) && useMockProductService)
-{
-    builder.Services.AddSingleton<LocalProductCatalogFallback>();
-    builder.Services.AddSingleton<IProductCatalogClient, MockProductCatalogClient>();
-}
-else
-{
-    builder.Services.AddTransient<ProductServiceResilienceHandler>();
-    builder.Services.AddTransient<ProductCorrelationHandler>();
-    builder.Services.AddHttpClient<IProductCatalogClient, ProductCatalogClient>(client =>
-    {
-        client.BaseAddress = new Uri(builder.Configuration["ProductService:BaseUrl"] ?? "http://localhost:5260/");
-        client.Timeout = TimeSpan.FromSeconds(10);
-        var apiKey = builder.Configuration["ProductService:ApiKey"];
-        if (!string.IsNullOrWhiteSpace(apiKey))
-        {
-            client.DefaultRequestHeaders.Add("X-Product-Service-Key", apiKey);
-        }
-    }).AddHttpMessageHandler<ProductCorrelationHandler>()
-      .AddHttpMessageHandler<ProductServiceResilienceHandler>();
-}
-
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddSingleton<IApplicationActor, EntraStaffApplicationActor>();
 builder.Services.AddSingleton<IValidateOptions<ApplicationSecurityOptions>, StaffSecurityOptionsValidator>();
-builder.Services.AddScoped<IMortgageApplicationService, MortgageApplicationService>();
+builder.Services.AddScoped<IMortgageApiCredentials, StaffMortgageApiCredentials>();
+builder.Services.AddMortgageApiClient(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
-await app.Services.MigrateMortgageDatabaseAsync();
+app.UseMiddleware<RequestTelemetryMiddleware>();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseStaticFiles();

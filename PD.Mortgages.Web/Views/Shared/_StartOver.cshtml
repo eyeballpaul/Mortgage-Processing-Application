@@ -3,5 +3,6 @@
       method="post"
       class="start-over-form"
       onsubmit="return confirm('This will permanently delete your current application and any uploaded documents. Start again?');">
+    @await Html.PartialAsync("_ExpectedVersion")
     <button type="submit" class="start-over-link">Start over</button>
 </form>

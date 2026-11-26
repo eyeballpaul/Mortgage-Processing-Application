@@ -53,29 +53,23 @@
                 <div class="form-check"><input asp-for="OpenBankingConsent" class="form-check-input" /><label asp-for="OpenBankingConsent" class="form-check-label"></label></div>
             </section>
             <section class="staff-form-section" aria-labelledby="product-heading">
-                <h2 id="product-heading">Eligible products</h2>
-                <p>The indicative Decision in Principle is generated when you save. Product options are checked against the customer's property and deposit.</p>
-                @if (Model.Id is null)
+                <h2 id="product-heading">Selected product at submission</h2>
+                @if (Model.SelectedProduct is { } product)
                 {
-                    <p class="form-text">Save the draft to calculate eligible product options.</p>
+                    <dl class="summary-list">
+                        <dt>Product</dt><dd>@product.Name</dd>
+                        <dt>Interest rate</dt><dd>@product.InterestRate.ToString("0.00")%</dd>
+                        <dt>APRC</dt><dd>@product.Aprc.ToString("0.00")%</dd>
+                        <dt>Fee</dt><dd>@product.Fee.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</dd>
+                        <dt>Initial term</dt><dd>@product.FixedTermYears year(s)</dd>
+                        <dt>Maximum loan-to-value</dt><dd>@product.MaximumLoanToValue.ToString("0.##")%</dd>
+                        <dt>Catalog version</dt><dd>@product.CatalogVersion</dd>
+                    </dl>
                 }
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label asp-for="SelectedProductId" class="form-label"></label>
-                        <select asp-for="SelectedProductId" class="form-select">
-                            <option value="">No product selected yet</option>
-                            @foreach (var product in Model.EligibleProducts)
-                            {
-                                <option value="@product.Id">@product.Name — @product.InterestRate.ToString("0.00")% (APRC @product.Aprc.ToString("0.00")%)</option>
-                            }
-                        </select>
-                        <span asp-validation-for="SelectedProductId" class="field-validation"></span>
-                        @if (Model.Id is not null && Model.EligibleProducts.Count == 0 && Model.PropertyValue.HasValue && Model.Deposit.HasValue)
-                        {
-                            <p class="form-text">No eligible products are currently available for these property and deposit details.</p>
-                        }
-                    </div>
-                </div>
+                else
+                {
+                    <p>Historical product terms are not available for this application. Product reference: @(Model.SelectedProductId ?? "not recorded").</p>
+                }
             </section>
             @if (!isNew)
             {

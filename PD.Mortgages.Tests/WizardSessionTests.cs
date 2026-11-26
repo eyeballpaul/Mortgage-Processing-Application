@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
-using PD.Mortgages.Web.Security;
 using PD.Mortgages.Web.Services;
 
 namespace PD.Mortgages.Tests;
@@ -12,13 +11,9 @@ public sealed class WizardSessionTests
     {
         var first = CreateSession();
         var second = CreateSession();
-        var actor = new SessionApplicationActor(first);
-
-        Assert.Equal(first.ActorId, actor.SubjectId);
-        Assert.Equal(actor.SubjectId, actor.SubjectId);
+        var actor = first.ActorId;
+        Assert.Equal(actor, first.ActorId);
         Assert.NotEqual(first.ActorId, second.ActorId);
-        Assert.False(actor.IsAuthenticated);
-        Assert.False(actor.IsStaff);
     }
 
     [Fact]

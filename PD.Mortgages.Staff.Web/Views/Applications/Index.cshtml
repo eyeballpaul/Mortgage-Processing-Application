@@ -8,7 +8,9 @@
         <h1>Mortgage applications</h1>
         <p class="mb-0">Search recent applications or start one for a customer.</p>
     </div>
-    <a class="btn btn-primary btn-lg" asp-action="Create">Create application</a>
+    <form asp-controller="ApplicationWizard" asp-action="Start" method="post">
+        <button class="btn btn-primary btn-lg" type="submit">Create application</button>
+    </form>
 </section>
 <section class="dashboard-card staff-table-card" aria-labelledby="application-list-title">
     <div class="staff-table-heading">
@@ -36,12 +38,21 @@
         <button class="btn btn-primary align-self-end" type="submit">Search</button>
         <a class="btn btn-outline-secondary align-self-end" asp-action="Index">Clear</a>
     </form>
+    <form method="get" asp-action="FindAudit" class="staff-search-form">
+        <div class="staff-search-field">
+            <label for="audit-id" class="form-label">Find retained audit history by full application ID</label>
+            <input id="audit-id" name="id" class="form-control" required />
+        </div>
+        <button class="btn btn-outline-secondary align-self-end" type="submit">Find audit history</button>
+    </form>
     @if (Model.Applications.Count == 0)
     {
         <div class="staff-empty-state">
             <h3>No matching applications</h3>
             <p>Try a different search or create a new application for a customer.</p>
-            <a class="btn btn-outline-primary" asp-action="Create">Create application</a>
+            <form asp-controller="ApplicationWizard" asp-action="Start" method="post">
+                <button class="btn btn-outline-primary" type="submit">Create application</button>
+            </form>
         </div>
     }
     else

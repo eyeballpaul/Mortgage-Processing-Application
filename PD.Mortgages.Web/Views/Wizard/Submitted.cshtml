@@ -1,3 +1,4 @@
+@model PD.Mortgages.Application.Models.SubmissionReceiptDto
 @{
     ViewData["Title"] = "Application submitted";
 }
@@ -5,6 +6,7 @@
     <p class="eyebrow">Application complete</p>
     <h1>Your application has been submitted</h1>
     <p>Our team will review your application and contact you about the next steps.</p>
+    <p>Reference: <strong>@Model.Reference</strong></p>
     <p>This demonstration does not send your application to a lender or third party.</p>
     <a class="btn btn-primary" asp-controller="Home" asp-action="Index">Return to home</a>
 </div>

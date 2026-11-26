@@ -1,10 +1,35 @@
 using PD.Mortgages.Domain.Entities;
 using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Infrastructure.Persistence;
 
 namespace PD.Mortgages.Tests;
 
 public sealed class MortgageApplicationTests
 {
+    [Theory]
+    [InlineData("", "Doe", "jane@example.com", "07123456789")]
+    [InlineData("Jane", "D", "jane@example.com", "07123456789")]
+    [InlineData("Jane", "Doe", "not-an-email", "07123456789")]
+    [InlineData("Jane", "Doe", "jane@example.com", "not-a-phone")]
+    public void ApplicantDetailsMustBeValid(string firstName, string lastName, string email, string phone)
+    {
+        var application = new MortgageApplication();
+        Assert.Throws<ArgumentException>(() => application.UpdateApplicant(firstName, lastName, email, phone));
+        Assert.Null(application.FirstName);
+        Assert.Equal(0, application.Version);
+    }
+
+    [Fact]
+    public void FinancialInputsMustStayWithinSupportedRanges()
+    {
+        var application = new MortgageApplication();
+        Assert.Throws<ArgumentOutOfRangeException>(() => application.UpdateQualification(49_999, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => application.UpdateQualification(5_000_001, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => application.UpdateFinances(9_999, 0, EmploymentType.Employed));
+        Assert.Throws<ArgumentOutOfRangeException>(() => application.UpdateFinances(10_000, 100_001, EmploymentType.Employed));
+        Assert.Equal(0, application.Version);
+    }
+
     [Fact]
     public void EnumDisplayNamesUseReadableLabelsForCompoundValues()
     {
@@ -34,24 +59,35 @@ public sealed class MortgageApplicationTests
         var application = new MortgageApplication();
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            application.GenerateIndicativeDecisionInPrinciple());
+            application.GetDecisionInputs());
 
         Assert.Contains("property", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void GenerateIndicativeDecisionUsesIncomeMultipleWhenCreditConsentIsRecorded()
+    public void RecordIndicativeDecisionPreservesServiceResult()
     {
         var application = new MortgageApplication();
         application.UpdateQualification(300_000m, 30_000m);
         application.UpdateFinances(100_000m, 1_000m, EmploymentType.Employed);
         application.RecordConsents(true, false, "terms-1", "customer-1");
 
-        var result = application.GenerateIndicativeDecisionInPrinciple();
+        TestEligibilityClient.Record(application);
+        var result = application.DecisionInPrinciple!;
 
         Assert.Equal(DecisionInPrincipleOutcome.WithinIndicativeRange, result.Outcome);
         Assert.Equal(270_000m, result.RequestedLoanAmount);
         Assert.Equal(450_000m, result.IndicativeMaximumBorrowing);
+    }
+
+    [Fact]
+    public void ExistingDecisionWithoutRuleVersionCanBeRead()
+    {
+        var result = System.Text.Json.JsonSerializer.Deserialize<DecisionInPrincipleResult>(
+            """{"Outcome":0,"RequestedLoanAmount":270000,"IndicativeMaximumBorrowing":null,"AssessedAtUtc":"2026-01-01T00:00:00Z"}""");
+        Assert.NotNull(result);
+        Assert.Null(result.RuleVersion);
+        Assert.Equal(270000, result.RequestedLoanAmount);
     }
 
     [Fact]
@@ -62,7 +98,7 @@ public sealed class MortgageApplicationTests
         application.UpdateApplicant("Jane", "Doe", "jane@example.com", "07123456789");
         application.UpdateFinances(100_000m, 1_000m, EmploymentType.Employed);
         application.RecordConsents(true, true, "terms-1", "customer-1");
-        application.GenerateIndicativeDecisionInPrinciple();
+        TestEligibilityClient.Record(application);
 
         Assert.Throws<InvalidOperationException>(() => application.Submit());
     }
@@ -72,7 +108,26 @@ public sealed class MortgageApplicationTests
     {
         var application = new MortgageApplication();
 
-        Assert.Throws<ArgumentException>(() => application.SelectProduct(" "));
+        Assert.Throws<ArgumentException>(() => application.SelectProduct(" ", Product()));
+        Assert.Throws<ArgumentException>(() => application.SelectProduct("other", Product()));
+    }
+
+    [Fact]
+    public void LegacyDraftRequiresProductSnapshotBeforeSubmission()
+    {
+        var application = new MortgageApplication();
+        application.UpdateQualification(300_000m, 30_000m);
+        application.UpdateApplicant("Jane", "Doe", "jane@example.com", "07123456789");
+        application.UpdateFinances(100_000m, 1_000m, EmploymentType.Employed);
+        application.RecordConsents(true, true, "terms-1", "customer-1");
+        TestEligibilityClient.Record(application);
+        application.SelectProduct("fixed-2", Product());
+        var legacy = (MortgageApplicationSnapshot.FromDomain(application) with { SelectedProduct = null }).ToDomain();
+
+        Assert.Throws<InvalidOperationException>(() => legacy.Submit());
+        legacy.SelectProduct("fixed-2", Product());
+        legacy.Submit();
+        Assert.Equal(ApplicationStatus.Submitted, legacy.Status);
     }
 
     [Fact]
@@ -102,12 +157,15 @@ public sealed class MortgageApplicationTests
         application.UpdateApplicant("Jane", "Doe", "jane@example.com", "07123456789");
         application.UpdateFinances(100_000m, 1_000m, EmploymentType.Employed);
         application.RecordConsents(true, true, "terms-1", "customer-1");
-        application.GenerateIndicativeDecisionInPrinciple();
-        application.SelectProduct("fixed-2");
+        TestEligibilityClient.Record(application);
+        application.SelectProduct("fixed-2", Product());
         application.Submit();
 
         Assert.Throws<InvalidOperationException>(() => application.UpdateQualification(400_000m, 40_000m));
     }
+
+    private static SelectedMortgageProductSnapshot Product() =>
+        new("fixed-2", "Fixed", 4m, 999m, 5m, 2, 90, "original");
 
     [Fact]
     public void ConsentHistoryRetainsEachPurposeDecisionVersionAndActor()

@@ -1,12 +1,21 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <Compile Include="..\PD.Shared\RequestTelemetryMiddleware.cs" Link="RequestTelemetryMiddleware.cs" />
+    <Compile Include="..\PD.Shared\TracingRegistration.cs" Link="TracingRegistration.cs" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <ProjectReference Include="..\PD.Mortgages.Application\PD.Mortgages.Application.csproj" />
-    <ProjectReference Include="..\PD.Mortgages.Infrastructure\PD.Mortgages.Infrastructure.csproj" />
+    <ProjectReference Include="..\PD.Mortgages.Abstractions\PD.Mortgages.Abstractions.csproj" />
+    <ProjectReference Include="..\PD.Mortgages.CustomerSessions\PD.Mortgages.CustomerSessions.csproj" />
+    <ProjectReference Include="..\PD.Mortgages.Client\PD.Mortgages.Client.csproj" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.SqlServer" Version="10.0.0" />
   </ItemGroup>

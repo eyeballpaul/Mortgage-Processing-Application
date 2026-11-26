@@ -1,26 +1,48 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.EntityFrameworkCore;
+using PD.Mortgages.CustomerSessions;
+using PD.Mortgages.Client;
 using PD.Mortgages.Application.Services;
-using PD.Mortgages.Application.Security;
-using PD.Mortgages.Web.Health;
-using PD.Mortgages.Web.Middleware;
+using PD.Shared;
 using PD.Mortgages.Web.Services;
 using PD.Mortgages.Web.Security;
 using PD.Mortgages.Web.Configuration;
-using PD.Mortgages.Infrastructure.Products;
-using PD.Mortgages.Infrastructure.Persistence;
+using PD.Mortgages.Web.Health;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddOptionalTracing(builder.Environment, "customer-web");
 
 builder.Services.AddControllersWithViews();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("application-creation", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(10),
+                QueueLimit = 0
+            }));
+    options.AddPolicy("dependency-check", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
 builder.Services.AddProblemDetails();
 builder.Services.AddAzureBlobDataProtection(builder.Configuration);
 ProductionConfigurationValidator.Validate(builder.Environment, builder.Configuration);
-builder.Services.AddOptions<MortgageWorkflowOptions>()
-    .BindConfiguration(MortgageWorkflowOptions.SectionName)
-    .Validate(options => !string.IsNullOrWhiteSpace(options.ConsentTermsVersion), "MortgageWorkflow:ConsentTermsVersion is required.");
-builder.Services.AddScoped<IApplicationActor, SessionApplicationActor>();
 builder.Services.AddHealthChecks()
-    .AddCheck<ApplicationHealthCheck>("application", tags: ["ready"]);
+    .AddCheck<MortgageApiHealthCheck>("mortgage-api", tags: ["ready"])
+    .AddCheck<CustomerSessionHealthCheck>("customer-session-store", tags: ["ready"])
+    .AddCheck<MortgageDependencyHealthCheck>("mortgage-dependencies", tags: ["dependencies"]);
 var sessionProvider = builder.Configuration["Session:Provider"] ?? "Memory";
 if (string.Equals(sessionProvider, "Redis", StringComparison.OrdinalIgnoreCase))
 {
@@ -33,17 +55,23 @@ if (string.Equals(sessionProvider, "Redis", StringComparison.OrdinalIgnoreCase))
 }
 else if (string.Equals(sessionProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
 {
+    var sessionConnectionString = builder.Configuration.GetConnectionString("customersessions")
+        ?? throw new InvalidOperationException("ConnectionStrings:customersessions is required when Session:Provider is SqlServer.");
+    builder.Services.AddDbContext<CustomerSessionDbContext>(options => options.UseSqlServer(sessionConnectionString));
     builder.Services.AddDistributedSqlServerCache(options =>
     {
-        options.ConnectionString = builder.Configuration.GetConnectionString("mortgages")
-            ?? throw new InvalidOperationException("ConnectionStrings:mortgages is required when Session:Provider is SqlServer.");
+        options.ConnectionString = sessionConnectionString;
         options.SchemaName = "dbo";
         options.TableName = "MortgageSessionCache";
     });
 }
-else
+else if (string.Equals(sessionProvider, "Memory", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddDistributedMemoryCache();
+}
+else
+{
+    throw new InvalidOperationException($"Session provider '{sessionProvider}' is not supported.");
 }
 builder.Services.AddSession(options =>
 {
@@ -55,39 +83,20 @@ builder.Services.AddSession(options =>
     options.Cookie.SameSite = SameSiteMode.Lax;
 });
 
-builder.Services.AddMortgagePersistence(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IWizardSession, WizardSession>();
 builder.Services.AddSingleton<WizardViewModelFactory>();
 builder.Services.AddSingleton<IDocumentUploadValidator, DocumentUploadValidator>();
-builder.Services.AddSingleton<LocalProductCatalogFallback>();
-var useMockProductService = bool.TryParse(builder.Configuration["ProductService:UseMock"], out var configuredUseMock)
-    && configuredUseMock;
-
-if (useMockProductService)
-{
-    builder.Services.AddSingleton<IProductCatalogClient, MockProductCatalogClient>();
-}
-else
-{
-    builder.Services.AddTransient<ProductServiceResilienceHandler>();
-    builder.Services.AddTransient<ProductCorrelationHandler>();
-    builder.Services.AddHttpClient<IProductCatalogClient, ProductCatalogClient>(client =>
-    {
-        client.BaseAddress = new Uri(builder.Configuration["ProductService:BaseUrl"] ?? "http://localhost:5260/");
-        client.Timeout = TimeSpan.FromSeconds(10);
-        var apiKey = builder.Configuration["ProductService:ApiKey"];
-        if (!string.IsNullOrWhiteSpace(apiKey))
-        {
-            client.DefaultRequestHeaders.Add("X-Product-Service-Key", apiKey);
-        }
-    }).AddHttpMessageHandler<ProductCorrelationHandler>()
-      .AddHttpMessageHandler<ProductServiceResilienceHandler>();
-}
-builder.Services.AddScoped<IMortgageApplicationService, MortgageApplicationService>();
+builder.Services.AddScoped<IMortgageApiCredentials, CustomerMortgageApiCredentials>();
+builder.Services.AddMortgageApiClient(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
-await app.Services.MigrateMortgageDatabaseAsync();
+if (string.Equals(sessionProvider, "SqlServer", StringComparison.OrdinalIgnoreCase) &&
+    builder.Configuration.GetValue<bool>("Session:RunMigrationsOnStartup"))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    await scope.ServiceProvider.GetRequiredService<CustomerSessionDbContext>().Database.MigrateAsync();
+}
 
 if (!app.Environment.IsDevelopment())
 {
@@ -99,6 +108,7 @@ app.UseHttpsRedirection();
 app.UseMiddleware<RequestTelemetryMiddleware>();
 app.UseStaticFiles();
 app.UseRouting();
+app.UseRateLimiter();
 app.UseSession();
 app.UseAuthorization();
 
@@ -113,6 +123,10 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready")
 });
+app.MapHealthChecks("/health/dependencies", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("dependencies")
+}).RequireRateLimiting("dependency-check");
 
 app.Run();
 

@@ -21,6 +21,14 @@ variables:
   documentStorageAccountName: 'REPLACEWITHUNIQUEDOCUMENTS'
   mortgagesWebAppName: 'pd-mortgages-web'
   productsApiAppName: 'pd-products-api'
+  eligibilityApiAppName: 'pd-eligibility-api'
+  mortgageApiAppName: 'pd-mortgages-api'
+  staffWebAppName: 'pd-mortgages-staff-web'
+  mortgageApiClientId: 'REPLACE-WITH-MORTGAGE-API-CLIENT-ID'
+  staffClientId: 'REPLACE-WITH-STAFF-WEB-CLIENT-ID'
+  alertEmail: ''
+  otlpEndpoint: ''
+  otlpProtocol: 'grpc'
   buildConfiguration: 'Release'
 
 stages:
@@ -78,7 +86,19 @@ stages:
                 set -euo pipefail
 
                 pipelinePrincipalId="$PIPELINE_PRINCIPAL_ID"
-                productApiKey="$(openssl rand -hex 32)"
+                if [[ -z "$STAFF_CLIENT_SECRET" || "$STAFF_CLIENT_SECRET" == '$('* ]]; then
+                  echo 'Set the secret pipeline variable staffClientSecret to the staff Entra app secret value.' >&2
+                  exit 1
+                fi
+                if [[ ! "$PRODUCT_SERVICE_API_KEY" =~ ^[A-Za-z0-9_-]{32,128}$ ]]; then
+                  echo 'Set the secret pipeline variable productServiceApiKey to 32-128 URL-safe characters.' >&2
+                  exit 1
+                fi
+                productApiKey="$PRODUCT_SERVICE_API_KEY"
+                if [[ ! "$ELIGIBILITY_SERVICE_API_KEY" =~ ^[A-Za-z0-9_-]{32,128}$ ]]; then
+                  echo 'Set the secret pipeline variable eligibilityServiceApiKey to 32-128 URL-safe characters.' >&2
+                  exit 1
+                fi
                 sqlAdminPassword="$(openssl rand -base64 32)"
 
                 commonParameters=(
@@ -89,12 +109,29 @@ stages:
                   "documentStorageAccountName=$DOCUMENT_STORAGE_ACCOUNT_NAME"
                   "mortgagesWebAppName=$MORTGAGES_WEB_APP"
                   "productsApiAppName=$PRODUCTS_API_APP"
+                  "eligibilityApiAppName=$ELIGIBILITY_API_APP"
+                  "mortgageApiAppName=$MORTGAGE_API_APP"
+                  "staffWebAppName=$STAFF_WEB_APP"
+                  "mortgageApiClientId=$MORTGAGE_API_CLIENT_ID"
+                  "staffClientId=$STAFF_CLIENT_ID"
+                  "staffClientSecret=$STAFF_CLIENT_SECRET"
                   "imageTag=$BUILD_BUILDID"
                   "pipelinePrincipalId=$pipelinePrincipalId"
                   "pipelinePrincipalName=$PIPELINE_PRINCIPAL_NAME"
                   "sqlAdminPassword=$sqlAdminPassword"
                   "productServiceApiKey=$productApiKey"
+                  "eligibilityServiceApiKey=$ELIGIBILITY_SERVICE_API_KEY"
+                  "alertEmail=$ALERT_EMAIL"
+                  "otlpEndpoint=$OTLP_ENDPOINT"
+                  "otlpProtocol=$OTLP_PROTOCOL"
                 )
+
+                az bicep build --file infra/main.bicep --stdout > /dev/null
+                az deployment group validate \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --template-file infra/main.bicep \
+                  --parameters "${commonParameters[@]}" deployApps=false \
+                  --output none
 
                 az deployment group create \
                   --name pd-mortgages-foundation \
@@ -112,6 +149,33 @@ stages:
                 mortgagesIdentityClientId="$(jq -r '.mortgagesIdentityClientId.value' <<< "$deploymentOutputs")"
                 productsIdentityName="$(jq -r '.productsIdentityName.value' <<< "$deploymentOutputs")"
                 productsIdentityClientId="$(jq -r '.productsIdentityClientId.value' <<< "$deploymentOutputs")"
+                customerSessionsIdentityName="$(jq -r '.customerSessionsIdentityName.value' <<< "$deploymentOutputs")"
+                customerSessionsIdentityClientId="$(jq -r '.customerSessionsIdentityClientId.value' <<< "$deploymentOutputs")"
+                customerSessionsIdentityPrincipalId="$(jq -r '.customerSessionsIdentityPrincipalId.value' <<< "$deploymentOutputs")"
+
+                for attempt in $(seq 1 12); do
+                  if az ad sp show --id "$customerSessionsIdentityClientId" --output none; then
+                    break
+                  fi
+                  if [ "$attempt" -eq 12 ]; then
+                    echo 'The customer managed identity is not available in Entra; verify Graph permissions and retry.' >&2
+                    exit 1
+                  fi
+                  sleep 10
+                done
+                apiServicePrincipal="$(az ad sp show --id "$MORTGAGE_API_CLIENT_ID" --output json)"
+                apiPrincipalId="$(jq -r '.id' <<< "$apiServicePrincipal")"
+                customerRoleId="$(jq -r '[.appRoles[] | select(.value == "MortgageCustomer" and .isEnabled and (.allowedMemberTypes | index("Application")))] | if length == 1 then .[0].id else empty end' <<< "$apiServicePrincipal")"
+                if [[ -z "$customerRoleId" ]]; then
+                  echo 'The Mortgage API service principal must expose exactly one enabled MortgageCustomer application role.' >&2
+                  exit 1
+                fi
+                assignmentUrl="https://graph.microsoft.com/v1.0/servicePrincipals/$customerSessionsIdentityPrincipalId/appRoleAssignments"
+                existingAssignment="$(az rest --method get --url "$assignmentUrl" --query "value[?resourceId=='$apiPrincipalId' && appRoleId=='$customerRoleId'].id | [0]" --output tsv)"
+                if [[ -z "$existingAssignment" ]]; then
+                  assignmentBody="$(jq -n --arg principal "$customerSessionsIdentityPrincipalId" --arg resource "$apiPrincipalId" --arg role "$customerRoleId" '{principalId:$principal,resourceId:$resource,appRoleId:$role}')"
+                  az rest --method post --url "$assignmentUrl" --body "$assignmentBody" --output none
+                fi
 
                 dotnet run --project PD.Mortgages.DatabaseBootstrap/PD.Mortgages.DatabaseBootstrap.csproj \
                   --configuration Release --no-restore -- \
@@ -119,7 +183,9 @@ stages:
                   --mortgages-identity-name "$mortgagesIdentityName" \
                   --mortgages-identity-client-id "$mortgagesIdentityClientId" \
                   --products-identity-name "$productsIdentityName" \
-                  --products-identity-client-id "$productsIdentityClientId"
+                  --products-identity-client-id "$productsIdentityClientId" \
+                  --customer-sessions-identity-name "$customerSessionsIdentityName" \
+                  --customer-sessions-identity-client-id "$customerSessionsIdentityClientId"
 
                 loginServer="$(az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query loginServer --output tsv)"
                 for attempt in $(seq 1 10); do
@@ -134,18 +200,65 @@ stages:
                 done
 
                 docker build --file PD.Mortgages.Web/Dockerfile --tag "$loginServer/mortgages-web:$BUILD_BUILDID" .
+                docker build --file PD.Mortgages.Api/Dockerfile --tag "$loginServer/mortgages-api:$BUILD_BUILDID" .
                 docker build --file PD.Products.Api/Dockerfile --tag "$loginServer/products-api:$BUILD_BUILDID" .
+                docker build --file PD.Eligibility.Api/Dockerfile --tag "$loginServer/eligibility-api:$BUILD_BUILDID" .
                 docker build --file PD.Mortgages.Staff.Web/Dockerfile --tag "$loginServer/mortgages-staff-web:$BUILD_BUILDID" .
 
                 docker push "$loginServer/mortgages-web:$BUILD_BUILDID"
+                docker push "$loginServer/mortgages-api:$BUILD_BUILDID"
                 docker push "$loginServer/products-api:$BUILD_BUILDID"
+                docker push "$loginServer/eligibility-api:$BUILD_BUILDID"
                 docker push "$loginServer/mortgages-staff-web:$BUILD_BUILDID"
+
+                az deployment group validate \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --template-file infra/main.bicep \
+                  --parameters "${commonParameters[@]}" deployApps=true \
+                  --output none
 
                 az deployment group create \
                   --name pd-mortgages-apps \
                   --resource-group "$RESOURCE_GROUP" \
                   --template-file infra/main.bicep \
                   --parameters "${commonParameters[@]}" deployApps=true
+
+                for output in mortgagesWebUrl staffWebUrl; do
+                  url="$(az deployment group show --name pd-mortgages-apps --resource-group "$RESOURCE_GROUP" \
+                    --query "properties.outputs.$output.value" --output tsv)"
+                  if [[ "$url" != https://* ]]; then
+                    echo "Deployment did not return an HTTPS URL for $output." >&2
+                    exit 1
+                  fi
+                  ready=false
+                  for attempt in $(seq 1 24); do
+                    if status="$(curl --fail --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' "$url/health/ready")" &&
+                       [[ "$status" == 200 ]]; then
+                      ready=true
+                      break
+                    fi
+                    sleep 10
+                  done
+
+                  customerUrl="$(az deployment group show --name pd-mortgages-apps --resource-group "$RESOURCE_GROUP" \
+                    --query 'properties.outputs.mortgagesWebUrl.value' --output tsv)"
+                  dependenciesReady=false
+                  for attempt in $(seq 1 12); do
+                    if curl --fail --silent --show-error --max-time 30 "$customerUrl/health/dependencies" --output /dev/null; then
+                      dependenciesReady=true
+                      break
+                    fi
+                    sleep 10
+                  done
+                  if [[ "$dependenciesReady" != true ]]; then
+                    echo 'An authenticated Products or Eligibility API dependency check failed.' >&2
+                    exit 1
+                  fi
+                  if [[ "$ready" != true ]]; then
+                    echo "$output did not become ready after deployment." >&2
+                    exit 1
+                  fi
+                done
             env:
               RESOURCE_GROUP: $(resourceGroupName)
               AZURE_LOCATION: $(azureLocation)
@@ -157,3 +270,14 @@ stages:
               DOCUMENT_STORAGE_ACCOUNT_NAME: $(documentStorageAccountName)
               MORTGAGES_WEB_APP: $(mortgagesWebAppName)
               PRODUCTS_API_APP: $(productsApiAppName)
+              ELIGIBILITY_API_APP: $(eligibilityApiAppName)
+              MORTGAGE_API_APP: $(mortgageApiAppName)
+              STAFF_WEB_APP: $(staffWebAppName)
+              MORTGAGE_API_CLIENT_ID: $(mortgageApiClientId)
+              STAFF_CLIENT_ID: $(staffClientId)
+              STAFF_CLIENT_SECRET: $(staffClientSecret)
+              PRODUCT_SERVICE_API_KEY: $(productServiceApiKey)
+              ELIGIBILITY_SERVICE_API_KEY: $(eligibilityServiceApiKey)
+              ALERT_EMAIL: $(alertEmail)
+              OTLP_ENDPOINT: $(otlpEndpoint)
+              OTLP_PROTOCOL: $(otlpProtocol)

@@ -1,0 +1,149 @@
+@baseUrl = https://localhost:7270
+@customerToken = REPLACE_WITH_CUSTOMER_APPLICATION_TOKEN
+@staffToken = REPLACE_WITH_DELEGATED_STAFF_TOKEN
+@session = session:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+@applicationId = 11111111-1111-1111-1111-111111111111
+@documentId = 22222222-2222-2222-2222-222222222222
+@version = 1
+@submissionKey = 33333333-3333-3333-3333-333333333333
+
+### Draft reads and creation return `version`. Before each mutation, replace
+### @version with the latest value from a GET. A missing or malformed header
+### returns 400; a stale edit returns 409 with type urn:pd-mortgages:concurrency-conflict.
+### Successful edits may advance the version; GET again before the next edit.
+
+### Create a customer draft
+POST {{baseUrl}}/api/v1/mortgages
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+
+### Read a customer draft
+GET {{baseUrl}}/api/v1/mortgages/{{applicationId}}
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+
+### Create a staff draft
+POST {{baseUrl}}/api/v1/mortgages/staff
+Authorization: Bearer {{staffToken}}
+
+### Search applications
+GET {{baseUrl}}/api/v1/mortgages/staff?page=1&pageSize=25
+Authorization: Bearer {{staffToken}}
+
+### Read an application as staff
+GET {{baseUrl}}/api/v1/mortgages/staff/{{applicationId}}
+Authorization: Bearer {{staffToken}}
+
+### Read audit history as staff
+GET {{baseUrl}}/api/v1/mortgages/staff/{{applicationId}}/audit?page=1&pageSize=25
+Authorization: Bearer {{staffToken}}
+
+### Save property and deposit
+PUT {{baseUrl}}/api/v1/mortgages/{{applicationId}}/qualification
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+X-Expected-Version: {{version}}
+Content-Type: application/json
+
+{"propertyValue":300000,"deposit":30000}
+
+### Save applicant
+PUT {{baseUrl}}/api/v1/mortgages/{{applicationId}}/applicant
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+X-Expected-Version: {{version}}
+Content-Type: application/json
+
+{"firstName":"Jane","lastName":"Doe","email":"jane@example.com","phoneNumber":"07123456789"}
+
+### Save finances
+PUT {{baseUrl}}/api/v1/mortgages/{{applicationId}}/finances
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+X-Expected-Version: {{version}}
+Content-Type: application/json
+
+{"annualIncome":100000,"monthlyCommitments":1000,"employmentType":"Employed"}
+
+### Record consents
+PUT {{baseUrl}}/api/v1/mortgages/{{applicationId}}/consents
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+X-Expected-Version: {{version}}
+Content-Type: application/json
+
+{"creditCheckConsent":false,"openBankingConsent":false}
+
+### Generate a decision in principle
+POST {{baseUrl}}/api/v1/mortgages/{{applicationId}}/decision
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+X-Expected-Version: {{version}}
+
+### List products
+GET {{baseUrl}}/api/v1/mortgages/products
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+
+### List eligible products
+GET {{baseUrl}}/api/v1/mortgages/{{applicationId}}/eligible-products
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+
+### Read a product
+GET {{baseUrl}}/api/v1/mortgages/products/fixed-2
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+
+### Select a product
+PUT {{baseUrl}}/api/v1/mortgages/{{applicationId}}/product
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+X-Expected-Version: {{version}}
+Content-Type: application/json
+
+{"productId":"fixed-2"}
+
+### Attach a PDF (contents are base64)
+POST {{baseUrl}}/api/v1/mortgages/{{applicationId}}/documents
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+X-Expected-Version: {{version}}
+Content-Type: application/json
+
+{"fileName":"example.pdf","contents":"JVBERi0xLjc="}
+
+### Download an attached document
+GET {{baseUrl}}/api/v1/mortgages/{{applicationId}}/documents/{{documentId}}
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+
+### Submit the customer draft; retry with the same version and key.
+POST {{baseUrl}}/api/v1/mortgages/{{applicationId}}/customer-submission
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+X-Expected-Version: {{version}}
+Content-Type: application/json
+
+{"submissionKey":"{{submissionKey}}"}
+
+### Retrieve only the short-lived receipt in the same customer session
+### An unavailable receipt returns 404 with type urn:pd-mortgages:receipt-not-found.
+GET {{baseUrl}}/api/v1/mortgages/{{applicationId}}/submission-receipt
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+X-Submission-Key: {{submissionKey}}
+
+### Check the configured product catalog and service credential (internal API)
+GET {{baseUrl}}/health/dependencies
+
+### Submit as staff
+POST {{baseUrl}}/api/v1/mortgages/{{applicationId}}/submit
+Authorization: Bearer {{staffToken}}
+X-Expected-Version: {{version}}
+
+### Delete an in-progress draft
+DELETE {{baseUrl}}/api/v1/mortgages/{{applicationId}}
+Authorization: Bearer {{customerToken}}
+X-Mortgage-Session: {{session}}
+X-Expected-Version: {{version}}

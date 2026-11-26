@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\PD.Eligibility.Contracts\PD.Eligibility.Contracts.csproj" />
+    <InternalsVisibleTo Include="PD.Mortgages.Tests" />
     <ProjectReference Include="..\PD.Mortgages.Application\PD.Mortgages.Application.csproj" />
     <ProjectReference Include="..\PD.Mortgages.Domain\PD.Mortgages.Domain.csproj" />
     <ProjectReference Include="..\PD.Products.Contracts\PD.Products.Contracts.csproj" />

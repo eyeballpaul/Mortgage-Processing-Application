@@ -3,14 +3,26 @@ using Microsoft.Extensions.Logging;
 
 namespace PD.Mortgages.Infrastructure.Products;
 
-public sealed class ProductServiceResilienceHandler(
-    ILogger<ProductServiceResilienceHandler> logger) : DelegatingHandler
+public sealed class ProductServiceResilienceHandler : DelegatingHandler
 {
     private const int MaximumRetries = 2;
     private const int FailureThreshold = 3;
     private static readonly TimeSpan CircuitOpenDuration = TimeSpan.FromSeconds(30);
+    private readonly ILogger<ProductServiceResilienceHandler> logger;
+    private readonly TimeSpan requestTimeout;
     private int consecutiveFailures;
     private long circuitOpenUntilTicks;
+
+    public ProductServiceResilienceHandler(ILogger<ProductServiceResilienceHandler> logger)
+        : this(logger, TimeSpan.FromSeconds(10))
+    {
+    }
+
+    internal ProductServiceResilienceHandler(ILogger<ProductServiceResilienceHandler> logger, TimeSpan requestTimeout)
+    {
+        this.logger = logger;
+        this.requestTimeout = requestTimeout;
+    }
 
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
@@ -18,7 +30,7 @@ public sealed class ProductServiceResilienceHandler(
     {
         if (IsCircuitOpen())
         {
-            logger.LogWarning("Product service circuit is open; short-circuiting {Method} {Uri}", request.Method, request.RequestUri);
+            logger.LogWarning("Product service circuit is open; short-circuiting {Method}", request.Method);
             return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
             {
                 RequestMessage = request,
@@ -26,6 +38,22 @@ public sealed class ProductServiceResilienceHandler(
             };
         }
 
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(requestTimeout);
+        try
+        {
+            return await SendWithRetriesAsync(request, timeout.Token);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
+        {
+            RecordFailure();
+            logger.LogWarning("Product service request timed out for {Method}", request.Method);
+            throw new TaskCanceledException("The product service request timed out.", exception);
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendWithRetriesAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
         for (var attempt = 0; ; attempt++)
         {
             try
@@ -51,10 +79,9 @@ public sealed class ProductServiceResilienceHandler(
             catch (HttpRequestException exception) when (attempt < MaximumRetries)
             {
                 logger.LogWarning(
-                    exception,
-                    "Transient product service request failure for {Method} {Uri}; retry {RetryNumber} of {MaximumRetries}",
+                    "Transient product service request failure ({ExceptionType}) for {Method}; retry {RetryNumber} of {MaximumRetries}",
+                    exception.GetType().Name,
                     request.Method,
-                    request.RequestUri,
                     attempt + 1,
                     MaximumRetries);
                 await DelayAsync(attempt, request, cancellationToken);
@@ -62,7 +89,7 @@ public sealed class ProductServiceResilienceHandler(
             catch (HttpRequestException exception)
             {
                 RecordFailure();
-                logger.LogError(exception, "Product service request failed after retries for {Method} {Uri}", request.Method, request.RequestUri);
+                logger.LogError("Product service request failed after retries ({ExceptionType}) for {Method}", exception.GetType().Name, request.Method);
                 throw;
             }
         }
@@ -88,9 +115,8 @@ public sealed class ProductServiceResilienceHandler(
     {
         var delay = TimeSpan.FromMilliseconds(Math.Pow(2, attempt) * 100 + Random.Shared.Next(0, 100));
         logger.LogWarning(
-            "Transient product service response for {Method} {Uri}; retry {RetryNumber} of {MaximumRetries} after {DelayMilliseconds} ms",
+            "Transient product service response for {Method}; retry {RetryNumber} of {MaximumRetries} after {DelayMilliseconds} ms",
             request.Method,
-            request.RequestUri,
             attempt + 1,
             MaximumRetries,
             delay.TotalMilliseconds);

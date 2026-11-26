@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using PD.Products.Application.Services;
 using PD.Products.Contracts;
@@ -72,5 +74,5 @@ public sealed class ProductsController(IProductService productService) : Control
         product.Aprc,
         product.FixedTermYears,
         product.MaximumLoanToValue,
-        "1");
+        Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(product))));
 }

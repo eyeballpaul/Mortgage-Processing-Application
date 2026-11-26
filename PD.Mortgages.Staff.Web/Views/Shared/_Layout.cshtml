@@ -21,7 +21,9 @@
                 @if (User.IsInRole(StaffAuthorization.StaffRole))
                 {
                     <a asp-controller="Applications" asp-action="Index">Applications</a>
-                    <a asp-controller="Applications" asp-action="Create">New application</a>
+                    <form asp-controller="ApplicationWizard" asp-action="Start" method="post">
+                        <button class="nav-link" type="submit">New application</button>
+                    </form>
                 }
                 @if (User.Identity?.IsAuthenticated == true)
                 {

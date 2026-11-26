@@ -8,7 +8,7 @@ public sealed class ProductCorrelationHandler(IHttpContextAccessor httpContextAc
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        var correlationId = httpContextAccessor.HttpContext?.Request.Headers["X-Correlation-ID"].FirstOrDefault()
+        var correlationId = httpContextAccessor.HttpContext?.Response.Headers["X-Correlation-ID"].FirstOrDefault()
             ?? Guid.NewGuid().ToString("N");
         request.Headers.TryAddWithoutValidation("X-Correlation-ID", correlationId);
         return base.SendAsync(request, cancellationToken);

@@ -54,6 +54,7 @@ public sealed class StaffApplicationViewModel : IValidatableObject
 
     [Display(Name = "Selected mortgage product")]
     public string? SelectedProductId { get; set; }
+    public MortgageProductDto? SelectedProduct { get; set; }
 
     public bool SubmitApplication { get; set; }
     public IReadOnlyList<MortgageProductDto> EligibleProducts { get; set; } = [];

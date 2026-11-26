@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.RateLimiting;
 using PD.Mortgages.Application.Models;
 using PD.Mortgages.Application.Services;
 using PD.Mortgages.Web.Models;
@@ -6,18 +8,41 @@ using PD.Mortgages.Web.Services;
 
 namespace PD.Mortgages.Web.Controllers;
 
+public sealed class CustomerConcurrencyFilterAttribute : ExceptionFilterAttribute
+{
+    public override void OnException(ExceptionContext context)
+    {
+        if (context.Exception is not MortgageConcurrencyException) return;
+        context.ExceptionHandled = true;
+        context.Result = new ContentResult
+        {
+            StatusCode = 409,
+            ContentType = "text/html; charset=utf-8",
+            Content = "This application was changed elsewhere. Your changes were not saved. <a href=\"/application/resume\">Reload the application</a> and review it before trying again."
+        };
+    }
+}
+
 [Route("application")]
 [ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
+[CustomerConcurrencyFilter]
 public sealed class WizardController(
     IMortgageApplicationService applicationService,
     IWizardSession wizardSession,
     IDocumentUploadValidator documentUploadValidator,
-    WizardViewModelFactory viewModelFactory) : Controller
+    WizardViewModelFactory viewModelFactory,
+    ILogger<WizardController> logger) : Controller
 {
-
-    [HttpGet("start")]
+    [HttpPost("start")]
+    [ValidateAntiForgeryToken]
+    [EnableRateLimiting("application-creation")]
     public async Task<IActionResult> Start(CancellationToken cancellationToken)
     {
+        if (CurrentApplicationId() is not null)
+        {
+            return RedirectToAction(nameof(Resume));
+        }
+
         var application = await applicationService.CreateAsync(cancellationToken);
         wizardSession.SetApplication(application.Id, 1);
         return RedirectToAction(nameof(Qualification));
@@ -25,11 +50,12 @@ public sealed class WizardController(
 
     [HttpPost("start-over")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> StartOver(CancellationToken cancellationToken)
+    [EnableRateLimiting("application-creation")]
+    public async Task<IActionResult> StartOver(long? expectedVersion, CancellationToken cancellationToken)
     {
         if (CurrentApplicationId() is Guid currentApplicationId)
         {
-            await applicationService.DeleteAsync(currentApplicationId, cancellationToken);
+            await applicationService.DeleteAsync(currentApplicationId, RequireVersion(expectedVersion), cancellationToken);
         }
 
         var application = await applicationService.CreateAsync(cancellationToken);
@@ -39,22 +65,28 @@ public sealed class WizardController(
     }
 
     [HttpGet("resume")]
-    public IActionResult Resume()
+    public async Task<IActionResult> Resume(CancellationToken cancellationToken)
     {
-        if (CurrentApplicationId() is null)
+        try
         {
-            TempData["Notice"] = "There is no saved application in this browser yet.";
+            if (await GetCurrentApplicationAsync(cancellationToken) is not null)
+                return RedirectToStep(wizardSession.CurrentStep);
+        }
+        catch (HttpRequestException)
+        {
+            TempData["Notice"] = "We couldn’t check your saved application just now. Please try again later.";
             return RedirectToAction("Index", "Home");
         }
 
-        return RedirectToStep(wizardSession.CurrentStep);
+        TempData["Notice"] = "There is no saved application in this browser yet.";
+        return RedirectToAction("Index", "Home");
     }
 
     [HttpPost("save-progress")]
     [ValidateAntiForgeryToken]
-    public IActionResult SaveProgress(int step)
+    public async Task<IActionResult> SaveProgress(int step, CancellationToken cancellationToken)
     {
-        if (CurrentApplicationId() is null)
+        if (await GetCurrentApplicationAsync(cancellationToken) is null)
         {
             return RedirectToAction("Index", "Home");
         }
@@ -75,7 +107,7 @@ public sealed class WizardController(
 
     [HttpPost("qualification")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Qualification(QualificationViewModel model, CancellationToken cancellationToken)
+    public async Task<IActionResult> Qualification(QualificationViewModel model, long? expectedVersion, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
@@ -85,7 +117,7 @@ public sealed class WizardController(
 
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
-        await applicationService.SaveQualificationAsync(application.Id, model.PropertyValue!.Value, model.Deposit!.Value, cancellationToken);
+        await applicationService.SaveQualificationAsync(application.Id, model.PropertyValue!.Value, model.Deposit!.Value, RequireVersion(expectedVersion), cancellationToken);
         SetStep(2);
         return RedirectToAction(nameof(Applicant));
     }
@@ -103,7 +135,7 @@ public sealed class WizardController(
 
     [HttpPost("applicant")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Applicant(ApplicantViewModel model, CancellationToken cancellationToken)
+    public async Task<IActionResult> Applicant(ApplicantViewModel model, long? expectedVersion, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
@@ -113,7 +145,7 @@ public sealed class WizardController(
 
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
-        await applicationService.SaveApplicantAsync(application.Id, model.FirstName.Trim(), model.LastName.Trim(), model.Email.Trim(), model.PhoneNumber.Trim(), cancellationToken);
+        await applicationService.SaveApplicantAsync(application.Id, model.FirstName.Trim(), model.LastName.Trim(), model.Email.Trim(), model.PhoneNumber.Trim(), RequireVersion(expectedVersion), cancellationToken);
         SetStep(3);
         return RedirectToAction(nameof(Finances));
     }
@@ -136,7 +168,7 @@ public sealed class WizardController(
 
     [HttpPost("finances")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Finances(FinancesViewModel model, CancellationToken cancellationToken)
+    public async Task<IActionResult> Finances(FinancesViewModel model, long? expectedVersion, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
@@ -146,7 +178,7 @@ public sealed class WizardController(
 
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
-        await applicationService.SaveFinancesAsync(application.Id, model.AnnualIncome!.Value, model.MonthlyCommitments!.Value, model.EmploymentType!.Value, cancellationToken);
+        await applicationService.SaveFinancesAsync(application.Id, model.AnnualIncome!.Value, model.MonthlyCommitments!.Value, model.EmploymentType!.Value, RequireVersion(expectedVersion), cancellationToken);
         SetStep(4);
         return RedirectToAction(nameof(Connections));
     }
@@ -168,13 +200,13 @@ public sealed class WizardController(
 
     [HttpPost("connections")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Connections(ConnectionsViewModel model, CancellationToken cancellationToken)
+    public async Task<IActionResult> Connections(ConnectionsViewModel model, long? expectedVersion, CancellationToken cancellationToken)
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
         var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 4);
         if (prerequisiteRedirect is not null) return prerequisiteRedirect;
-        await applicationService.SaveConsentsAsync(application.Id, model.CreditCheckConsent, model.OpenBankingConsent, cancellationToken);
+        await applicationService.SaveConsentsAsync(application.Id, model.CreditCheckConsent, model.OpenBankingConsent, RequireVersion(expectedVersion), cancellationToken);
         SetStep(5);
         return RedirectToAction(nameof(DecisionInPrinciple));
     }
@@ -193,14 +225,15 @@ public sealed class WizardController(
 
     [HttpPost("decision-in-principle/assess")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AssessDecisionInPrinciple(CancellationToken cancellationToken)
+    public async Task<IActionResult> AssessDecisionInPrinciple(long? expectedVersion, CancellationToken cancellationToken)
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return Unauthorized();
         var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 5);
         if (prerequisiteRedirect is not null) return BadRequest();
 
-        var result = await applicationService.GenerateDecisionInPrincipleAsync(application.Id, cancellationToken);
+        var result = await applicationService.GenerateDecisionInPrincipleAsync(application.Id, RequireVersion(expectedVersion), cancellationToken);
+        Response.Headers["X-Application-Version"] = result.Version.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return PartialView("_DecisionInPrincipleResult", result);
     }
 
@@ -239,7 +272,7 @@ public sealed class WizardController(
 
     [HttpPost("products")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Products(ProductsViewModel model, CancellationToken cancellationToken)
+    public async Task<IActionResult> Products(ProductsViewModel model, long? expectedVersion, CancellationToken cancellationToken)
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
@@ -261,7 +294,7 @@ public sealed class WizardController(
             return View(model);
         }
 
-        await applicationService.SelectProductAsync(application.Id, model.SelectedProductId!, cancellationToken);
+        await applicationService.SelectProductAsync(application.Id, model.SelectedProductId!, RequireVersion(expectedVersion), cancellationToken);
         SetStep(7);
         return RedirectToAction(nameof(Documents));
     }
@@ -280,7 +313,7 @@ public sealed class WizardController(
     [HttpPost("documents")]
     [ValidateAntiForgeryToken]
     [RequestSizeLimit(DocumentUploadLimits.MaximumFileBytes + 1024)]
-    public async Task<IActionResult> Documents(IFormFile? document, CancellationToken cancellationToken)
+    public async Task<IActionResult> Documents(IFormFile? document, long? expectedVersion, CancellationToken cancellationToken)
     {
         var application = await GetCurrentApplicationAsync(cancellationToken);
         if (application is null) return RedirectToAction("Index", "Home");
@@ -301,7 +334,7 @@ public sealed class WizardController(
         }
         else
         {
-            await applicationService.AddDocumentAsync(application.Id, validation.SafeFileName!, validation.Contents!, cancellationToken);
+            await applicationService.AddDocumentAsync(application.Id, validation.SafeFileName!, validation.Contents!, RequireVersion(expectedVersion), cancellationToken);
             TempData["Notice"] = $"{validation.SafeFileName} was added to your application.";
             SetStep(7);
             return RedirectToAction(nameof(Documents));
@@ -337,44 +370,57 @@ public sealed class WizardController(
         var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 8);
         if (prerequisiteRedirect is not null) return prerequisiteRedirect;
         SetStep(8);
-        return await ReviewViewAsync(application, cancellationToken);
+        wizardSession.GetOrCreateSubmissionKey();
+        return ReviewView(application);
     }
 
     [HttpPost("submit")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Submit(CancellationToken cancellationToken)
+    public async Task<IActionResult> Submit(long? expectedVersion, CancellationToken cancellationToken)
     {
-        var application = await GetCurrentApplicationAsync(cancellationToken);
-        if (application is null) return RedirectToAction("Index", "Home");
-        var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 8);
-        if (prerequisiteRedirect is not null) return prerequisiteRedirect;
+        if (CurrentApplicationId() is not Guid applicationId) return RedirectToAction("Index", "Home");
+        var version = RequireVersion(expectedVersion);
+        var submissionKey = wizardSession.GetOrCreateSubmissionKey();
 
         try
         {
-            await applicationService.SubmitAsync(application.Id, cancellationToken);
+            await applicationService.SubmitCustomerAsync(applicationId, version, submissionKey, cancellationToken);
         }
-        catch (InvalidOperationException exception)
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
+            var application = await GetCurrentApplicationAsync(cancellationToken);
+            if (application is null) return RedirectToAction("Index", "Home");
             ModelState.AddModelError(string.Empty, exception.Message);
-            return await ReviewViewAsync(application, cancellationToken);
+            return ReviewView(application);
+        }
+        catch (Exception exception) when (exception is HttpRequestException ||
+            exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(exception, "Customer submission result is unknown; the same attempt can be retried.");
+            return View("SubmissionPending", version);
         }
 
-        wizardSession.Clear();
-        TempData["ApplicationSubmitted"] = true;
+        wizardSession.CompleteSubmission(applicationId, submissionKey);
         return RedirectToAction(nameof(Submitted));
     }
 
     [HttpGet("submitted")]
-    public IActionResult Submitted() =>
-        TempData["ApplicationSubmitted"] is true
-            ? View()
-            : RedirectToAction("Index", "Home");
-
-    private async Task<IActionResult> ReviewViewAsync(MortgageApplicationDto application, CancellationToken cancellationToken)
+    public async Task<IActionResult> Submitted(CancellationToken cancellationToken)
     {
-        var product = application.SelectedProductId is null
-            ? null
-            : await applicationService.GetProductAsync(application.SelectedProductId, cancellationToken);
+        if (wizardSession.ReceiptApplicationId is not Guid id || wizardSession.ReceiptKey is not Guid key)
+            return RedirectToAction("Index", "Home");
+        var receipt = await applicationService.GetSubmissionReceiptAsync(id, key, cancellationToken);
+        if (receipt is null)
+        {
+            wizardSession.ClearReceipt();
+            return RedirectToAction("Index", "Home");
+        }
+        return View(receipt);
+    }
+
+    private IActionResult ReviewView(MortgageApplicationDto application)
+    {
+        var product = application.SelectedProduct;
         var loanAmount = (application.PropertyValue ?? 0) - (application.Deposit ?? 0);
         return View("Review", new ReviewViewModel
         {
@@ -390,16 +436,29 @@ public sealed class WizardController(
         if (id is null) return null;
         try
         {
-            return await applicationService.GetAsync(id.Value, cancellationToken);
+            var application = await applicationService.GetAsync(id.Value, cancellationToken);
+            ViewData["Version"] = HttpContext.Request.HasFormContentType
+                ? (string?)HttpContext.Request.Form["expectedVersion"]
+                : application.Version.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return application;
         }
         catch (Exception exception) when (exception is KeyNotFoundException or UnauthorizedAccessException)
         {
+            if (wizardSession.PendingSubmissionKey is Guid key &&
+                await applicationService.GetSubmissionReceiptAsync(id.Value, key, cancellationToken) is not null)
+            {
+                wizardSession.CompleteSubmission(id.Value, key);
+                TempData["SubmissionRecovered"] = true;
+                return null;
+            }
             wizardSession.Clear();
             return null;
         }
     }
 
     private Guid? CurrentApplicationId() => wizardSession.CurrentApplicationId;
+
+    private static long RequireVersion(long? version) => version ?? throw new MortgageConcurrencyException();
 
     private void SetStep(int step) => wizardSession.SetStep(step);
 

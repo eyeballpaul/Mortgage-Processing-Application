@@ -2,6 +2,7 @@ using Azure.Core;
 using Azure.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using PD.Mortgages.CustomerSessions;
 using PD.Mortgages.Infrastructure.Persistence;
 using PD.Products.Infrastructure.Persistence;
 
@@ -11,14 +12,19 @@ var token = await credential.GetTokenAsync(
     new TokenRequestContext(["https://database.windows.net/.default"]),
     CancellationToken.None);
 
-foreach (var databaseName in new[] { "mortgages", "products" })
+foreach (var (databaseName, identity) in new[]
 {
-    var identity = databaseName == "mortgages" ? options.MortgagesIdentity : options.ProductsIdentity;
+    ("mortgages", options.MortgagesIdentity),
+    ("products", options.ProductsIdentity),
+    ("customer-sessions", options.CustomerSessionsIdentity)
+})
+{
     await EnsureApplicationAccessAsync(options.Server, databaseName, identity, token.Token);
 }
 
 await MigrateMortgageDatabaseAsync(options.Server, token.Token);
 await MigrateProductsDatabaseAsync(options.Server, token.Token);
+await MigrateCustomerSessionsDatabaseAsync(options.Server, token.Token);
 
 static async Task EnsureApplicationAccessAsync(
     string server,
@@ -92,6 +98,16 @@ static async Task MigrateProductsDatabaseAsync(string server, string accessToken
     await context.Database.MigrateAsync();
 }
 
+static async Task MigrateCustomerSessionsDatabaseAsync(string server, string accessToken)
+{
+    await using var connection = CreateConnection(server, "customer-sessions", accessToken);
+    var options = new DbContextOptionsBuilder<CustomerSessionDbContext>()
+        .UseSqlServer(connection)
+        .Options;
+    await using var context = new CustomerSessionDbContext(options);
+    await context.Database.MigrateAsync();
+}
+
 static SqlConnection CreateConnection(string server, string database, string accessToken)
 {
     var builder = new SqlConnectionStringBuilder
@@ -124,20 +140,25 @@ static BootstrapOptions ParseArguments(string[] arguments)
         !Guid.TryParse(mortgagesIdentityClientIdText, out var mortgagesIdentityClientId) ||
         !values.TryGetValue("products-identity-name", out var productsIdentityName) ||
         !values.TryGetValue("products-identity-client-id", out var productsIdentityClientIdText) ||
-        !Guid.TryParse(productsIdentityClientIdText, out var productsIdentityClientId))
+        !Guid.TryParse(productsIdentityClientIdText, out var productsIdentityClientId) ||
+        !values.TryGetValue("customer-sessions-identity-name", out var customerSessionsIdentityName) ||
+        !values.TryGetValue("customer-sessions-identity-client-id", out var customerSessionsIdentityClientIdText) ||
+        !Guid.TryParse(customerSessionsIdentityClientIdText, out var customerSessionsIdentityClientId))
     {
-        throw new ArgumentException("Provide --server and valid identity names and client IDs for mortgages and products.");
+        throw new ArgumentException("Provide --server and valid identity names and client IDs for mortgages, products, and customer sessions.");
     }
 
     return new BootstrapOptions(
         server,
         new ApplicationIdentity(mortgagesIdentityName, mortgagesIdentityClientId, CanWrite: true),
-        new ApplicationIdentity(productsIdentityName, productsIdentityClientId, CanWrite: false));
+        new ApplicationIdentity(productsIdentityName, productsIdentityClientId, CanWrite: false),
+        new ApplicationIdentity(customerSessionsIdentityName, customerSessionsIdentityClientId, CanWrite: true));
 }
 
 sealed record BootstrapOptions(
     string Server,
     ApplicationIdentity MortgagesIdentity,
-    ApplicationIdentity ProductsIdentity);
+    ApplicationIdentity ProductsIdentity,
+    ApplicationIdentity CustomerSessionsIdentity);
 
 sealed record ApplicationIdentity(string Name, Guid ClientId, bool CanWrite);

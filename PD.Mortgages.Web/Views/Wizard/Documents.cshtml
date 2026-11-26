@@ -12,6 +12,7 @@
         <p class="mb-0">Files use the configured demo storage and are kept separately from application and audit records. Do not upload real personal or financial documents.</p>
     </div>
     <form asp-action="Documents" method="post" enctype="multipart/form-data" class="upload-form">
+        @await Html.PartialAsync("_ExpectedVersion")
         <label for="document" class="form-label fw-semibold">Choose a file</label>
         <input id="document" name="document" type="file" class="form-control" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" />
         <span class="field-validation">@Html.ValidationMessage("document")</span>

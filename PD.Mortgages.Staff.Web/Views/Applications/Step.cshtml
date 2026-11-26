@@ -28,6 +28,7 @@
         <div class="alert alert-danger" role="alert">@uploadError</div>
     }
     <form asp-controller="ApplicationWizard" asp-action="SaveStep" asp-route-id="@Model.Id" asp-route-step="@Model.Step" method="post">
+        <input asp-for="ExpectedVersion" type="hidden" />
         <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
         @if (Model.Step == 1)
         {
@@ -201,6 +202,7 @@
     @if (Model.Step == 7)
     {
         <form asp-controller="ApplicationWizard" asp-action="UploadDocument" asp-route-id="@Model.Id" method="post" enctype="multipart/form-data" class="staff-upload-form">
+            <input type="hidden" name="expectedVersion" value="@Model.ExpectedVersion" />
             <label for="document" class="form-label fw-semibold">Choose a file</label>
             <input id="document" name="document" type="file" class="form-control" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" />
             <button type="submit" class="btn btn-outline-primary mt-3">Upload document</button>

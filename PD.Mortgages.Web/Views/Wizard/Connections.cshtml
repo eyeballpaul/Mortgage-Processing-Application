@@ -12,6 +12,7 @@
         <p class="mb-0">These choices are saved with your application only. No credit bureau or bank is contacted, and no financial data is retrieved.</p>
     </div>
     <form asp-action="Connections" method="post">
+        @await Html.PartialAsync("_ExpectedVersion")
         <div class="consent-option">
             <input asp-for="CreditCheckConsent" class="form-check-input" />
             <div>

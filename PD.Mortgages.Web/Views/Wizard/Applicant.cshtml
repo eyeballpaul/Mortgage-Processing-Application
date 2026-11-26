@@ -8,6 +8,7 @@
     <h1>Let’s get to know you</h1>
     <p class="text-secondary">We’ll use these details to keep your application up to date and get in touch about your mortgage.</p>
     <form asp-action="Applicant" method="post" class="mt-4">
+        @await Html.PartialAsync("_ExpectedVersion")
         <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
         <div class="row g-3">
             <div class="col-md-6">

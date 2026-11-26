@@ -63,6 +63,12 @@ namespace PD.Mortgages.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DocumentsCleanedAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Email")
                         .HasMaxLength(320)
                         .HasColumnType("nvarchar(320)");
@@ -75,6 +81,9 @@ namespace PD.Mortgages.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(36)
                         .HasColumnType("nvarchar(36)");
+
+                    b.Property<DateTime>("LastActivityAtUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("LastName")
                         .HasMaxLength(200)
@@ -100,7 +109,11 @@ namespace PD.Mortgages.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CreatedByEmployeeId");
 
+                    b.HasIndex("DeletedAtUtc", "DocumentsCleanedAtUtc");
+
                     b.HasIndex("Status", "UpdatedAtUtc");
+
+                    b.HasIndex("DeletedAtUtc", "Status", "LastActivityAtUtc");
 
                     b.ToTable("MortgageApplications", (string)null);
                 });
@@ -110,7 +123,7 @@ namespace PD.Mortgages.Infrastructure.Persistence.Migrations
                     b.HasOne("PD.Mortgages.Infrastructure.Persistence.MortgageApplicationRecord", null)
                         .WithMany()
                         .HasForeignKey("ApplicationId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 #pragma warning restore 612, 618

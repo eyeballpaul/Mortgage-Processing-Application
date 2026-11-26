@@ -2,8 +2,9 @@
     const assessment = document.getElementById("staff-dip-assessment");
     const continueLink = document.getElementById("continue-to-mortgages");
     const token = document.querySelector("input[name='__RequestVerificationToken']");
+    const version = document.querySelector("input[name='ExpectedVersion']");
 
-    if (!assessment || !continueLink || !token) {
+    if (!assessment || !continueLink || !token || !version) {
         return;
     }
 
@@ -28,15 +29,22 @@
                 credentials: "same-origin",
                 headers: {
                     "RequestVerificationToken": token.value,
-                    "X-Requested-With": "XMLHttpRequest"
-                }
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Content-Type": "application/x-www-form-urlencoded"
+                },
+                body: new URLSearchParams({ expectedVersion: version.value })
             });
 
+            if (response.status === 409) {
+                assessment.innerHTML = 'This application was changed elsewhere. <a href="">Reload the application</a> before continuing.';
+                return;
+            }
             if (!response.ok) {
                 throw new Error(`Assessment request failed with status ${response.status}.`);
             }
 
             assessment.innerHTML = await response.text();
+            version.value = response.headers.get("X-Application-Version");
             assessment.dataset.needsAssessment = "false";
             enableContinue();
         } catch {

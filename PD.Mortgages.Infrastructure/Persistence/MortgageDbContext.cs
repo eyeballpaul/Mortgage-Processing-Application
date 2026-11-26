@@ -23,6 +23,8 @@ public sealed class MortgageDbContext(DbContextOptions<MortgageDbContext> option
             entity.Property(application => application.Version).IsConcurrencyToken();
             entity.HasIndex(application => new { application.Status, application.UpdatedAtUtc });
             entity.HasIndex(application => application.CreatedByEmployeeId);
+            entity.HasIndex(application => new { application.DeletedAtUtc, application.Status, application.LastActivityAtUtc });
+            entity.HasIndex(application => new { application.DeletedAtUtc, application.DocumentsCleanedAtUtc });
         });
 
         modelBuilder.Entity<MortgageApplicationAuditRecord>(entity =>
@@ -35,7 +37,7 @@ public sealed class MortgageDbContext(DbContextOptions<MortgageDbContext> option
             entity.HasOne<MortgageApplicationRecord>()
                 .WithMany()
                 .HasForeignKey(entry => entry.ApplicationId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
     }

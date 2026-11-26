@@ -25,6 +25,7 @@
     </div>
     <form id="dip-antiforgery" class="visually-hidden">
         @Html.AntiForgeryToken()
+        @await Html.PartialAsync("_ExpectedVersion")
     </form>
 
     <div class="form-actions mt-4">

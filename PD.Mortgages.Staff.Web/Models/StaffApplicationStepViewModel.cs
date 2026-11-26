@@ -10,6 +10,7 @@ public sealed class StaffApplicationStepViewModel
 {
     public Guid Id { get; set; }
     public int Step { get; set; }
+    public long? ExpectedVersion { get; set; }
 
     [BindNever, ValidateNever]
     public MortgageApplicationDto Application { get; set; } = default!;

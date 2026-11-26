@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using PD.Mortgages.Domain.Enums;
 
 namespace PD.Mortgages.Domain.Entities;
@@ -30,6 +31,8 @@ public sealed class MortgageApplication
     public DecisionInPrincipleResult? DecisionInPrinciple { get; private set; }
     public string? SelectedProductId { get; private set; }
     public SelectedMortgageProductSnapshot? SelectedProduct { get; private set; }
+    public Guid? SubmissionKey { get; private set; }
+    public long? SubmissionExpectedVersion { get; private set; }
     public IReadOnlyCollection<MortgageDocument> Documents => _documents.AsReadOnly();
     public IReadOnlyCollection<MortgageApplicationAuditEntry> AuditTrail => _auditTrail.AsReadOnly();
     public IReadOnlyCollection<CustomerConsent> ConsentHistory => _consentHistory.AsReadOnly();
@@ -59,7 +62,9 @@ public sealed class MortgageApplication
         IEnumerable<MortgageDocument> documents,
         IEnumerable<MortgageApplicationAuditEntry> auditTrail,
         string? createdByEmployeeId = null,
-        IEnumerable<CustomerConsent>? consentHistory = null)
+        IEnumerable<CustomerConsent>? consentHistory = null,
+        Guid? submissionKey = null,
+        long? submissionExpectedVersion = null)
     {
         var application = new MortgageApplication
         {
@@ -84,7 +89,9 @@ public sealed class MortgageApplication
             ConsentsRecorded = consentsRecorded,
             DecisionInPrinciple = decisionInPrinciple,
             SelectedProductId = selectedProductId,
-            SelectedProduct = selectedProduct
+            SelectedProduct = selectedProduct,
+            SubmissionKey = submissionKey,
+            SubmissionExpectedVersion = submissionExpectedVersion
         };
         application._documents.AddRange(documents);
         application._auditTrail.AddRange(auditTrail);
@@ -136,19 +143,20 @@ public sealed class MortgageApplication
     public void UpdateApplicant(string firstName, string lastName, string email, string phoneNumber)
     {
         EnsureEditable();
-        FirstName = firstName;
-        LastName = lastName;
-        Email = email;
-        PhoneNumber = phoneNumber;
+        ValidateApplicant(firstName, lastName, email, phoneNumber);
+        FirstName = firstName.Trim();
+        LastName = lastName.Trim();
+        Email = email.Trim();
+        PhoneNumber = phoneNumber.Trim();
         Touch();
     }
 
     public void UpdateQualification(decimal propertyValue, decimal deposit)
     {
         EnsureEditable();
-        if (propertyValue <= 0 || deposit < 0 || deposit >= propertyValue)
+        if (propertyValue is < 50_000 or > 5_000_000 || deposit < 0 || deposit >= propertyValue)
         {
-            throw new ArgumentOutOfRangeException(nameof(propertyValue), "Enter a property value above zero and a deposit below the property value.");
+            throw new ArgumentOutOfRangeException(nameof(propertyValue), "Enter a property value between £50,000 and £5,000,000 and a deposit below the property value.");
         }
 
         PropertyValue = propertyValue;
@@ -162,9 +170,9 @@ public sealed class MortgageApplication
     public void UpdateFinances(decimal annualIncome, decimal monthlyCommitments, EmploymentType employmentType)
     {
         EnsureEditable();
-        if (annualIncome <= 0 || monthlyCommitments < 0)
+        if (annualIncome is < 10_000 or > 10_000_000 || monthlyCommitments is < 0 or > 100_000)
         {
-            throw new ArgumentOutOfRangeException(nameof(annualIncome), "Income must be positive and monthly commitments cannot be negative.");
+            throw new ArgumentOutOfRangeException(nameof(annualIncome), "Enter an annual income between £10,000 and £10,000,000 and monthly commitments between £0 and £100,000.");
         }
 
         if (!Enum.IsDefined(typeof(EmploymentType), employmentType))
@@ -207,7 +215,7 @@ public sealed class MortgageApplication
         Touch();
     }
 
-    public DecisionInPrincipleResult GenerateIndicativeDecisionInPrinciple()
+    public (decimal PropertyValue, decimal Deposit, decimal AnnualIncome, bool CreditCheckConsent) GetDecisionInputs()
     {
         EnsureEditable();
         if (PropertyValue is null || Deposit is null || AnnualIncome is null)
@@ -215,41 +223,35 @@ public sealed class MortgageApplication
             throw new InvalidOperationException("Complete your property, deposit and income details before viewing a decision in principle.");
         }
 
-        var requestedLoanAmount = PropertyValue.Value - Deposit.Value;
-        var outcome = CreditCheckConsent
-            ? DecisionInPrincipleOutcome.WithinIndicativeRange
-            : DecisionInPrincipleOutcome.CreditCheckNotSelected;
-        decimal? indicativeMaximumBorrowing = null;
-
-        if (CreditCheckConsent)
-        {
-            indicativeMaximumBorrowing = AnnualIncome.Value * 4.5m;
-            if (requestedLoanAmount > indicativeMaximumBorrowing.Value)
-            {
-                outcome = DecisionInPrincipleOutcome.AboveIndicativeRange;
-            }
-        }
-
-        DecisionInPrinciple = new DecisionInPrincipleResult(
-            outcome,
-            requestedLoanAmount,
-            indicativeMaximumBorrowing,
-            DateTime.UtcNow);
-        Touch();
-        return DecisionInPrinciple;
+        return (PropertyValue.Value, Deposit.Value, AnnualIncome.Value, CreditCheckConsent);
     }
 
-    public void SelectProduct(string productId)
+    public void RecordIndicativeDecision(DecisionInPrincipleResult result)
     {
-        SelectProduct(productId, null);
+        var inputs = GetDecisionInputs();
+        if (result.RequestedLoanAmount != inputs.PropertyValue - inputs.Deposit ||
+            string.IsNullOrWhiteSpace(result.RuleVersion) ||
+            !Enum.IsDefined(result.Outcome) ||
+            (inputs.CreditCheckConsent
+                ? result.Outcome == DecisionInPrincipleOutcome.CreditCheckNotSelected || result.IndicativeMaximumBorrowing is null or < 0
+                : result.Outcome != DecisionInPrincipleOutcome.CreditCheckNotSelected || result.IndicativeMaximumBorrowing is not null))
+            throw new ArgumentException("The eligibility decision does not match the application.", nameof(result));
+
+        DecisionInPrinciple = result;
+        Touch();
     }
 
-    public void SelectProduct(string productId, SelectedMortgageProductSnapshot? product)
+    public void SelectProduct(string productId, SelectedMortgageProductSnapshot product)
     {
         EnsureEditable();
         if (string.IsNullOrWhiteSpace(productId))
         {
             throw new ArgumentException("A mortgage product must be selected.", nameof(productId));
+        }
+        ArgumentNullException.ThrowIfNull(product);
+        if (!string.Equals(productId, product.Id, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The selected product must match its saved terms.", nameof(product));
         }
 
         SelectedProductId = productId;
@@ -269,12 +271,17 @@ public sealed class MortgageApplication
         Touch();
     }
 
-    public void Submit()
+    public void Submit(Guid? submissionKey = null)
     {
         EnsureEditable();
+        if (submissionKey == Guid.Empty)
+        {
+            throw new ArgumentException("A valid submission key is required.", nameof(submissionKey));
+        }
         if (string.IsNullOrWhiteSpace(FirstName) ||
             string.IsNullOrWhiteSpace(LastName) ||
             string.IsNullOrWhiteSpace(Email) ||
+            string.IsNullOrWhiteSpace(PhoneNumber) ||
             PropertyValue is null ||
             Deposit is null ||
             AnnualIncome is null ||
@@ -285,9 +292,36 @@ public sealed class MortgageApplication
         {
             throw new InvalidOperationException("Complete your applicant, property, income and product details before submitting.");
         }
+        if (SelectedProduct is null || !string.Equals(SelectedProductId, SelectedProduct.Id, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Select the product again to record its terms before submitting.");
+        }
 
+        ValidateApplicant(FirstName, LastName, Email, PhoneNumber);
+        if (PropertyValue is < 50_000 or > 5_000_000 || Deposit < 0 || Deposit >= PropertyValue ||
+            AnnualIncome is < 10_000 or > 10_000_000 || MonthlyCommitments is null or < 0 or > 100_000 ||
+            !Enum.IsDefined(EmploymentType.Value))
+        {
+            throw new InvalidOperationException("Review your property and income details before submitting.");
+        }
+
+        SubmissionExpectedVersion = submissionKey is null ? null : Version;
+        SubmissionKey = submissionKey;
         Status = ApplicationStatus.Submitted;
         Touch();
+    }
+
+    private static void ValidateApplicant(string? firstName, string? lastName, string? email, string? phoneNumber)
+    {
+        if (string.IsNullOrWhiteSpace(firstName) || firstName.Trim().Length is < 2 or > 60 ||
+            string.IsNullOrWhiteSpace(lastName) || lastName.Trim().Length is < 2 or > 60 ||
+            string.IsNullOrWhiteSpace(email) || email.Trim().Length > 254 ||
+            !new EmailAddressAttribute().IsValid(email.Trim()) ||
+            string.IsNullOrWhiteSpace(phoneNumber) || phoneNumber.Trim().Length > 30 ||
+            !new PhoneAttribute().IsValid(phoneNumber.Trim()))
+        {
+            throw new ArgumentException("Enter a valid name, email address and phone number.");
+        }
     }
 
     private void EnsureEditable()

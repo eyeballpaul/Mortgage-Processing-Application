@@ -1,0 +1,12 @@
+@model long
+@{
+    ViewData["Title"] = "Check your submission";
+}
+<div class="wide-card">
+    <h1>We could not confirm your submission</h1>
+    <p>Your application may already have been submitted. Retry safely to check the result; do not start a new application yet.</p>
+    <form asp-action="Submit" method="post">
+        <input type="hidden" name="expectedVersion" value="@Model" />
+        <button class="btn btn-primary" type="submit">Retry submission</button>
+    </form>
+</div>

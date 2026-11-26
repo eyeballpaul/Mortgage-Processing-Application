@@ -1,4 +1,4 @@
-// Provisions SQL, private document objects, Container Apps, and the customer web and internal Products API.
+// Provisions the customer and staff web apps, internal APIs, SQL databases and private blobs.
 targetScope = 'resourceGroup'
 
 @description('Azure region for the deployment.')
@@ -28,6 +28,25 @@ param mortgagesWebAppName string
 @description('Name of the Products API Container App.')
 param productsApiAppName string
 
+@description('Name of the internal Eligibility API Container App.')
+param eligibilityApiAppName string
+
+@description('Name of the internal Mortgage API Container App.')
+param mortgageApiAppName string
+
+@description('Name of the staff web Container App.')
+param staffWebAppName string
+
+@description('Application/client ID of the Mortgage API Entra app registration.')
+param mortgageApiClientId string
+
+@description('Application/client ID of the staff web Entra app registration.')
+param staffClientId string
+
+@description('Client secret value for the staff web Entra app registration.')
+@secure()
+param staffClientSecret string
+
 @description('Image tag produced by the pipeline.')
 param imageTag string = 'latest'
 
@@ -45,8 +64,22 @@ param sqlAdminPassword string
 @secure()
 param productServiceApiKey string
 
+@description('Random API key shared by the internal Eligibility API and Mortgage API.')
+@secure()
+param eligibilityServiceApiKey string
+
 @description('Deploy the application Container Apps after their images have been pushed.')
 param deployApps bool = true
+
+@description('Optional email for the paid Azure Monitor 5xx log alert; leave empty to disable it.')
+param alertEmail string = ''
+
+@description('Optional trusted OTLP collector endpoint for sampled traces; leave empty to disable export. Do not include credentials.')
+param otlpEndpoint string = ''
+
+@allowed(['grpc', 'http/protobuf'])
+@description('OTLP transport protocol used when trace export is enabled.')
+param otlpProtocol string = 'grpc'
 
 var acrPushRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8311e382-0749-4cb8-b61a-304f252e45ec')
 var acrPullRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
@@ -97,6 +130,18 @@ resource productsIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024
   tags: appTags
 }
 
+resource customerSessionsIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
+  name: '${containerAppEnvironmentName}-customer-sessions'
+  location: location
+  tags: appTags
+}
+
+resource staffIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
+  name: '${containerAppEnvironmentName}-staff'
+  location: location
+  tags: appTags
+}
+
 resource imagePullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(registry.id, imagePullIdentity.id, acrPullRoleDefinitionId)
   scope: registry
@@ -139,6 +184,13 @@ resource dataProtectionContainer 'Microsoft.Storage/storageAccounts/blobServices
   }
 }
 
+resource staffDataProtectionContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  name: '${documentStorage.name}/default/staff-data-protection'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 resource documentStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(documentContainer.id, mortgagesIdentity.id, 'Storage Blob Data Contributor')
   scope: documentContainer
@@ -150,12 +202,22 @@ resource documentStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01
 }
 
 resource dataProtectionStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(dataProtectionContainer.id, mortgagesIdentity.id, 'Storage Blob Data Contributor')
+  name: guid(dataProtectionContainer.id, customerSessionsIdentity.id, 'Storage Blob Data Contributor')
   scope: dataProtectionContainer
   properties: {
 	roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-	principalId: mortgagesIdentity.properties.principalId
+	principalId: customerSessionsIdentity.properties.principalId
 	principalType: 'ServicePrincipal'
+  }
+}
+
+resource staffDataProtectionStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(staffDataProtectionContainer.id, staffIdentity.id, 'Storage Blob Data Contributor')
+  scope: staffDataProtectionContainer
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: staffIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
@@ -236,6 +298,23 @@ resource productsDatabase 'Microsoft.Sql/servers/databases@2023-08-01' = {
   tags: appTags
 }
 
+resource customerSessionsDatabase 'Microsoft.Sql/servers/databases@2023-08-01' = {
+  parent: sqlServer
+  name: 'customer-sessions'
+  location: location
+  sku: {
+    name: 'GP_S_Gen5_2'
+    tier: 'GeneralPurpose'
+    family: 'Gen5'
+    capacity: 2
+  }
+  properties: {
+    autoPauseDelay: 60
+    minCapacity: json('0.5')
+  }
+  tags: appTags
+}
+
 resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2026-03-01' = {
   name: '${containerAppEnvironmentName}-logs'
   location: location
@@ -244,6 +323,60 @@ resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2026-03-01' = {
 	sku: {
 	  name: 'PerGB2018'
 	}
+  }
+  tags: appTags
+}
+
+resource alertActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (deployApps && !empty(alertEmail)) {
+  name: '${containerAppEnvironmentName}-alerts'
+  location: 'Global'
+  properties: {
+    enabled: true
+    groupShortName: 'mortgages'
+    emailReceivers: [
+      {
+        name: 'operator'
+        emailAddress: alertEmail
+        useCommonAlertSchema: true
+      }
+    ]
+  }
+  tags: appTags
+}
+
+resource serverErrorAlert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = if (deployApps && !empty(alertEmail)) {
+  name: '${containerAppEnvironmentName}-server-errors'
+  location: location
+  kind: 'LogAlert'
+  properties: {
+    displayName: 'Mortgage demo: repeated HTTP server errors'
+    description: 'More than four HTTP 5xx responses across the apps within five minutes.'
+    enabled: true
+    severity: 2
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    scopes: [logWorkspace.id]
+    skipQueryValidation: true
+    criteria: {
+      allOf: [
+        {
+          query: '''
+ContainerAppConsoleLogs_CL
+| where Log_s contains "HTTP " and Log_s matches regex @"returned 5[0-9]{2} in "
+'''
+          timeAggregation: 'Count'
+          operator: 'GreaterThan'
+          threshold: 4
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [alertActionGroup!.id]
+    }
   }
   tags: appTags
 }
@@ -302,6 +435,8 @@ resource productsApi 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) 
 		  name: 'products-api'
 		  image: '${registry.properties.loginServer}/products-api:${imageTag}'
 		  env: [
+            { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', value: otlpEndpoint }
+            { name: 'OTEL_EXPORTER_OTLP_PROTOCOL', value: otlpProtocol }
 			{
 			  name: 'ASPNETCORE_FORWARDEDHEADERS_ENABLED'
 			  value: 'true'
@@ -374,6 +509,191 @@ resource productsApi 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) 
   ]
 }
 
+resource eligibilityApi 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) {
+  name: eligibilityApiAppName
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: { '${imagePullIdentity.id}': {} }
+  }
+  properties: {
+    managedEnvironmentId: containerEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      registries: [{ server: registry.properties.loginServer, identity: imagePullIdentity.id }]
+      secrets: [{ name: 'eligibility-service-api-key', value: eligibilityServiceApiKey }]
+      ingress: { external: false, allowInsecure: false, targetPort: 8080, transport: 'auto' }
+    }
+    template: {
+      containers: [{
+        name: 'eligibility-api'
+        image: '${registry.properties.loginServer}/eligibility-api:${imageTag}'
+        env: [
+          { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
+          { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', value: otlpEndpoint }
+          { name: 'OTEL_EXPORTER_OTLP_PROTOCOL', value: otlpProtocol }
+          { name: 'EligibilityService__ApiKey', secretRef: 'eligibility-service-api-key' }
+        ]
+        resources: { cpu: json('0.25'), memory: '0.5Gi' }
+        probes: [
+          { type: 'Readiness', httpGet: { path: '/health/ready', port: 8080, scheme: 'HTTP' }, periodSeconds: 10, failureThreshold: 3 }
+          { type: 'Liveness', httpGet: { path: '/health/live', port: 8080, scheme: 'HTTP' }, periodSeconds: 30, failureThreshold: 3 }
+        ]
+      }]
+      scale: { minReplicas: 1, maxReplicas: 2 }
+    }
+  }
+  tags: appTags
+  dependsOn: [imagePullRole]
+}
+
+resource mortgageApi 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) {
+  name: mortgageApiAppName
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${imagePullIdentity.id}': {}
+      '${mortgagesIdentity.id}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: containerEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      registries: [
+        {
+          server: registry.properties.loginServer
+          identity: imagePullIdentity.id
+        }
+      ]
+      secrets: [
+        {
+          name: 'product-service-api-key'
+          value: productServiceApiKey
+        }
+        {
+          name: 'eligibility-service-api-key'
+          value: eligibilityServiceApiKey
+        }
+      ]
+      ingress: {
+        external: false
+        allowInsecure: false
+        targetPort: 8080
+        transport: 'auto'
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'mortgages-api'
+          image: '${registry.properties.loginServer}/mortgages-api:${imageTag}'
+          env: [
+            { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', value: otlpEndpoint }
+            { name: 'OTEL_EXPORTER_OTLP_PROTOCOL', value: otlpProtocol }
+            { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
+            { name: 'ASPNETCORE_FORWARDEDHEADERS_ENABLED', value: 'true' }
+            { name: 'AZURE_CLIENT_ID', value: mortgagesIdentity.properties.clientId }
+            { name: 'AzureAd__TenantId', value: tenant().tenantId }
+            { name: 'AzureAd__ClientId', value: mortgageApiClientId }
+            { name: 'MortgageApi__CustomerClientId', value: customerSessionsIdentity.properties.clientId }
+            { name: 'MortgageApi__StaffClientId', value: staffClientId }
+            { name: 'ProductService__UseMock', value: 'false' }
+            { name: 'ProductService__BaseUrl', value: 'https://${productsApi!.properties.configuration.ingress.fqdn}/' }
+            { name: 'ProductService__ApiKey', secretRef: 'product-service-api-key' }
+            { name: 'EligibilityService__BaseUrl', value: 'https://${eligibilityApi!.properties.configuration.ingress.fqdn}/' }
+            { name: 'EligibilityService__ApiKey', secretRef: 'eligibility-service-api-key' }
+            { name: 'Persistence__Provider', value: 'SqlServer' }
+            { name: 'Persistence__RunMigrationsOnStartup', value: 'false' }
+            { name: 'ConnectionStrings__mortgages', value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=mortgages;Authentication=Active Directory Managed Identity;User Id=${mortgagesIdentity.properties.clientId};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;' }
+            { name: 'DocumentStorage__Provider', value: 'AzureBlob' }
+            { name: 'DocumentStorage__BlobServiceUri', value: 'https://${documentStorage.name}.blob.${environment().suffixes.storage}/' }
+            { name: 'DocumentStorage__ContainerName', value: 'mortgage-documents' }
+          ]
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          probes: [
+            { type: 'Readiness', httpGet: { path: '/health/ready', port: 8080, scheme: 'HTTP' }, periodSeconds: 10, failureThreshold: 3 }
+            { type: 'Liveness', httpGet: { path: '/health/live', port: 8080, scheme: 'HTTP' }, periodSeconds: 30, failureThreshold: 3 }
+          ]
+        }
+      ]
+      scale: { minReplicas: 1, maxReplicas: 2 }
+    }
+  }
+  tags: appTags
+  dependsOn: [
+    imagePullRole
+    documentStorageRole
+    mortgagesDatabase
+  ]
+}
+
+resource staffWeb 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) {
+  name: staffWebAppName
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${imagePullIdentity.id}': {}
+      '${staffIdentity.id}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: containerEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      registries: [
+        {
+          server: registry.properties.loginServer
+          identity: imagePullIdentity.id
+        }
+      ]
+      secrets: [
+        { name: 'staff-client-secret', value: staffClientSecret }
+      ]
+      ingress: {
+        external: true
+        allowInsecure: false
+        targetPort: 8080
+        transport: 'auto'
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'mortgages-staff-web'
+          image: '${registry.properties.loginServer}/mortgages-staff-web:${imageTag}'
+          env: [
+            { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', value: otlpEndpoint }
+            { name: 'OTEL_EXPORTER_OTLP_PROTOCOL', value: otlpProtocol }
+            { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
+            { name: 'ASPNETCORE_FORWARDEDHEADERS_ENABLED', value: 'true' }
+            { name: 'AZURE_CLIENT_ID', value: staffIdentity.properties.clientId }
+            { name: 'AzureAd__TenantId', value: tenant().tenantId }
+            { name: 'AzureAd__ClientId', value: staffClientId }
+            { name: 'AzureAd__ClientSecret', secretRef: 'staff-client-secret' }
+            { name: 'MortgageApi__BaseUrl', value: 'https://${mortgageApi!.properties.configuration.ingress.fqdn}/' }
+            { name: 'MortgageApi__Scope', value: 'api://${mortgageApiClientId}/Mortgage.Staff' }
+            { name: 'DataProtection__BlobUri', value: 'https://${documentStorage.name}.blob.${environment().suffixes.storage}/staff-data-protection/keys.xml' }
+          ]
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          probes: [
+            { type: 'Readiness', httpGet: { path: '/health/ready', port: 8080, scheme: 'HTTP' }, periodSeconds: 10, failureThreshold: 3 }
+            { type: 'Liveness', httpGet: { path: '/health/live', port: 8080, scheme: 'HTTP' }, periodSeconds: 30, failureThreshold: 3 }
+          ]
+        }
+      ]
+      scale: { minReplicas: 1, maxReplicas: 1 }
+    }
+  }
+  tags: appTags
+  dependsOn: [
+    imagePullRole
+    staffDataProtectionStorageRole
+  ]
+}
+
 resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) {
   name: mortgagesWebAppName
   location: location
@@ -381,7 +701,7 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = if (deployApps)
 	type: 'UserAssigned'
 	userAssignedIdentities: {
 	  '${imagePullIdentity.id}': {}
-	  '${mortgagesIdentity.id}': {}
+	  '${customerSessionsIdentity.id}': {}
 	}
   }
   properties: {
@@ -392,12 +712,6 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = if (deployApps)
 		{
 		  server: registry.properties.loginServer
 		  identity: imagePullIdentity.id
-		}
-	  ]
-	  secrets: [
-		{
-		  name: 'product-service-api-key'
-		  value: productServiceApiKey
 		}
 	  ]
 	  ingress: {
@@ -413,6 +727,8 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = if (deployApps)
 		  name: 'mortgages-web'
 		  image: '${registry.properties.loginServer}/mortgages-web:${imageTag}'
 		  env: [
+            { name: 'OTEL_EXPORTER_OTLP_ENDPOINT', value: otlpEndpoint }
+            { name: 'OTEL_EXPORTER_OTLP_PROTOCOL', value: otlpProtocol }
 			{
 			  name: 'ASPNETCORE_ENVIRONMENT'
 			  value: 'Production'
@@ -423,47 +739,23 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = if (deployApps)
 			}
 			{
 			  name: 'AZURE_CLIENT_ID'
-			  value: mortgagesIdentity.properties.clientId
+			  value: customerSessionsIdentity.properties.clientId
 			}
 			{
-			  name: 'ProductService__UseMock'
-			  value: 'false'
+			  name: 'MortgageApi__BaseUrl'
+			  value: 'https://${mortgageApi!.properties.configuration.ingress.fqdn}/'
 			}
 			{
-			  name: 'ProductService__BaseUrl'
-			  value: 'https://${productsApi!.properties.configuration.ingress.fqdn}/'
-			}
-			{
-			  name: 'ProductService__ApiKey'
-			  secretRef: 'product-service-api-key'
-			}
-			{
-			  name: 'Persistence__Provider'
-			  value: 'SqlServer'
-			}
-			{
-			  name: 'Persistence__RunMigrationsOnStartup'
-			  value: 'false'
-			}
-			{
-			  name: 'ConnectionStrings__mortgages'
-			  value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=mortgages;Authentication=Active Directory Managed Identity;User Id=${mortgagesIdentity.properties.clientId};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+			  name: 'MortgageApi__Scope'
+			  value: 'api://${mortgageApiClientId}/.default'
 			}
 			{
 			  name: 'Session__Provider'
 			  value: 'SqlServer'
 			}
 			{
-			  name: 'DocumentStorage__Provider'
-			  value: 'AzureBlob'
-			}
-			{
-			  name: 'DocumentStorage__BlobServiceUri'
-			  value: 'https://${documentStorage.name}.blob.${environment().suffixes.storage}/'
-			}
-			{
-			  name: 'DocumentStorage__ContainerName'
-			  value: 'mortgage-documents'
+			  name: 'ConnectionStrings__customersessions'
+			  value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=customer-sessions;Authentication=Active Directory Managed Identity;User Id=${customerSessionsIdentity.properties.clientId};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
 			}
 			{
 			  name: 'DataProtection__BlobUri'
@@ -510,8 +802,13 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = if (deployApps)
 output registryLoginServer string = registry.properties.loginServer
 output mortgagesWebUrl string = deployApps ? 'https://${mortgagesWeb!.properties.configuration.ingress.fqdn}' : ''
 output productsApiInternalUrl string = deployApps ? 'https://${productsApi!.properties.configuration.ingress.fqdn}' : ''
+output mortgageApiInternalUrl string = deployApps ? 'https://${mortgageApi!.properties.configuration.ingress.fqdn}' : ''
+output staffWebUrl string = deployApps ? 'https://${staffWeb!.properties.configuration.ingress.fqdn}' : ''
 output databaseServerName string = sqlServer.properties.fullyQualifiedDomainName
 output mortgagesIdentityName string = mortgagesIdentity.name
 output mortgagesIdentityClientId string = mortgagesIdentity.properties.clientId
 output productsIdentityName string = productsIdentity.name
 output productsIdentityClientId string = productsIdentity.properties.clientId
+output customerSessionsIdentityName string = customerSessionsIdentity.name
+output customerSessionsIdentityClientId string = customerSessionsIdentity.properties.clientId
+output customerSessionsIdentityPrincipalId string = customerSessionsIdentity.properties.principalId

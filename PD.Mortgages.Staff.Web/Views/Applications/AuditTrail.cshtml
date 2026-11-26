@@ -8,7 +8,11 @@
         <h1>Audit history</h1>
         <p class="mb-0">@Model.TotalCount event(s), newest first.</p>
     </div>
-    @if (Model.Status == ApplicationStatus.InProgress)
+    @if (Model.Status is null)
+    {
+        <a class="btn btn-outline-secondary" asp-action="Index">Back to applications</a>
+    }
+    else if (Model.Status == ApplicationStatus.InProgress)
     {
         <a class="btn btn-outline-secondary" asp-controller="ApplicationWizard" asp-action="Step" asp-route-id="@Model.ApplicationId" asp-route-step="8">Back to application</a>
     }
@@ -18,6 +22,10 @@
     }
 </div>
 <div class="wide-card staff-editor-card">
+    @if (Model.Status is null)
+    {
+        <p>This draft has been deleted; its retained audit history is shown below.</p>
+    }
     @if (Model.Events.Count == 0)
     {
         <p class="mb-0">No audit events have been recorded.</p>

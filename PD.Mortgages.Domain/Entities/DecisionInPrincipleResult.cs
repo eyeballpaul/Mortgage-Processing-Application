@@ -6,4 +6,5 @@ public sealed record DecisionInPrincipleResult(
     DecisionInPrincipleOutcome Outcome,
     decimal RequestedLoanAmount,
     decimal? IndicativeMaximumBorrowing,
-    DateTime AssessedAtUtc);
+    DateTime AssessedAtUtc,
+    string? RuleVersion = null);

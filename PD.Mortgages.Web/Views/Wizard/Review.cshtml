@@ -82,6 +82,7 @@
     <div class="form-actions mt-4">
         <a class="btn btn-outline-secondary btn-lg" asp-action="Documents">Back</a>
         <form asp-action="Submit" method="post">
+            @await Html.PartialAsync("_ExpectedVersion")
             <button type="submit" class="btn btn-primary btn-lg">Submit application <span aria-hidden="true">→</span></button>
         </form>
     </div>

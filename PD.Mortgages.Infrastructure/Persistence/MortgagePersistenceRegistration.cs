@@ -24,20 +24,25 @@ public static class MortgagePersistenceRegistration
                 ?? throw new InvalidOperationException("ConnectionStrings:mortgages is required when Persistence:Provider is SqlServer.");
             services.AddDbContext<MortgageDbContext>(dbOptions => dbOptions.UseSqlServer(connectionString));
             services.AddScoped<IMortgageApplicationRepository, SqlMortgageApplicationRepository>();
+            services.AddScoped<IMortgageDraftLifecycle, SqlMortgageApplicationRepository>();
             services.AddScoped<IMortgageApplicationAuditRepository, SqlMortgageApplicationAuditRepository>();
             return;
         }
 
         if (string.Equals(options.Provider, "File", StringComparison.OrdinalIgnoreCase))
         {
-            services.AddSingleton<IMortgageApplicationRepository, FileMortgageApplicationRepository>();
+            services.AddSingleton<FileMortgageApplicationRepository>();
+            services.AddSingleton<IMortgageApplicationRepository>(provider => provider.GetRequiredService<FileMortgageApplicationRepository>());
+            services.AddSingleton<IMortgageDraftLifecycle>(provider => provider.GetRequiredService<FileMortgageApplicationRepository>());
             services.AddSingleton<IMortgageApplicationAuditRepository, FileMortgageApplicationAuditRepository>();
             return;
         }
 
         if (string.Equals(options.Provider, "InMemory", StringComparison.OrdinalIgnoreCase))
         {
-            services.AddSingleton<IMortgageApplicationRepository, InMemoryMortgageApplicationRepository>();
+            services.AddSingleton<InMemoryMortgageApplicationRepository>();
+            services.AddSingleton<IMortgageApplicationRepository>(provider => provider.GetRequiredService<InMemoryMortgageApplicationRepository>());
+            services.AddSingleton<IMortgageDraftLifecycle>(provider => provider.GetRequiredService<InMemoryMortgageApplicationRepository>());
             services.AddSingleton<IMortgageApplicationAuditRepository, InMemoryMortgageApplicationAuditRepository>();
             return;
         }

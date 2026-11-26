@@ -1,99 +1,86 @@
 # Architecture
 
-This page describes the current solution structure, local Aspire setup, persistence modes, and Azure deployment.
-
-## Local Aspire runtime
+## Runtime boundaries
 
 ```mermaid
 flowchart LR
-    CustomerUser[Customer browser] --> CustomerWeb[PD.Mortgages.Web]
-    StaffUser[Staff browser] --> StaffWeb[PD.Mortgages.Staff.Web]
-    StaffWeb <-->|OpenID Connect sign-in| Entra[Microsoft Entra ID]
-
-    subgraph Local["Local development managed by PD.Mortgages.AppHost"]
-        AppHost[AppHost]
-        CustomerWeb
-        StaffWeb
-        ProductsApi[PD.Products.Api]
-        App[PD.Mortgages.Application]
-        Domain[PD.Mortgages.Domain]
-        Infrastructure[PD.Mortgages.Infrastructure]
-        ProductsApplication[PD.Products.Application]
-        ProductsDomain[PD.Products.Domain]
-        ProductsInfrastructure[PD.Products.Infrastructure]
-        SqlServer[(SQL Server container)]
-        MortgageDatabase[(mortgages database)]
-        ProductsDatabase[(products database)]
-        Volume[(Docker volume: mortgages-sql-data)]
-        Documents[(Shared local document files)]
-
-        AppHost -. starts and configures .-> CustomerWeb
-        AppHost -. starts and configures .-> StaffWeb
-        AppHost -. starts .-> ProductsApi
-        AppHost -. provisions .-> SqlServer
-
-        CustomerWeb --> App
-        StaffWeb --> App
-        App --> Domain
-        CustomerWeb --> Infrastructure
-        StaffWeb --> Infrastructure
-        Infrastructure --> MortgageDatabase
-        ProductsApi --> ProductsInfrastructure
-        ProductsInfrastructure --> ProductsDatabase
-        SqlServer --> MortgageDatabase
-        SqlServer --> ProductsDatabase
-        SqlServer --> Volume
-        Infrastructure --> Documents
-        CustomerWeb -->|HTTP product lookup| ProductsApi
-        StaffWeb -->|HTTP product lookup| ProductsApi
-        ProductsApi --> ProductsApplication
-        ProductsApplication --> ProductsDomain
-        ProductsInfrastructure --> ProductsDomain
-    end
+    Browser[Customer browser] --> Customer[Customer web]
+    StaffBrowser[Staff browser] --> Staff[Staff web]
+    Staff <-->|OIDC sign-in| Entra[Microsoft Entra ID]
+    Customer -->|Application token + server session| API[Internal Mortgage API]
+    Staff -->|Delegated staff token| API
+    Customer --> Sessions[(customer-sessions SQL)]
+    API --> Mortgage[(mortgages SQL)]
+    API --> Documents[(Mortgage document storage)]
+    API -->|Internal product lookup| Products[Internal Products API]
+    API -->|Indicative decision| Eligibility[Internal Eligibility API]
+    Products --> ProductDb[(products SQL)]
 ```
 
-The customer and staff web apps share SQL application and audit data in the `mortgages` database. The Products API stores its catalog in the separate `products` database and seeds it with the current example products during migration. Both databases use the same local SQL Server container and named volume. Document contents are stored separately as files under the host's `LocalApplicationData/PD.Mortgages` directory. The customer wizard's session state uses the local in-memory cache.
+The Mortgage API is the only runtime owner of mortgage applications, audit history and documents. It hosts `PD.Mortgages.Application` and `PD.Mortgages.Infrastructure`; the web apps use `PD.Mortgages.Client` and shared contracts instead. The customer app owns its separate session database; staff has no database because no staff-owned data requires one. Customer and staff Data Protection keys are stored in separate private Blob containers in Azure and accessed by their respective identities.
 
-## Application layers
+The API checks the customer application's Entra application role and client ID before accepting a server-generated session actor. It validates a staff token's issuer, audience, calling client ID, delegated `Mortgage.Staff` scope, `MortgageStaff` API role and tenant/object IDs. Its application service enforces session ownership, blocks customer access to submitted applications, attributes audit entries, validates document uploads and retains optimistic concurrency and transactional SQL audit writes. Customer submission is idempotent for the same owner, attempt key and expected version. A session-bound receipt exposes only the reference and submission time for 24 hours; other mortgage operations are not automatically retried.
 
-- **PD.Mortgages.Web** and **PD.Mortgages.Staff.Web** are separate MVC front ends.
-- **PD.Mortgages.Application** coordinates mortgage use cases, consent history, and shared document-upload validation; it depends on domain contracts.
-- **PD.Mortgages.Domain** contains mortgage entities, rules, attributed/versioned consent records, and repository/storage interfaces.
-- **PD.Mortgages.Infrastructure** implements in-memory, file, and SQL Server persistence, SQL-backed audit transactions, Azure Blob document/Data Protection storage, and the Products API client.
-- **PD.Products.Api** exposes the product catalog over HTTP and uses the separate `PD.Products.Application`, `PD.Products.Domain`, and `PD.Products.Infrastructure` projects. It uses SQL in Aspire and Azure; standalone runs use an in-memory catalog.
-- **PD.Mortgages.AppHost** orchestrates the local web apps, Products API, and SQL Server container; it is not required for standalone project runs.
+The stateless Eligibility API owns the fictional indicative decision rules; product eligibility remains with Products. Only property value, deposit, income and consent state are sent, using a distinct shared service key. Mortgage owns the saved decision, rule version and audit event, rechecks application version after the call and rejects stale results. A service failure returns an unavailable response, not a declined decision. Existing decisions without a rule version remain readable. No credit bureau is contacted.
 
-Staff MVC routes require an authenticated Entra identity with the `MortgageStaff` app role. The staff actor uses the tenant and object IDs from the validated identity for audit attribution. Customer drafts are scoped to a randomly generated server-side session actor; only that session can access its in-progress application.
+Selected product terms are snapshotted with the application and displayed on customer review and the submitted staff view even if the catalog later changes. The Products API's catalog version is a deterministic per-product content fingerprint, not a monotonic catalog-wide revision; the local mock uses its configured version.
+The aggregate requires matching saved terms before submission; a legacy draft without a snapshot must have its product selected again. Historical submitted records without a snapshot remain readable but their original terms cannot be reconstructed.
 
-## Persistence by run mode
+Deleted and expired drafts leave a minimal tombstone and audit history. SQL marks the draft deleted and records the audit event in one version-checked transaction. API-hosted maintenance retries document deletion and periodically rechecks tombstones for uploads that finished after deletion; it also expires in-progress drafts after 30 days without activity. Submitted applications are excluded.
 
-| Run mode | Mortgage applications and audit | Document contents | Product catalog | Session state |
+Staff can look up retained audit history, including deleted drafts, using the full application ID. Upload content is retained when the storage or SQL outcome is ambiguous; only known pre-commit failures and concurrency conflicts are compensated immediately. There is no durable orphan reconciliation for active applications; operators must investigate the logged IDs as described in the README.
+
+The file persistence provider is for development only: unlike SQL, its audit and tombstone writes are not transactional across files.
+
+Mortgage API request and response shapes and their enums live in `PD.Mortgages.Contracts`, which does not reference the domain. The API and typed client use `PD.Mortgages.Transport` to map wire contracts to the models and service interface in `PD.Mortgages.Abstractions`. The application service implements that interface; neither web app nor the client references the application or domain implementation projects. The small `PD.Mortgages.SharedKernel` contains shared mortgage value enums and their display names, but no entities, persistence or business services. Its existing `PD.Mortgages.Domain.Enums` namespace is retained for compatibility.
+
+Products requests have a ten-second total timeout across retries. Eligibility requests have a ten-second timeout without automatic retries. Service timeouts count towards each per-handler circuit breaker; cancellation by the caller does not.
+
+## Persistence
+
+| Runtime | Mortgage and audit | Documents | Product catalog | Customer sessions |
 | --- | --- | --- | --- | --- |
-| Aspire local | Shared `mortgages` SQL database | Shared local files | Separate `products` SQL database | Customer wizard session in memory |
-| Customer web standalone | In memory | In memory | In-process mock | In memory |
-| Staff web standalone | Files under `data` | Files under `data` | In-process mock | No staff wizard session |
-| Current Azure deployment | Azure SQL `mortgages` database | Private Azure Blob container | Azure SQL `products` database | SQL distributed cache; Data Protection keys in private Blob container |
+| Aspire | `mortgages` SQL | Local files under `LocalApplicationData/PD.Mortgages` | `products` SQL | `customer-sessions` SQL |
+| Standalone API | In-memory by default in Development | In memory with in-memory persistence | Mock catalog by default | Owned by customer app |
+| Azure | `mortgages` Azure SQL | Private Blob container | `products` Azure SQL | Separate `customer-sessions` Azure SQL |
 
-The mortgage and product EF Core `InitialCreate` migrations are baselines for fresh databases. The mortgage session-cache migration follows its baseline; both remain in history so existing databases can upgrade. The deployment bootstrap applies migrations before app deployment, not in Azure application replicas. The SQL-backed audit write commits an application change and its audit event in one transaction. File/in-memory providers remain local/demo options. Tests do not connect to SQL Server; see the [test notes in the README](../README.md#tests).
+Aspire uses one local SQL Server container and volume for all three databases; they are logically separate. Azure uses separate serverless databases on one logical SQL server. Each database has its own initial migration, and the session cache is created only in the customer-session database. See [migration guidance](../README.md#database-migrations).
 
-## Current Azure deployment
+In Aspire, the Mortgage API, Products API and customer web app apply their own databases' migrations at startup. The Azure bootstrap applies all three before app deployment, rather than granting schema-migration permissions to the runtime identities.
+
+## Azure deployment
 
 ```mermaid
 flowchart LR
-    Pipeline[Azure DevOps pipeline] --> Registry[Azure Container Registry]
-    Registry --> CustomerApp[Customer Container App]
-    Registry --> ProductsApp[Internal Products API Container App]
-    Registry -. image is pushed, app not deployed .-> StaffImage[Staff web image]
-    CustomerApp --> MortgageDb[(Azure SQL: mortgages)]
-    ProductsApp --> ProductsDb[(Azure SQL: products)]
-    CustomerApp --> Documents[(Private Blob: mortgage documents)]
-    CustomerApp --> KeyRing[(Private Blob: Data Protection keys)]
-    CustomerApp --> Session[(SQL distributed session cache)]
-    CustomerApp -->|Internal HTTP| ProductsApp
-    Pipeline -->|Entra admin bootstrap + EF migrations| MortgageDb
-    Pipeline -->|Entra admin bootstrap + EF migrations| ProductsDb
+    Pipeline[Azure DevOps] --> Registry[Container Registry]
+    Registry --> Customer[Customer Container App]
+    Registry --> Staff[Staff Container App]
+    Registry --> API[Internal Mortgage API Container App]
+    Registry --> Products[Internal Products API Container App]
+    Registry --> Eligibility[Internal Eligibility API Container App]
+    Customer --> Sessions[(Customer sessions SQL)]
+    Customer --> API
+    Staff --> API
+    API --> Mortgage[(Mortgage SQL)]
+    API --> Documents[(Mortgage documents Blob)]
+    API --> Products
+    API --> Eligibility
+    Products --> ProductDb[(Products SQL)]
+    Customer --> CustomerKeys[(Customer key Blob)]
+    Staff --> StaffKeys[(Staff key Blob)]
+    Pipeline -->|Identity bootstrap and migrations| Mortgage
+    Pipeline -->|Identity bootstrap and migrations| Sessions
+    Pipeline -->|Identity bootstrap and migrations| ProductDb
 ```
 
-The pipeline builds and pushes images for all three projects, but deploys only the customer app and internal Products API. Azure SQL is Entra-only: the pipeline service principal bootstraps the two application identities and applies EF migrations; runtime identities are separately scoped, with product-catalog read access and mortgage-data read/write access. Blob shared-key access and anonymous container access are disabled. The SQL server and Blob endpoint currently use Azure public endpoints with Azure SQL's trusted-Azure-services firewall rule; use private endpoints/VNet integration before a production deployment.
+The customer and staff web apps have public HTTPS ingress. All three APIs have internal ingress. The Eligibility API has no database and shares a separate secret with Mortgage API. The customer managed identity can access only its session database and customer key container, and is assigned the API application role. The Mortgage API identity can access the mortgage database and document container; the Products API identity has read access to its catalog database. The staff identity accesses its own key container and has no SQL or document access. Staff API authorization uses delegated tokens, not the staff app's managed identity. The pipeline identity provisions SQL users, applies migrations and assigns the customer API role.
 
-The staff image still has no Container App deployment or production Entra configuration. Both portals support persistent Data Protection keys when `DataProtection:BlobUri` is configured; the mortgage app is configured to use its Blob key object in Azure. A customer session can continue its draft until expiry or submission; submission clears the session's application access, while staff retain access.
+This deployment is cost-conscious but not a production security boundary: public SQL/Blob endpoints and the trusted-Azure-services SQL firewall rule remain, and the staff web ingress is public. Add private endpoints, VNet integration and restricted staff ingress before using sensitive data. The in-memory staff token cache is lost on restart; staff may be prompted to sign in again. See the [README](../README.md#azure-devops-deployment) for prerequisites, Entra assignments, migration implications and cost notes.
+
+## Operations and observability
+
+All five apps log request route, status, duration and W3C trace/span IDs; HTTP clients propagate the trace context between services. The existing Log Analytics workspace retains logs for 30 days and is charged by ingestion. Avoid logging request bodies, tokens or personal data. Correlate a journey by searching `ContainerAppConsoleLogs_CL` for its trace ID. Request counters are emitted as .NET meters, but this deployment does not configure a metrics exporter.
+
+An optional `otlpEndpoint` enables OpenTelemetry HTTP server and client span export to a trusted, separately provisioned OTLP collector; it is off by default. The endpoint must use HTTPS outside Development and cannot contain credentials. Set `otlpProtocol` to `grpc` (the default) or `http/protobuf` to match the collector. Root traces are sampled at 10%, with downstream services honoring the parent decision. URL path and query tags are removed before export, but telemetry can still contain operational metadata: assess the destination, security and retention before enabling it. An Azure Monitor connection string is not an OTLP collector endpoint. Collector and ingestion costs are additional; test connectivity and data handling before relying on traces.
+
+Liveness checks only the process; readiness checks required dependencies. Health probes are exempt from the Products API rate limiter. Customer web readiness includes the Mortgage API and its configured distributed session store. Separately, the rate-limited `/health/dependencies` customer endpoint checks Products and Eligibility through the Mortgage API using their configured service credentials; the pipeline runs this on demand, not on every probe. It does not exercise staff sign-in or complete business flows. The regular SQL readiness probes and maintenance prevent the configured SQL auto-pause in normal operation. Setting `alertEmail` provisions an optional paid five-minute Azure Monitor log alert for repeated 5xx responses and an email action group; it is disabled by default. The alert depends on console-log ingestion and does not detect a complete logging outage. Verify delivery in Azure and add an independent availability/replica alert before relying on the demo. Review ingestion, alert frequency and retention costs. Follow the [restore exercise](../README.md#restore-exercise) and migration guidance before deploying future schema changes.

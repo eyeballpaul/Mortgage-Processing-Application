@@ -7,7 +7,7 @@ using PD.Mortgages.Infrastructure.Persistence;
 
 namespace PD.Mortgages.Infrastructure.Repositories;
 
-public sealed class FileMortgageApplicationRepository : IMortgageApplicationRepository
+public sealed class FileMortgageApplicationRepository : IMortgageApplicationRepository, IMortgageDraftLifecycle
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -15,6 +15,7 @@ public sealed class FileMortgageApplicationRepository : IMortgageApplicationRepo
     };
     private readonly string _rootPath;
     private readonly string _lockPath;
+    private readonly string _deletedPath;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly IMortgageApplicationAuditRepository? _auditRepository;
 
@@ -24,8 +25,10 @@ public sealed class FileMortgageApplicationRepository : IMortgageApplicationRepo
     {
         _rootPath = Path.GetFullPath(Path.Combine(options.RootPath, "applications"));
         _lockPath = Path.Combine(_rootPath, ".repository.lock");
+        _deletedPath = Path.Combine(_rootPath, "deleted");
         _auditRepository = auditRepository;
         Directory.CreateDirectory(_rootPath);
+        Directory.CreateDirectory(_deletedPath);
     }
 
     public async Task<MortgageApplicationSearchResult> SearchAsync(
@@ -99,6 +102,29 @@ public sealed class FileMortgageApplicationRepository : IMortgageApplicationRepo
             await using var stream = File.OpenRead(path);
             var snapshot = await JsonSerializer.DeserializeAsync<MortgageApplicationSnapshot>(stream, JsonOptions, cancellationToken);
             return snapshot?.ToDomain();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<bool> TouchActivityAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var repositoryLock = await AcquireRepositoryLockAsync(cancellationToken);
+            var path = GetPath(id);
+            if (!File.Exists(path))
+                return false;
+            MortgageApplicationSnapshot? snapshot;
+            await using (var stream = File.OpenRead(path))
+                snapshot = await JsonSerializer.DeserializeAsync<MortgageApplicationSnapshot>(stream, JsonOptions, cancellationToken);
+            if (snapshot is null || snapshot.Status != ApplicationStatus.InProgress)
+                return false;
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+            return true;
         }
         finally
         {
@@ -244,6 +270,115 @@ public sealed class FileMortgageApplicationRepository : IMortgageApplicationRepo
         }
     }
 
+    public async Task<bool> TryDeleteDraftAsync(Guid id, long version, MortgageApplicationAuditEntry auditEntry,
+                DateTime? inactiveBeforeUtc, CancellationToken cancellationToken = default)
+    {
+        if (_auditRepository is null)
+        {
+            throw new InvalidOperationException("An audit repository is required for application deletion.");
+        }
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var repositoryLock = await AcquireRepositoryLockAsync(cancellationToken);
+            var path = GetPath(id);
+            if (!File.Exists(path) ||
+                (inactiveBeforeUtc is not null && File.GetLastWriteTimeUtc(path) >= inactiveBeforeUtc.Value))
+            {
+                return false;
+            }
+
+            MortgageApplicationSnapshot snapshot;
+            await using (var stream = File.OpenRead(path))
+            {
+                snapshot = await JsonSerializer.DeserializeAsync<MortgageApplicationSnapshot>(stream, JsonOptions, cancellationToken)
+                    ?? throw new InvalidDataException($"Mortgage application '{id}' could not be read.");
+            }
+            if (snapshot.Version != version || snapshot.Status != ApplicationStatus.InProgress)
+            {
+                return false;
+            }
+
+            await _auditRepository.AppendAsync(id, auditEntry, cancellationToken);
+            var tombstone = GetDeletedPath(id);
+            File.Move(path, tombstone);
+            await File.WriteAllTextAsync(tombstone, "", cancellationToken);
+            File.SetLastWriteTimeUtc(tombstone, DateTime.UnixEpoch);
+            return true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<ExpiredMortgageDraft>> FindExpiredDraftsAsync(
+        DateTime inactiveBeforeUtc, int limit, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var repositoryLock = await AcquireRepositoryLockAsync(cancellationToken);
+            var drafts = new List<ExpiredMortgageDraft>();
+            foreach (var path in Directory.EnumerateFiles(_rootPath, "*.json").OrderBy(File.GetLastWriteTimeUtc))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (File.GetLastWriteTimeUtc(path) >= inactiveBeforeUtc) continue;
+                await using var stream = File.OpenRead(path);
+                var snapshot = await JsonSerializer.DeserializeAsync<MortgageApplicationSnapshot>(stream, JsonOptions, cancellationToken)
+                    ?? throw new InvalidDataException($"Mortgage application file '{path}' could not be read.");
+                if (snapshot.Status == ApplicationStatus.InProgress)
+                {
+                    drafts.Add(new ExpiredMortgageDraft(snapshot.Id, snapshot.Version));
+                    if (drafts.Count == limit) break;
+                }
+            }
+            return drafts;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<Guid>> FindDocumentsDueForCleanupAsync(
+        DateTime cleanedBeforeUtc, int limit, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var repositoryLock = await AcquireRepositoryLockAsync(cancellationToken);
+            return Directory.EnumerateFiles(_deletedPath, "*.deleted")
+                .Where(path => File.GetLastWriteTimeUtc(path) < cleanedBeforeUtc)
+                .OrderBy(File.GetLastWriteTimeUtc).Take(limit)
+                .Select(path => Guid.ParseExact(Path.GetFileNameWithoutExtension(path), "N")).ToList();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task MarkDocumentsCleanedAsync(Guid id, DateTime cleanedAtUtc, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var repositoryLock = await AcquireRepositoryLockAsync(cancellationToken);
+            var path = GetDeletedPath(id);
+            if (File.Exists(path))
+            {
+                await File.WriteAllTextAsync(path, "", cancellationToken);
+                File.SetLastWriteTimeUtc(path, cleanedAtUtc);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private async Task<FileStream> AcquireRepositoryLockAsync(CancellationToken cancellationToken)
     {
         var wait = Stopwatch.StartNew();
@@ -262,6 +397,7 @@ public sealed class FileMortgageApplicationRepository : IMortgageApplicationRepo
     }
 
     private string GetPath(Guid id) => Path.Combine(_rootPath, $"{id:N}.json");
+    private string GetDeletedPath(Guid id) => Path.Combine(_deletedPath, $"{id:N}.deleted");
 
     private async Task RestoreAsync(
         MortgageApplication application,

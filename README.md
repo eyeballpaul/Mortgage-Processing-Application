@@ -1,96 +1,121 @@
 # PD Mortgages
 
-A .NET 10 ASP.NET Core MVC demonstration of a UK mortgage application journey. It uses Razor views, Bootstrap 5, server-side DataAnnotations validation, and session state. Standalone development can use in-memory storage; Aspire runs the apps against separate mortgage and product databases on one local SQL Server container, with document contents stored as files. No live lender, credit-check, or open-banking integrations are connected.
+A .NET 10 demonstration of a UK mortgage submission journey. The figures, products and decisions are fictional: no lender, credit-check or open-banking integrations are connected. Do not use real customer data.
 
 ## Architecture
 
-See [docs/architecture.md](docs/architecture.md) for local runtime diagrams, persistence modes, and the current Azure deployment.
+The customer and staff MVC apps call the internal **Mortgage API**; neither connects to the mortgage database or document storage. The API owns the application service, mortgage and audit data and document storage, and calls the internal Products and stateless Eligibility APIs. The customer app owns a separate SQL database for its distributed session cache. The staff app has no database because it has no independent data to persist. Both apps use separate Blob-backed Data Protection key stores in Azure.
 
 ```text
-PD.Mortgages.AppHost
-├── PD.Mortgages.Web ────────────┐
-├── PD.Mortgages.Staff.Web ──────┴──> PD.Mortgages.Application -> PD.Mortgages.Domain
-├── PD.Products.Api
-└── SQL Server (local Aspire; mortgages and products databases)
-
-Both mortgage web apps -> PD.Mortgages.Infrastructure -> PD.Mortgages.Domain
+Customer browser -> Customer web -> Mortgage API -> mortgage SQL + document Blob
+                         |               |
+                  customer sessions SQL  -> Products API -> products SQL
+                                         -> Eligibility API (no database)
+Staff browser -> Staff web --------^
+                     | delegated staff identity
+                     -> Microsoft Entra ID
 ```
 
-- **Domain** contains the mortgage application aggregate, product and document entities, application enums, the `LoanToValue` value object, eligibility domain service, and repository/storage contracts. It has no project dependencies.
-- **Application** contains DTOs and the application service that coordinates persistence, product eligibility, document storage, and submission.
-- **Infrastructure** implements in-memory, file-backed, and EF Core SQL Server persistence for applications and audit history, in-memory, file, and Azure Blob document storage, and product-service clients.
-- **Web** contains the customer MVC controllers, annotated view models, strongly typed Razor pages, session configuration, layout, and responsive design system.
-- **Staff.Web** is the employee-facing MVC portal. It reuses the same application service, domain rules, repository, product catalog, styling, and application files.
-- **Products.Api** exposes the product catalog over HTTP. Aspire and Azure use a SQL-backed catalog; standalone runs use the in-memory catalog.
+Customer submissions are anonymous. A random server-side session actor owns each draft; the customer cannot reopen it after submission. A submission can be safely retried using the same session-bound attempt key and application version; a minimal reference and submission time can be recovered for 24 hours in the same session. Losing the session prevents recovery. Staff must sign in with Entra and have the `MortgageStaff` role. The API validates both the calling app and the delegated staff identity, scope and role; audit entries use the validated tenant/object IDs. In Azure the customer app uses a managed identity with the API's `MortgageCustomer` application role. Browser-supplied identity or role headers are not accepted as staff identity.
 
-The application flow is: property and deposit → applicant details → income and commitments → optional credit/open-banking consent → an indicative Decision in Principle guide → eligible example products → optional document upload → review and submission. The DIP page displays a loading state while the backend runs a simulated assessment with a two-second delay. The resulting guide is a simple 4.5× annual-income illustration only; it is not a lender decision, does not contact a credit agency, and is not an offer or guarantee. Customers can continue an in-progress application only in the same browser session; submitted applications are available to staff, not through the customer journey.
+Starting or restarting a customer application requires an anti-forgery-protected POST and is limited to five attempts per observed remote address per ten minutes per web replica. Behind a reverse proxy, this may be the proxy's address, so multiple customers can share a limit. This in-process limit is a basic demo safeguard, not a distributed abuse-prevention boundary; use a trusted edge rate limiter for production.
 
-## Run
+In-progress customer and staff drafts expire after 30 days without authorized customer or staff activity; rejected reads do not extend retention, and submitted applications are not expired. Deletion or expiry records an audit event and leaves a minimal tombstone without the application details. While the Mortgage API is running, it retries document cleanup in the background and rechecks tombstones daily to remove any late-arriving uploads; cleanup waits if the API is stopped. Audit events and tombstones are retained; choose an appropriate retention policy before using real data.
 
-### Run the solution with Aspire
+An uncertain document upload or database commit retains the uploaded content instead of risking deletion of a committed document. The API logs the application and document IDs for investigation. Orphaned content for active applications is **not automatically reconciled**: inspect these warnings, confirm the final application metadata and wait for any in-flight operations before manually removing unreferenced blobs. Do not rely on this prototype for important documents without durable upload reconciliation and tested Blob recovery.
+
+See [architecture.md](docs/architecture.md) for boundaries, local and Azure hosting, security and limitations.
+
+## Local development with Aspire
+
+Install .NET 10, Docker Desktop, and the trusted ASP.NET Core development certificate (`dotnet dev-certs https --trust`). Configure the staff portal and API Entra registrations below, then:
 
 ```bash
-dotnet run --project PD.Mortgages.AppHost --launch-profile https
+ProductService__ApiKey=dev-product-api-key dotnet run --project PD.Mortgages.AppHost --launch-profile https
 ```
 
-Before starting Aspire, configure staff sign-in as described below. Aspire starts a local SQL Server container, the customer mortgage web app, employee portal, and Products API, then opens the Aspire dashboard. The web apps share the `mortgages` database for application and audit data; the API uses a separate `products` database in the same SQL Server container. Its migration seeds the current example products. Uploaded document contents are stored as shared local files under the current user's application-data directory, not in SQL. The mortgage and product `InitialCreate` migrations are baselines for fresh databases; they do not upgrade older schemas. Back up older databases and prepare deliberate migrations or resets before using these baselines. A Docker data volume preserves both databases across restarts. Customer wizard session state is in memory and is lost if the customer web process restarts. In VS Code, press **F5** and choose **PD Mortgages (Aspire)**, or use **Terminal → Run Task → run Aspire AppHost**. Docker Desktop must be running.
+Aspire starts both web apps, the internal Mortgage, Products and Eligibility APIs, and one SQL Server container with separate `mortgages`, `products`, and `customer-sessions` databases. It generates an Eligibility API key for the two local services. The development-only Products API key above matches the value in its Development settings and must reach the Mortgage API process for product lookups. Do not use it in Azure.
 
-### Configure staff sign-in
+Aspire runs the .NET apps locally; its Docker container is for SQL Server. For a container image, build from the repository root using the relevant service Dockerfile, for example `docker build -f PD.Mortgages.Web/Dockerfile .`. The pipeline builds all five service images this way.
 
-The staff portal uses single-tenant Microsoft Entra ID OpenID Connect with the authorization-code flow. Create a development app registration with Web redirect URI `https://localhost:7241/signin-oidc` and front-channel sign-out callback `https://localhost:7241/signout-callback-oidc`; the app does not require the implicit ID-token grant. In **App registrations → App roles**, create an enabled role that allows **Users/Groups** and has the exact **Value** `MortgageStaff`. In the matching **Enterprise application** (same Application/Client ID), assign your staff user or group to that role; enable **Assignment required** if you want Entra to block unassigned users before they reach the app. Then store the registration values locally with User Secrets:
+The Mortgage API stores documents under `LocalApplicationData/PD.Mortgages`; the SQL Docker volume persists data across restarts. The APIs migrate the mortgage and product databases locally at startup, and the customer web app migrates the customer-session database. Aspire creates a fresh, process-scoped development credential for customer-to-API calls; it is accepted **only** by an API running in Development. Staff still need real Entra sign-in and a delegated API token.
+
+### Configure Entra for staff and the API
+
+Use separate development and production registrations in one tenant. For each environment:
+
+1. Create a single-tenant **Mortgage API** app registration. Set its Application ID URI to `api://<mortgage-api-client-id>` and `requestedAccessTokenVersion` to `2` in its manifest. Under **Expose an API**, add the delegated scope `Mortgage.Staff`. Add enabled app roles `MortgageStaff` (Users/Groups) and `MortgageCustomer` (Applications). Ensure the corresponding enterprise application exists.
+2. Create the single-tenant **staff web** registration. Add Web redirect URI `https://localhost:7241/signin-oidc` and sign-out callback `https://localhost:7241/signout-callback-oidc` for development; add the deployed staff URL's corresponding paths for Azure. Create a client secret and an enabled `MortgageStaff` Users/Groups app role.
+3. Give the staff registration the Mortgage API's delegated `Mortgage.Staff` permission and grant administrator consent. Assign each staff user or group to `MortgageStaff` on **both** enterprise applications: the staff web role controls sign-in, and the API role appears in its access tokens. If assignment is required, the customer managed identity also needs the API's `MortgageCustomer` role.
+4. Configure the staff app and Aspire (replace placeholders; do not commit secrets):
 
 ```bash
 dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>" --project PD.Mortgages.Staff.Web
-dotnet user-secrets set "AzureAd:ClientId" "<development-app-client-id>" --project PD.Mortgages.Staff.Web
-dotnet user-secrets set "AzureAd:ClientSecret" "<development-app-secret>" --project PD.Mortgages.Staff.Web
+dotnet user-secrets set "AzureAd:ClientId" "<staff-web-client-id>" --project PD.Mortgages.Staff.Web
+dotnet user-secrets set "AzureAd:ClientSecret" "<staff-web-secret-value>" --project PD.Mortgages.Staff.Web
+dotnet user-secrets set "MortgageApi:TenantId" "<tenant-id>" --project PD.Mortgages.AppHost
+dotnet user-secrets set "MortgageApi:ApiClientId" "<mortgage-api-client-id>" --project PD.Mortgages.AppHost
+dotnet user-secrets set "MortgageApi:StaffClientId" "<staff-web-client-id>" --project PD.Mortgages.AppHost
 ```
 
-Use the client secret **Value**, not its ID; Azure only displays the value when the secret is created. Do not commit it. The staff app fails at startup if these Entra settings are missing. Use a separate production app registration and provide `AzureAd__TenantId`, `AzureAd__ClientId`, and `AzureAd__ClientSecret` through secure Azure configuration (preferably Key Vault); register the production callback URL and assign the `MortgageStaff` role there too. The pipeline currently builds and pushes the staff image but does not deploy a staff Container App, so Azure hosting resources still need to be configured before production use.
+Use the secret **value**, not its ID. Aspire configures the API and staff scope from these values. The staff portal fails closed without Entra configuration; the Development customer credential cannot authorize staff calls. For separate standalone processes, configure matching `MortgageApi__DevelopmentKey` values of at least 32 characters on the API and customer app, with `ASPNETCORE_ENVIRONMENT=Development`, and configure `MortgageApi__BaseUrl` and `MortgageApi__Scope` on the web app. Never use a development key in Azure.
 
-After configuration, the employee portal opens at its `mortgages-staff-web` URL. All staff MVC routes require an authenticated Entra user with the `MortgageStaff` app role. The app records the stable tenant/object ID pair as the staff actor, not an email address. It provides a recent-application dashboard with applicant/email/reference/creator search, status filtering, and 25-result pages. Creating or editing a draft follows the same eight-step sequence as the customer journey: property, applicant, finances, consents, Decision in Principle, product, optional documents, and review.
-
-### Run only the mortgage web app
-
-```bash
-dotnet restore PD.Mortgages.slnx
-dotnet build PD.Mortgages.slnx
-dotnet run --project PD.Mortgages.Web
-```
-
-This starts only the customer app. It uses the development mock product catalog and in-memory application, audit, document, and session stores; it does not start SQL Server. Open the local URL printed by `dotnet run`. All application data is lost when the web app restarts. Running the staff project directly instead requires the Entra settings above and defaults to file-backed persistence under `data`; it will not share records with this standalone customer app. Use Aspire when the mortgage apps need shared SQL persistence and the Products API needs its SQL-backed catalog.
-
-### Run and debug in VS Code
-
-Open the solution folder in VS Code and install the recommended C# Dev Kit extension. Aspire runs the customer web app, staff web app, and Products API as .NET projects and SQL Server in a Docker container.
+The API's [HTTP examples](PD.Mortgages.Api/PD.Mortgages.Api.http) illustrate all operations with bearer tokens. Mutations require the latest application version in the `X-Expected-Version` header; stale edits return a conflict rather than overwriting changes. Development OpenAPI is available at `/openapi/v1.json`.
 
 ## Tests
-
-Run the test suite with:
 
 ```bash
 dotnet test PD.Mortgages.slnx
 ```
 
-Tests run without starting Aspire or connecting to SQL Server. Most mortgage service tests use in-memory repositories; durable-storage tests use isolated temporary files. SQL persistence tests check service registration only and do not connect to a database. Products API tests run in-process with its in-memory catalog. SQL queries and migrations are not currently covered by database integration tests.
+Tests include API authorization, cross-session isolation, submission, staff audit attribution, document validation, draft lifecycle, concurrent edits, and migration shape. Test tokens are signed locally, not issued by Entra; an actual staff login and Azure deployment require the tenant setup above.
 
-## Azure DevOps and Azure Container Apps
+## Azure DevOps deployment
 
-`azure-pipelines.yml` builds and tests the solution on pull requests and pushes to `main`. On `main`, it provisions Azure SQL, private document/Data Protection Blob containers, a Log Analytics workspace, and managed identities; then it bootstraps identity access and applies EF migrations before building/pushing images and deploying the customer app and internal Products API. The products API uses the durable SQL catalog; the customer app uses SQL for application/audit data and distributed session state. Runtime services use managed identity, SQL authentication is disabled, Blob shared-key access is disabled, and containers have no anonymous access.
+The pipeline builds and tests the solution, provisions infrastructure, applies migrations and deploys five Container Apps: customer web, staff web, internal Mortgage API, Products API and Eligibility API. It uses three separate serverless Azure SQL databases, scoped managed identities, private Blob containers and Azure Container Registry. The Eligibility API has no database, but its additional running Container App incurs cost. Review Azure pricing and delete the resource group when finished.
 
-Before running the pipeline:
+Although the databases specify a 60-minute auto-pause delay, the always-running replicas, database-backed readiness probes and draft maintenance regularly access them, so do not budget on auto-pause occurring. Estimate the always-on costs, configure an Azure budget and delete the explicitly selected demo resource group when it is no longer needed. Scale-to-zero would require a separately scheduled retention job and tested cold-start behavior; this template deliberately does not pretend to provide that.
 
-1. Create an Azure Resource Group and an Azure DevOps Azure Resource Manager service connection scoped to it. The service connection identity needs Contributor, SQL server Entra administrator privileges through the Bicep configuration, and permission to create the narrowly scoped ACR/Blob role assignments (for example, User Access Administrator at the resource-group scope).
-2. Edit the pipeline variables at the top of `azure-pipelines.yml`: service connection name, resource group, location, globally unique lowercase ACR, SQL server and Blob storage-account names, the service connection's service-principal object ID and display name, and app/environment names.
-3. Run the pipeline from `main`. The pipeline generates a bootstrap SQL password (then enables Entra-only SQL authentication), bootstraps the mortgage/products managed identities, applies database migrations, pushes version-tagged images, and deploys the apps. No credentials or API keys are stored in the repository; the internal Products API key and bootstrap SQL password are generated at deployment and passed as secure Bicep parameters.
+Before running:
 
-The Azure SQL server and storage account are currently reachable through public Azure endpoints; SQL access is restricted to Azure services and Entra identities, and Blob access requires managed identity. Add private endpoints and VNet integration before handling sensitive production data. The migration bootstrap creates only runtime read/write roles; the pipeline service connection performs schema migrations. Managed-identity database users are created using their client IDs. If a previous bootstrap created a user with an incorrect SID, bootstrap stops rather than changing it; an administrator must verify and recreate that user before retrying.
+1. Create the resource group and an Azure DevOps ARM service connection. Its identity needs Contributor, permission to create resource-group role assignments, and Azure SQL Entra administrator privileges through the Bicep settings. It also needs Microsoft Graph application permissions `Application.Read.All` and `AppRoleAssignment.ReadWrite.All`, with admin consent, to assign the customer managed identity the API's `MortgageCustomer` app role.
+2. Complete the production Entra registration, role assignments and delegated permission above. Configure the deployed staff callback URI after the staff URL is known; add it before attempting sign-in.
+3. Set the placeholder pipeline variables in [azure-pipelines.yml](azure-pipelines.yml), including the Mortgage API and staff client IDs and globally unique resource names. Set `staffClientSecret` as a **secret pipeline variable** containing the staff app's client secret value. Generate separate random keys with `openssl rand -hex 32` and set the **secret pipeline variables** `productServiceApiKey` and `eligibilityServiceApiKey`; retain their values between deployments. Each key must contain 32–128 letters, digits, underscores or hyphens. Optionally set `alertEmail` to enable the paid Azure Monitor repeated-5xx alert and email action group, and `otlpEndpoint` to export sampled traces to a trusted OTLP collector; both are disabled by default to limit costs. The template does not deploy a collector. Do not put credentials in the endpoint URL.
+4. Run the pipeline from `main`. It compiles and validates Bicep, then the foundation deployment creates the managed identities and databases; the pipeline assigns the API role, grants the identities database permissions and applies migrations, pushes images, and deploys the apps. It checks public web readiness, the customer session store and on-demand Products and Eligibility dependency checks through the Mortgage API using their configured keys. Check the `staffWebUrl` and `mortgagesWebUrl` deployment outputs. A directory admin may need to resolve Graph permission or identity-propagation failures before retrying. These checks do not exercise staff sign-in, document uploads or a complete submission.
+
+All three APIs have internal Container Apps ingress. Both web apps have public HTTPS ingress; staff routes require Entra sign-in, but the staff app is **not** private-network-only. SQL and Blob endpoints still use public Azure endpoints; SQL is restricted to Azure services and Entra identities. This is a demonstration, not production network isolation: use VNet integration, private endpoints, restricted staff ingress, stronger key protection and appropriate audit retention before handling sensitive data.
+
+Products API key rotation is not zero-downtime: the services do not accept overlapping keys. Schedule a maintenance window, update `productServiceApiKey`, and redeploy both apps together. If deployment fails or is rolled back, redeploy both apps with the same previously working secret; do not roll back only one service.
+
+Eligibility API key rotation has the same limitation: coordinate `eligibilityServiceApiKey` between Mortgage and Eligibility and redeploy both during a maintenance window. For standalone local processes, set matching `EligibilityService__ApiKey` values of at least 32 characters on both APIs and set `EligibilityService__BaseUrl` on Mortgage. See the [Eligibility HTTP examples](PD.Eligibility.Api/PD.Eligibility.Api.http).
+
+Deployments are incremental: clearing `alertEmail` later does not remove a previously created alert or action group. Disable or delete those named resources explicitly in Azure if they are no longer wanted.
 
 ### Database migrations
 
-The mortgage and product `InitialCreate` migrations are baselines for new databases. The subsequent mortgage session-cache migration is retained separately so databases that already applied the baseline can upgrade. The deployment bootstrap applies pending migrations to both databases before deploying app revisions; local Aspire applies them at startup. Do not edit or remove applied migrations: add new migrations for model changes.
+Each database has a separate EF Core migration history and one initial migration:
 
-**Important:** this repository is a synthetic demonstration, not production mortgage software. Staff sign-in is implemented, but the staff Container App is not deployed by the pipeline and requires production Entra app registration and an Azure Container App resource before use. The customer journey uses a browser session for an in-progress application and ends access upon submission. The session expires after 30 days of inactivity or when its browser cookie expires; anyone with access to that browser session can see its draft, so customers should avoid shared devices. Persisted Data Protection keys are configured for the customer app and supported by the staff app when `DataProtection:BlobUri` is supplied. Do not put real customer, financial, or identity data into this demonstration.
+| Database | Migration project | Owned data | Local migration runner |
+| --- | --- | --- | --- |
+| `mortgages` | [PD.Mortgages.Infrastructure](PD.Mortgages.Infrastructure/Persistence/Migrations) | Applications, tombstones and audit entries | Mortgage API |
+| `products` | [PD.Products.Infrastructure](PD.Products.Infrastructure/Persistence/Migrations) | Product catalog and seed data | Products API |
+| `customer-sessions` | [PD.Mortgages.CustomerSessions](PD.Mortgages.CustomerSessions/Migrations) | Distributed customer session cache | Customer web app |
 
-## Demonstration limitations
+The session cache does not exist in the mortgage database. The Azure deployment bootstrap applies all three migrations with its admin identity before app revisions start; runtime identities have only the required data roles. Migration histories are independent: do not copy tables or migration history between databases.
 
-PD Mortgages, its rates, products, estimates, and statuses are fictional. Credit checks, open banking, underwriting, and lender submission are not connected to external services. Local Aspire stores uploaded documents in shared local files, not SQL Server. Azure uses SQL and Blob Storage, but has no private endpoints or production audit-retention policy. Do not use this demonstration with real financial or identity data.
+The mortgage migration history was reset for a fresh deployment. If a local `mortgages` database was created using the previous migrations, stop the applications and use a SQL administration tool to drop **only that database**, then restart Aspire to recreate it. This deletes its applications and audit entries. Verify the database name and server before dropping it; do not delete the shared SQL volume, the `products` database, or the `customer-sessions` database. Existing sessions are not copied between databases, and anonymous customers cannot recover drafts without their original session. Azure resources have not been deployed or validated by this repository alone.
+
+Future schema changes must use expand-and-contract migrations: first deploy a schema compatible with both the current and new app revisions, then deploy the new code, and remove old columns only after old revisions are retired. The pipeline applies migrations before the new revisions; an incompatible migration can break the old revision and make an image rollback unsafe. Review migration and snapshot JSON compatibility before every deployment.
+
+### Restore exercise
+
+Practice with fictional data in a separate resource group before relying on recovery. Azure SQL point-in-time restore creates a **new** database; check the available restore window and expected cost in the Azure portal. Select a UTC recovery time and restore `mortgages` to a uniquely named exercise database on the same logical server, for example:
+
+```bash
+az sql db restore --resource-group "<exercise-resource-group>" --server "<sql-server>" \
+  --name mortgages --dest-name mortgages-restore-exercise --time "<UTC-time>"
+```
+
+Use an authorized SQL client to verify the migration history, application and audit record counts and a fictional submitted application's data. Run a compatible API revision against the restored database in an isolated environment, with appropriate identity permissions, and verify a staff read. Do not point the running apps at the exercise database or overwrite the original. Document the recovery point, elapsed time and results; delete only the explicitly named exercise database when finished.
+
+SQL restore does not restore document blobs or Data Protection keys. Independently plan, configure and test Blob backup/version recovery before storing any important files; this template does not enable a complete Blob recovery solution. Products and customer sessions have independent databases and restore points; restoring one does not make the others transactionally consistent. Lost sessions or keys prevent customers recovering their prior anonymous session. A real recovery requires a coordinated cutover plan and validation, not just this exercise. This procedure has not yet been executed in Azure.

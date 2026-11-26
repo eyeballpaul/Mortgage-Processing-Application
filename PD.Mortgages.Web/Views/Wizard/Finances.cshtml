@@ -8,6 +8,7 @@
     <h1>A little about your income</h1>
     <p class="text-secondary">A few details help us understand what a comfortable monthly payment could look like for you.</p>
     <form asp-action="Finances" method="post" class="mt-4">
+        @await Html.PartialAsync("_ExpectedVersion")
         <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
         <div class="mb-4">
             <label asp-for="AnnualIncome" class="form-label"></label>
