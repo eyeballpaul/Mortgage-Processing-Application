@@ -121,13 +121,12 @@ public sealed class MortgageApplicationService(
     public Task SaveFinancesAsync(Guid id, decimal annualIncome, decimal monthlyCommitments, EmploymentType employmentType, long expectedVersion, CancellationToken cancellationToken = default) =>
         ChangeAsync(id, expectedVersion, application => application.UpdateFinances(annualIncome, monthlyCommitments, employmentType), "Finances updated", cancellationToken);
 
-    public Task SaveConsentsAsync(Guid id, bool creditCheckConsent, bool openBankingConsent, long expectedVersion, CancellationToken cancellationToken = default) =>
+    public Task SaveConsentsAsync(Guid id, bool creditCheckConsent, long expectedVersion, CancellationToken cancellationToken = default) =>
         ChangeAsync(
             id,
             expectedVersion,
             application => application.RecordConsents(
                 creditCheckConsent,
-                openBankingConsent,
                 workflowOptions.Value.ConsentTermsVersion,
                 GetActorId()),
             "Customer consents recorded",
@@ -438,7 +437,6 @@ public sealed class MortgageApplicationService(
         application.MonthlyCommitments,
         application.EmploymentType,
         application.CreditCheckConsent,
-        application.OpenBankingConsent,
         application.ConsentsRecorded,
         application.DecisionInPrinciple is null
             ? null

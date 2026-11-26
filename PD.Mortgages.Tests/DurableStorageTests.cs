@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using PD.Mortgages.Domain.Entities;
 using PD.Mortgages.Infrastructure.Persistence;
 using PD.Mortgages.Infrastructure.Repositories;
@@ -7,6 +9,30 @@ namespace PD.Mortgages.Tests;
 
 public sealed class DurableStorageTests
 {
+    [Fact]
+    public void OlderSnapshotsKeepHistoricalConsentRecordsWhenResaved()
+    {
+        var application = new MortgageApplication();
+        application.RecordConsents(true, "terms-1", "customer-1");
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var json = JsonSerializer.SerializeToNode(MortgageApplicationSnapshot.FromDomain(application), options)!.AsObject();
+        json["removedConsent"] = true;
+        json["consentHistory"]!.AsArray().Add(JsonSerializer.SerializeToNode(
+            new CustomerConsent((ConsentPurpose)1, true, "terms-1", DateTime.UnixEpoch, "customer-1"), options));
+
+        var snapshot = json.Deserialize<MortgageApplicationSnapshot>(options)!;
+        var restored = snapshot.ToDomain();
+        restored.RecordConsents(false, "terms-2", "customer-1");
+        var resaved = JsonSerializer.SerializeToNode(MortgageApplicationSnapshot.FromDomain(restored), options)!.AsObject();
+
+        Assert.True(restored.ConsentsRecorded);
+        Assert.False(restored.CreditCheckConsent);
+        Assert.Equal(3, restored.ConsentHistory.Count);
+        Assert.Equal(1, resaved["consentHistory"]![1]!["purpose"]!.GetValue<int>());
+        Assert.Equal("customer-1", resaved["consentHistory"]![1]!["actorId"]!.GetValue<string>());
+        Assert.False(resaved.ContainsKey("removedConsent"));
+    }
+
     [Fact]
     public async Task FileRepositoryRoundTripsApplicationStateAndOwner()
     {
@@ -19,7 +45,7 @@ public sealed class DurableStorageTests
             var application = MortgageApplication.CreateForEmployee("staff-42");
             application.AssignOwner("customer-123");
             application.UpdateQualification(300_000m, 30_000m);
-            application.RecordConsents(true, false, "terms-1", "staff-42");
+            application.RecordConsents(true, "terms-1", "staff-42");
             application.AddDocument(Guid.NewGuid(), "identity.pdf", 128);
             application.RecordAudit("staff-42", "Application created");
 
@@ -33,7 +59,7 @@ public sealed class DurableStorageTests
             Assert.Equal("customer-123", restored.OwnerId);
             Assert.Equal("staff-42", restored.CreatedByEmployeeId);
             Assert.Equal(300_000m, restored.PropertyValue);
-            Assert.Equal(2, restored.ConsentHistory.Count);
+            Assert.Single(restored.ConsentHistory);
             Assert.All(restored.ConsentHistory, consent => Assert.Equal("terms-1", consent.TermsVersion));
             Assert.Equal("identity.pdf", Assert.Single(restored.Documents).FileName);
             Assert.Empty(restored.AuditTrail);

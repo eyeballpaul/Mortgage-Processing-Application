@@ -126,7 +126,6 @@ public sealed class ApplicationsController(IMortgageApplicationService applicati
         MonthlyCommitments = application.MonthlyCommitments,
         EmploymentType = application.EmploymentType,
         CreditCheckConsent = application.CreditCheckConsent,
-        OpenBankingConsent = application.OpenBankingConsent,
         SelectedProductId = application.SelectedProductId,
         SelectedProduct = application.SelectedProduct,
         DecisionInPrinciple = application.DecisionInPrinciple,

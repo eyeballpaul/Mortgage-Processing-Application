@@ -122,7 +122,7 @@ public sealed class DraftLifecycleTests
         application.UpdateApplicant("Jane", "Doe", "jane@example.com", "07123456789");
         application.UpdateQualification(300_000, 30_000);
         application.UpdateFinances(100_000, 1_000, EmploymentType.Employed);
-        application.RecordConsents(false, false, "terms-1", "session:test");
+        application.RecordConsents(false, "terms-1", "session:test");
         TestEligibilityClient.Record(application);
         application.SelectProduct("fixed-2", new SelectedMortgageProductSnapshot("fixed-2", "Fixed", 4m, 999m, 5m, 2, 90, "original"));
         application.Submit();

@@ -49,7 +49,7 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         application = await client.GetAsync(application.Id);
         await client.SaveFinancesAsync(application.Id, 100000, 1000, EmploymentType.Employed, application.Version);
         application = await client.GetAsync(application.Id);
-        await client.SaveConsentsAsync(application.Id, false, false, application.Version);
+        await client.SaveConsentsAsync(application.Id, false, application.Version);
         application = await client.GetAsync(application.Id);
 
         var result = await client.GenerateDecisionInPrincipleAsync(application.Id, application.Version);
@@ -192,7 +192,7 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         await SetCurrentVersion();
         Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/finances", new { annualIncome = 100000, monthlyCommitments = 1000, employmentType = "Employed" })).StatusCode);
         await SetCurrentVersion();
-        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/consents", new SaveConsentsRequest(false, false))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/consents", new SaveConsentsRequest(false))).StatusCode);
         await SetCurrentVersion();
         Assert.Equal(HttpStatusCode.OK, (await owner.PostAsync($"{root}/decision", null)).StatusCode);
         await SetCurrentVersion();

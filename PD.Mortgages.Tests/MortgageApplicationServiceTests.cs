@@ -92,7 +92,7 @@ public sealed class MortgageApplicationServiceTests
         var application = await service.CreateAsync();
         await service.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version);
         await service.SaveFinancesAsync(application.Id, 100_000m, 1_000m, EmploymentType.Employed, (await service.GetAsync(application.Id)).Version);
-        await service.SaveConsentsAsync(application.Id, true, false, (await service.GetAsync(application.Id)).Version);
+        await service.SaveConsentsAsync(application.Id, true, (await service.GetAsync(application.Id)).Version);
         var version = (await service.GetAsync(application.Id)).Version;
 
         var decision = service.GenerateDecisionInPrincipleAsync(application.Id, version);
@@ -119,7 +119,7 @@ public sealed class MortgageApplicationServiceTests
         var application = await applicationService.CreateAsync();
         await applicationService.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version);
         await applicationService.SaveFinancesAsync(application.Id, 100_000m, 1_000m, EmploymentType.Employed, (await applicationService.GetAsync(application.Id)).Version);
-        await applicationService.SaveConsentsAsync(application.Id, creditCheckConsent: false, openBankingConsent: false, (await applicationService.GetAsync(application.Id)).Version);
+        await applicationService.SaveConsentsAsync(application.Id, creditCheckConsent: false, (await applicationService.GetAsync(application.Id)).Version);
 
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         var result = await applicationService.GenerateDecisionInPrincipleAsync(application.Id, (await applicationService.GetAsync(application.Id)).Version, cancellation.Token);
@@ -153,11 +153,11 @@ public sealed class MortgageApplicationServiceTests
         var service = CreateService(repository);
         var application = await service.CreateAsync();
 
-        await service.SaveConsentsAsync(application.Id, true, false, application.Version);
+        await service.SaveConsentsAsync(application.Id, true, application.Version);
 
         var persisted = await repository.GetByIdAsync(application.Id);
         Assert.NotNull(persisted);
-        Assert.Equal(2, persisted.ConsentHistory.Count);
+        Assert.Single(persisted.ConsentHistory);
         Assert.All(persisted.ConsentHistory, consent =>
         {
             Assert.Equal("terms-2026-01", consent.TermsVersion);
@@ -237,7 +237,7 @@ public sealed class MortgageApplicationServiceTests
         await service.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version);
         await service.SaveApplicantAsync(application.Id, "Jane", "Doe", "jane@example.com", "07123456789", (await service.GetAsync(application.Id)).Version);
         await service.SaveFinancesAsync(application.Id, 100_000m, 1_000m, EmploymentType.Employed, (await service.GetAsync(application.Id)).Version);
-        await service.SaveConsentsAsync(application.Id, false, false, (await service.GetAsync(application.Id)).Version);
+        await service.SaveConsentsAsync(application.Id, false, (await service.GetAsync(application.Id)).Version);
         await service.GenerateDecisionInPrincipleAsync(application.Id, (await service.GetAsync(application.Id)).Version);
         var products = await service.GetEligibleProductsAsync(application.Id);
         Assert.NotEmpty(products);
@@ -262,7 +262,7 @@ public sealed class MortgageApplicationServiceTests
         await service.SaveQualificationAsync(created.Id, 300_000, 30_000, created.Version);
         await service.SaveApplicantAsync(created.Id, "Jane", "Doe", "jane@example.com", "07123456789", (await service.GetAsync(created.Id)).Version);
         await service.SaveFinancesAsync(created.Id, 100_000, 1_000, EmploymentType.Employed, (await service.GetAsync(created.Id)).Version);
-        await service.SaveConsentsAsync(created.Id, false, false, (await service.GetAsync(created.Id)).Version);
+        await service.SaveConsentsAsync(created.Id, false, (await service.GetAsync(created.Id)).Version);
         await service.GenerateDecisionInPrincipleAsync(created.Id, (await service.GetAsync(created.Id)).Version);
         await service.SelectProductAsync(created.Id, "fixed-2", (await service.GetAsync(created.Id)).Version);
         var key = Guid.NewGuid();

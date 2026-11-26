@@ -11,6 +11,7 @@ var documentStorageRootPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
     "PD.Mortgages");
 var developmentApiKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+var productApiKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 var eligibilityApiKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 var apiClientId = builder.Configuration["MortgageApi:ApiClientId"] ?? Guid.Empty.ToString();
 var tenantId = builder.Configuration["MortgageApi:TenantId"] ?? Guid.Empty.ToString();
@@ -18,6 +19,7 @@ var staffClientId = builder.Configuration["MortgageApi:StaffClientId"] ?? Guid.E
 
 var productsApi = builder.AddDotnetProject("products-api", "../PD.Products.Api/PD.Products.Api.csproj")
     .WithReference(productsDatabase)
+    .WithEnvironment("ProductService__ApiKey", productApiKey)
     .WithEnvironment("Persistence__Provider", "SqlServer")
     .WaitFor(productsDatabase)
     .WithHttpHealthCheck("/health/ready");
@@ -30,6 +32,7 @@ var mortgageApi = builder.AddDotnetProject("mortgages-api", "../PD.Mortgages.Api
     .WithHttpHealthCheck("/health/ready")
     .WithReference(mortgagesDatabase)
     .WithEnvironment("ProductService__UseMock", "false")
+    .WithEnvironment("ProductService__ApiKey", productApiKey)
     .WithEnvironment("ProductService__BaseUrl", productsApi.GetEndpoint("https"))
     .WithEnvironment("EligibilityService__BaseUrl", eligibilityApi.GetEndpoint("http"))
     .WithEnvironment("EligibilityService__ApiKey", eligibilityApiKey)

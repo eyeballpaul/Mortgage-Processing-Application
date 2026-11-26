@@ -12,7 +12,7 @@ using PD.Mortgages.Infrastructure.Persistence;
 namespace PD.Mortgages.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MortgageDbContext))]
-    [Migration("20261126172710_InitialCreate")]
+    [Migration("20261126192624_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />

@@ -82,7 +82,7 @@ public sealed class MortgageApplicationsController(IMortgageApplicationService s
     [HttpPut("{id:guid}/consents")]
     public async Task<IActionResult> SaveConsents(Guid id, SaveConsentsRequest request, [FromHeader(Name = "X-Expected-Version"), Required, Range(0, long.MaxValue)] long? expectedVersion, CancellationToken cancellationToken)
     {
-        await service.SaveConsentsAsync(id, request.CreditCheckConsent, request.OpenBankingConsent, expectedVersion!.Value, cancellationToken);
+        await service.SaveConsentsAsync(id, request.CreditCheckConsent, expectedVersion!.Value, cancellationToken);
         return NoContent();
     }
 

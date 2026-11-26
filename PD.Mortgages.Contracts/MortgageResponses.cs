@@ -19,6 +19,6 @@ public sealed record ApplicationResponse(
     Guid Id, DateTime CreatedAtUtc, DateTime UpdatedAtUtc, ApplicationStatusContract Status,
     string? FirstName, string? LastName, string? Email, string? PhoneNumber,
     decimal? PropertyValue, decimal? Deposit, decimal? AnnualIncome, decimal? MonthlyCommitments,
-    EmploymentTypeContract? EmploymentType, bool CreditCheckConsent, bool OpenBankingConsent,
+    EmploymentTypeContract? EmploymentType, bool CreditCheckConsent,
     bool ConsentsRecorded, DecisionResponse? DecisionInPrinciple, string? SelectedProductId,
     IReadOnlyList<DocumentResponse> Documents, string? CreatedByEmployeeId, long Version, ProductResponse? SelectedProduct);

@@ -51,8 +51,8 @@ public sealed class MortgageApiClient(HttpClient client, IMortgageApiCredentials
     public Task SaveFinancesAsync(Guid id, decimal annualIncome, decimal monthlyCommitments, EmploymentType employmentType, long expectedVersion, CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Put, $"{Root}/{id}/finances", new SaveFinancesRequest(annualIncome, monthlyCommitments, MortgageContractMapper.ToContract(employmentType)), cancellationToken, expectedVersion);
 
-    public Task SaveConsentsAsync(Guid id, bool creditCheckConsent, bool openBankingConsent, long expectedVersion, CancellationToken cancellationToken = default) =>
-        SendAsync(HttpMethod.Put, $"{Root}/{id}/consents", new SaveConsentsRequest(creditCheckConsent, openBankingConsent), cancellationToken, expectedVersion);
+    public Task SaveConsentsAsync(Guid id, bool creditCheckConsent, long expectedVersion, CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Put, $"{Root}/{id}/consents", new SaveConsentsRequest(creditCheckConsent), cancellationToken, expectedVersion);
 
     public async Task<MortgageApplicationDto> GenerateDecisionInPrincipleAsync(Guid id, long expectedVersion, CancellationToken cancellationToken = default) =>
         MortgageContractMapper.ToApplication(await SendAsync<ApplicationResponse>(HttpMethod.Post, $"{Root}/{id}/decision", null, cancellationToken, expectedVersion));

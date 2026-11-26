@@ -49,9 +49,6 @@ public sealed class StaffApplicationViewModel : IValidatableObject
     [Display(Name = "Credit-check consent recorded")]
     public bool CreditCheckConsent { get; set; }
 
-    [Display(Name = "Open-banking consent recorded")]
-    public bool OpenBankingConsent { get; set; }
-
     [Display(Name = "Selected mortgage product")]
     public string? SelectedProductId { get; set; }
     public MortgageProductDto? SelectedProduct { get; set; }

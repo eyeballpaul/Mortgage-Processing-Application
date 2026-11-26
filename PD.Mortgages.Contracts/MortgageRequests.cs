@@ -16,7 +16,7 @@ public sealed record SaveQualificationRequest(decimal PropertyValue, decimal Dep
 /// <summary>Income, commitments and employment type.</summary>
 public sealed record SaveFinancesRequest(decimal AnnualIncome, decimal MonthlyCommitments, EmploymentTypeContract EmploymentType);
 /// <summary>Customer consent decisions.</summary>
-public sealed record SaveConsentsRequest(bool CreditCheckConsent, bool OpenBankingConsent);
+public sealed record SaveConsentsRequest(bool CreditCheckConsent);
 /// <summary>The selected mortgage product identifier.</summary>
 public sealed record SelectProductRequest(string ProductId);
 /// <summary>A document to attach to an application.</summary>

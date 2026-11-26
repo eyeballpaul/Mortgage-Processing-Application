@@ -26,7 +26,6 @@ public sealed class MortgageApplication
     public decimal? MonthlyCommitments { get; private set; }
     public EmploymentType? EmploymentType { get; private set; }
     public bool CreditCheckConsent { get; private set; }
-    public bool OpenBankingConsent { get; private set; }
     public bool ConsentsRecorded { get; private set; }
     public DecisionInPrincipleResult? DecisionInPrinciple { get; private set; }
     public string? SelectedProductId { get; private set; }
@@ -54,7 +53,6 @@ public sealed class MortgageApplication
         decimal? monthlyCommitments,
         EmploymentType? employmentType,
         bool creditCheckConsent,
-        bool openBankingConsent,
         bool consentsRecorded,
         DecisionInPrincipleResult? decisionInPrinciple,
         string? selectedProductId,
@@ -85,7 +83,6 @@ public sealed class MortgageApplication
             MonthlyCommitments = monthlyCommitments,
             EmploymentType = employmentType,
             CreditCheckConsent = creditCheckConsent,
-            OpenBankingConsent = openBankingConsent,
             ConsentsRecorded = consentsRecorded,
             DecisionInPrinciple = decisionInPrinciple,
             SelectedProductId = selectedProductId,
@@ -187,7 +184,7 @@ public sealed class MortgageApplication
         Touch();
     }
 
-    public void RecordConsents(bool creditCheckConsent, bool openBankingConsent, string termsVersion, string actorId)
+    public void RecordConsents(bool creditCheckConsent, string termsVersion, string actorId)
     {
         EnsureEditable();
         if (string.IsNullOrWhiteSpace(termsVersion) || string.IsNullOrWhiteSpace(actorId))
@@ -197,17 +194,10 @@ public sealed class MortgageApplication
 
         var recordedAtUtc = DateTime.UtcNow;
         CreditCheckConsent = creditCheckConsent;
-        OpenBankingConsent = openBankingConsent;
         ConsentsRecorded = true;
         _consentHistory.Add(new CustomerConsent(
             ConsentPurpose.CreditCheck,
             creditCheckConsent,
-            termsVersion,
-            recordedAtUtc,
-            actorId));
-        _consentHistory.Add(new CustomerConsent(
-            ConsentPurpose.OpenBanking,
-            openBankingConsent,
             termsVersion,
             recordedAtUtc,
             actorId));

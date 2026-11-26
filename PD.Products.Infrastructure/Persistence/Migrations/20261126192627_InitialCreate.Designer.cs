@@ -11,7 +11,7 @@ using PD.Products.Infrastructure.Persistence;
 namespace PD.Products.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ProductsDbContext))]
-    [Migration("20261125235428_InitialCreate")]
+    [Migration("20261126192627_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />

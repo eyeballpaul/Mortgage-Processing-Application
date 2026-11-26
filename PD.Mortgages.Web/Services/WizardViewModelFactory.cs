@@ -29,8 +29,7 @@ public sealed class WizardViewModelFactory
 
     public ConnectionsViewModel CreateConnections(MortgageApplicationDto application) => new()
     {
-        CreditCheckConsent = application.CreditCheckConsent,
-        OpenBankingConsent = application.OpenBankingConsent
+        CreditCheckConsent = application.CreditCheckConsent
     };
 
     public ProductsViewModel CreateProducts(

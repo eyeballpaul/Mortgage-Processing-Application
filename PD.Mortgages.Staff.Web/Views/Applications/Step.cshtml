@@ -71,12 +71,11 @@
         else if (Model.Step == 4)
         {
             <section class="staff-form-section">
-                <p class="eyebrow">Step 4 · Credit and banking</p>
-                <h2>Record the customer's choices</h2>
-                <div class="notice-box mb-4"><strong>For this demonstration</strong><p class="mb-0">These choices are saved with the application only. No credit bureau or bank is contacted.</p></div>
+                <p class="eyebrow">Step 4 · Credit check</p>
+                <h2>Record the customer's choice</h2>
+                <div class="notice-box mb-4"><strong>For this demonstration</strong><p class="mb-0">This choice is saved with the application only. No credit bureau is contacted.</p></div>
                 <div class="form-check mb-3"><input asp-for="CreditCheckConsent" class="form-check-input" /><label asp-for="CreditCheckConsent" class="form-check-label">Customer agrees to a credit check</label></div>
-                <div class="form-check"><input asp-for="OpenBankingConsent" class="form-check-input" /><label asp-for="OpenBankingConsent" class="form-check-label">Customer would like to use open banking</label></div>
-                <p class="form-text mt-3">Record the customer's choices; do not select consent without their agreement.</p>
+                <p class="form-text mt-3">Record the customer's choice; do not select consent without their agreement.</p>
             </section>
         }
         else if (Model.Step == 5)

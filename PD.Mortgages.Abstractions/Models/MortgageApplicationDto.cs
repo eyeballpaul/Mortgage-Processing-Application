@@ -17,7 +17,6 @@ public sealed record MortgageApplicationDto(
     decimal? MonthlyCommitments,
     EmploymentType? EmploymentType,
     bool CreditCheckConsent,
-    bool OpenBankingConsent,
     bool ConsentsRecorded,
     DecisionInPrincipleDto? DecisionInPrinciple,
     string? SelectedProductId,

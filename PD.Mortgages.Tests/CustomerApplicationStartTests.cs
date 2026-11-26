@@ -16,6 +16,46 @@ namespace PD.Mortgages.Tests;
 
 public sealed class CustomerApplicationStartTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreditCheckChoiceIsTheOnlyConsentSent(bool consent)
+    {
+        var transport = new LostSubmissionHandler();
+        using var factory = new WebApplicationFactory<WizardController>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["MortgageApi:DevelopmentKey"] = "test-development-key-01234567890123456789"
+                }));
+            builder.ConfigureServices(services =>
+                services.AddHttpClient<IMortgageApplicationService, MortgageApiClient>()
+                    .ConfigurePrimaryHttpMessageHandler(() => transport));
+        });
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var token = Regex.Match(await client.GetStringAsync("/"), "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+        using var start = await client.PostAsync("/application/start",
+            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
+        var page = await client.GetStringAsync("/application/connections");
+        Assert.Contains("I agree to a credit check", page);
+        Assert.Single(Regex.Matches(page, "type=\"checkbox\"").Cast<Match>());
+        token = Regex.Match(page, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+        using var response = await client.PostAsync("/application/connections",
+            new FormUrlEncodedContent([
+                new("__RequestVerificationToken", token),
+                new("expectedVersion", "7"),
+                new("CreditCheckConsent", consent.ToString())
+            ]));
+
+        Assert.Equal("/application/decision-in-principle", response.Headers.Location?.OriginalString);
+        using var body = JsonDocument.Parse(Assert.IsType<string>(transport.ConsentRequest));
+        var property = Assert.Single(body.RootElement.EnumerateObject());
+        Assert.Equal("creditCheckConsent", property.Name);
+        Assert.Equal(consent, property.Value.GetBoolean());
+    }
+
     [Fact]
     public async Task ResponseCorrelationUsesIncomingW3CTraceId()
     {
@@ -361,6 +401,7 @@ public sealed class CustomerApplicationStartTests
     {
         public Guid Id { get; } = Guid.NewGuid();
         public int SubmissionAttempts { get; private set; }
+        public string? ConsentRequest { get; private set; }
         public bool RejectSubmission { get; init; }
         public bool ReceiptRouteUnavailable { get; set; }
         private Guid? submissionKey;
@@ -368,6 +409,11 @@ public sealed class CustomerApplicationStartTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/consents", StringComparison.Ordinal))
+            {
+                ConsentRequest = await request.Content!.ReadAsStringAsync(cancellationToken);
+                return new HttpResponseMessage(HttpStatusCode.NoContent);
+            }
             if (path.EndsWith("/customer-submission", StringComparison.Ordinal))
             {
                 var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));

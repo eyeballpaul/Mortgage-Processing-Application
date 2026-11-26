@@ -185,7 +185,7 @@ public sealed class ApplicationWizardController(
                         cancellationToken);
                     return RedirectToAction(nameof(Step), new { id, step = 4 });
                 case 4:
-                    await applicationService.SaveConsentsAsync(id, model.CreditCheckConsent, model.OpenBankingConsent, RequireVersion(model.ExpectedVersion), cancellationToken);
+                    await applicationService.SaveConsentsAsync(id, model.CreditCheckConsent, RequireVersion(model.ExpectedVersion), cancellationToken);
                     return RedirectToAction(nameof(Step), new { id, step = 5 });
                 case 5:
                     application = await GetApplicationAsync(id, cancellationToken)
@@ -277,7 +277,6 @@ public sealed class ApplicationWizardController(
         page.MonthlyCommitments = model.MonthlyCommitments;
         page.EmploymentType = model.EmploymentType;
         page.CreditCheckConsent = model.CreditCheckConsent;
-        page.OpenBankingConsent = model.OpenBankingConsent;
         page.SelectedProductId = model.SelectedProductId;
         page.ExpectedVersion = model.ExpectedVersion;
         return View("~/Views/Applications/Step.cshtml", page);
@@ -302,7 +301,6 @@ public sealed class ApplicationWizardController(
         MonthlyCommitments = application.MonthlyCommitments,
         EmploymentType = application.EmploymentType,
         CreditCheckConsent = application.CreditCheckConsent,
-        OpenBankingConsent = application.OpenBankingConsent,
         SelectedProductId = application.SelectedProductId,
         EligibleProducts = eligibleProducts,
         SelectedProduct = application.SelectedProduct

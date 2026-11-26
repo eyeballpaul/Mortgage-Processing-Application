@@ -1,6 +1,8 @@
 # PD Mortgages
 
-A .NET 10 demonstration of a UK mortgage submission journey. The figures, products and decisions are fictional: no lender, credit-check or open-banking integrations are connected. Do not use real customer data.
+A .NET 10 demonstration of a UK mortgage submission journey. The figures, products and decisions are fictional: no lender or credit-check integrations are connected. Do not use real customer data.
+
+The customer and staff journeys record an optional credit-check choice. Declining it does not prevent an application from continuing.
 
 ## Architecture
 
@@ -31,10 +33,10 @@ See [architecture.md](docs/architecture.md) for boundaries, local and Azure host
 Install .NET 10, Docker Desktop, and the trusted ASP.NET Core development certificate (`dotnet dev-certs https --trust`). Configure the staff portal and API Entra registrations below, then:
 
 ```bash
-ProductService__ApiKey=dev-product-api-key dotnet run --project PD.Mortgages.AppHost --launch-profile https
+dotnet run --project PD.Mortgages.AppHost --launch-profile https
 ```
 
-Aspire starts both web apps, the internal Mortgage, Products and Eligibility APIs, and one SQL Server container with separate `mortgages`, `products`, and `customer-sessions` databases. It generates an Eligibility API key for the two local services. The development-only Products API key above matches the value in its Development settings and must reach the Mortgage API process for product lookups. Do not use it in Azure.
+Aspire starts both web apps, the internal Mortgage, Products and Eligibility APIs, and one SQL Server container with separate `mortgages`, `products`, and `customer-sessions` databases. It generates separate, process-scoped keys for Mortgage's calls to Products and Eligibility; no local service key needs to be configured manually.
 
 Aspire runs the .NET apps locally; its Docker container is for SQL Server. For a container image, build from the repository root using the relevant service Dockerfile, for example `docker build -f PD.Mortgages.Web/Dockerfile .`. The pipeline builds all five service images this way.
 
@@ -103,7 +105,7 @@ Each database has a separate EF Core migration history and one initial migration
 
 The session cache does not exist in the mortgage database. The Azure deployment bootstrap applies all three migrations with its admin identity before app revisions start; runtime identities have only the required data roles. Migration histories are independent: do not copy tables or migration history between databases.
 
-The mortgage migration history was reset for a fresh deployment. If a local `mortgages` database was created using the previous migrations, stop the applications and use a SQL administration tool to drop **only that database**, then restart Aspire to recreate it. This deletes its applications and audit entries. Verify the database name and server before dropping it; do not delete the shared SQL volume, the `products` database, or the `customer-sessions` database. Existing sessions are not copied between databases, and anonymous customers cannot recover drafts without their original session. Azure resources have not been deployed or validated by this repository alone.
+All three migration histories were reset for a fresh deployment. Existing databases with the previous histories cannot apply these new initial migrations over their existing tables. The migration reset does **not** delete or update any database. For disposable local data, stop the apps, verify the server and database names, then use a SQL administration tool to drop only the three affected databases (`mortgages`, `products`, and `customer-sessions`) before restarting Aspire. This permanently deletes their data, audit history and customer sessions; product seed data is recreated. Do not delete the shared SQL volume or unrelated databases. If any data must be retained, back it up and plan a tested migration instead of dropping databases. Anonymous customers cannot recover drafts without their original session. Azure resources have not been deployed or validated by this repository alone; do not apply this reset to an existing Azure database without a data migration plan.
 
 Future schema changes must use expand-and-contract migrations: first deploy a schema compatible with both the current and new app revisions, then deploy the new code, and remove old columns only after old revisions are retired. The pipeline applies migrations before the new revisions; an incompatible migration can break the old revision and make an image rollback unsafe. Review migration and snapshot JSON compatibility before every deployment.
 

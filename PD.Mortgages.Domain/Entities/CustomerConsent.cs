@@ -2,8 +2,7 @@ namespace PD.Mortgages.Domain.Entities;
 
 public enum ConsentPurpose
 {
-    CreditCheck,
-    OpenBanking
+    CreditCheck
 }
 
 public sealed record CustomerConsent(

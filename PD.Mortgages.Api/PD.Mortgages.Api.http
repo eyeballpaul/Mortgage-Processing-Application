@@ -72,7 +72,7 @@ X-Mortgage-Session: {{session}}
 X-Expected-Version: {{version}}
 Content-Type: application/json
 
-{"creditCheckConsent":false,"openBankingConsent":false}
+{"creditCheckConsent":false}
 
 ### Generate a decision in principle
 POST {{baseUrl}}/api/v1/mortgages/{{applicationId}}/decision

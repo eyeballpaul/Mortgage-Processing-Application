@@ -193,8 +193,7 @@ public sealed class WizardController(
         SetStep(4);
         return View(new ConnectionsViewModel
         {
-            CreditCheckConsent = application.CreditCheckConsent,
-            OpenBankingConsent = application.OpenBankingConsent
+            CreditCheckConsent = application.CreditCheckConsent
         });
     }
 
@@ -206,7 +205,7 @@ public sealed class WizardController(
         if (application is null) return RedirectToAction("Index", "Home");
         var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 4);
         if (prerequisiteRedirect is not null) return prerequisiteRedirect;
-        await applicationService.SaveConsentsAsync(application.Id, model.CreditCheckConsent, model.OpenBankingConsent, RequireVersion(expectedVersion), cancellationToken);
+        await applicationService.SaveConsentsAsync(application.Id, model.CreditCheckConsent, RequireVersion(expectedVersion), cancellationToken);
         SetStep(5);
         return RedirectToAction(nameof(DecisionInPrinciple));
     }

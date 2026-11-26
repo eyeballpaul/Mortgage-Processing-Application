@@ -47,7 +47,6 @@ public sealed class StaffApplicationStepViewModel
 
     public EmploymentType? EmploymentType { get; set; }
     public bool CreditCheckConsent { get; set; }
-    public bool OpenBankingConsent { get; set; }
     public string? SelectedProductId { get; set; }
 
 }
