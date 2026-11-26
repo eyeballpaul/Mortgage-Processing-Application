@@ -19,6 +19,7 @@ public sealed class DurableStorageTests
             var application = MortgageApplication.CreateForEmployee("staff-42");
             application.AssignOwner("customer-123");
             application.UpdateQualification(300_000m, 30_000m);
+            application.RecordConsents(true, false, "terms-1", "staff-42");
             application.AddDocument(Guid.NewGuid(), "identity.pdf", 128);
             application.RecordAudit("staff-42", "Application created");
 
@@ -32,6 +33,8 @@ public sealed class DurableStorageTests
             Assert.Equal("customer-123", restored.OwnerId);
             Assert.Equal("staff-42", restored.CreatedByEmployeeId);
             Assert.Equal(300_000m, restored.PropertyValue);
+            Assert.Equal(2, restored.ConsentHistory.Count);
+            Assert.All(restored.ConsentHistory, consent => Assert.Equal("terms-1", consent.TermsVersion));
             Assert.Equal("identity.pdf", Assert.Single(restored.Documents).FileName);
             Assert.Empty(restored.AuditTrail);
             Assert.Equal("Application created", Assert.Single(auditPage.Events).Action);
@@ -99,6 +102,27 @@ public sealed class DurableStorageTests
         {
             DeleteTemporaryDirectory(root);
         }
+    }
+
+    [Fact]
+    public async Task InMemoryRepositoryRejectsAnUpdateBasedOnAStaleSnapshot()
+    {
+        var repository = new InMemoryMortgageApplicationRepository();
+        var application = new MortgageApplication();
+        await repository.AddAsync(application);
+        var firstCopy = await repository.GetByIdAsync(application.Id);
+        var staleCopy = await repository.GetByIdAsync(application.Id);
+
+        Assert.NotNull(firstCopy);
+        Assert.NotNull(staleCopy);
+        firstCopy.UpdateApplicant("Jane", "Doe", "jane@example.com", "07123456789");
+        await repository.UpdateAsync(firstCopy);
+        staleCopy.UpdateQualification(300_000m, 30_000m);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => repository.UpdateAsync(staleCopy));
+        var persisted = await repository.GetByIdAsync(application.Id);
+        Assert.Equal("Jane", persisted!.FirstName);
+        Assert.Null(persisted.PropertyValue);
     }
 
     [Fact]

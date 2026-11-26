@@ -7,7 +7,9 @@ using PD.Mortgages.Staff.Web.Models;
 namespace PD.Mortgages.Staff.Web.Controllers;
 
 [Route("applications")]
-public sealed class ApplicationWizardController(IMortgageApplicationService applicationService) : Controller
+public sealed class ApplicationWizardController(
+    IMortgageApplicationService applicationService,
+    IDocumentUploadValidator documentUploadValidator) : Controller
 {
     [HttpGet("start")]
     public async Task<IActionResult> Start(CancellationToken cancellationToken)
@@ -214,7 +216,7 @@ public sealed class ApplicationWizardController(IMortgageApplicationService appl
 
     [HttpPost("{id:guid}/documents")]
     [ValidateAntiForgeryToken]
-    [RequestSizeLimit(5 * 1024 * 1024 + 1024)]
+    [RequestSizeLimit(DocumentUploadLimits.MaximumFileBytes + 1024)]
     public async Task<IActionResult> UploadDocument(Guid id, IFormFile? document, CancellationToken cancellationToken)
     {
         var application = await GetApplicationAsync(id, cancellationToken);
@@ -228,14 +230,21 @@ public sealed class ApplicationWizardController(IMortgageApplicationService appl
             return Conflict("Submitted applications are read-only.");
         }
 
-        var validation = await ValidateDocumentAsync(document, application, cancellationToken);
-        if (validation.ErrorMessage is not null)
+        using var contentStream = document?.OpenReadStream();
+        var validation = await documentUploadValidator.ValidateAsync(
+            document?.FileName,
+            document?.Length ?? 0,
+            contentStream,
+            application.Documents.Count,
+            application.Documents.Sum(item => item.SizeInBytes),
+            cancellationToken);
+        if (!validation.IsValid)
         {
             TempData["UploadError"] = validation.ErrorMessage;
             return RedirectToAction(nameof(Step), new { id, step = 7 });
         }
 
-        await applicationService.AddDocumentAsync(id, Path.GetFileName(document!.FileName), validation.Contents, cancellationToken);
+        await applicationService.AddDocumentAsync(id, validation.SafeFileName!, validation.Contents!, cancellationToken);
         TempData["Notice"] = "The document was added to the application.";
         return RedirectToAction(nameof(Step), new { id, step = 7 });
     }
@@ -375,36 +384,4 @@ public sealed class ApplicationWizardController(IMortgageApplicationService appl
         return 8;
     }
 
-    private static async Task<DocumentUploadCheck> ValidateDocumentAsync(IFormFile? document, MortgageApplicationDto application, CancellationToken cancellationToken)
-    {
-        if (document is null || document.Length == 0) return new("Choose a file to upload.", []);
-        if (document.Length > 5 * 1024 * 1024) return new("Files must be 5 MB or smaller.", []);
-        if (application.Documents.Count >= 10 || application.Documents.Sum(item => item.SizeInBytes) + document.Length > 25 * 1024 * 1024)
-        {
-            return new("This application has reached its document limit (10 files or 25 MB total).", []);
-        }
-
-        var extension = Path.GetExtension(document.FileName).ToLowerInvariant();
-        if (extension is not (".pdf" or ".png" or ".jpg" or ".jpeg")) return new("Upload a PDF, PNG or JPEG file.", []);
-        var contents = await ReadDocumentAsync(document, cancellationToken);
-        var validSignature = extension switch
-        {
-            ".pdf" => contents.AsSpan().StartsWith("%PDF-"u8),
-            ".png" => contents.AsSpan().StartsWith(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }),
-            ".jpg" or ".jpeg" => contents.Length >= 3 && contents[0] == 0xFF && contents[1] == 0xD8 && contents[2] == 0xFF,
-            _ => false
-        };
-        return validSignature
-            ? new(null, contents)
-            : new("The file content does not match its file type. Choose a valid PDF, PNG or JPEG.", []);
-    }
-
-    private static async Task<byte[]> ReadDocumentAsync(IFormFile document, CancellationToken cancellationToken)
-    {
-        await using var memoryStream = new MemoryStream();
-        await document.CopyToAsync(memoryStream, cancellationToken);
-        return memoryStream.ToArray();
-    }
-
-    private sealed record DocumentUploadCheck(string? ErrorMessage, byte[] Contents);
 }

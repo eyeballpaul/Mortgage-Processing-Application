@@ -14,9 +14,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
 builder.Services.AddProblemDetails();
+builder.Services.AddAzureBlobDataProtection(builder.Configuration);
 builder.Services.AddOptions<ApplicationSecurityOptions>()
     .BindConfiguration(ApplicationSecurityOptions.SectionName)
     .ValidateOnStart();
+builder.Services.AddOptions<MortgageWorkflowOptions>()
+    .BindConfiguration(MortgageWorkflowOptions.SectionName)
+    .Validate(options => !string.IsNullOrWhiteSpace(options.ConsentTermsVersion), "MortgageWorkflow:ConsentTermsVersion is required.");
 builder.Services.AddSingleton<IValidateOptions<ApplicationSecurityOptions>, ProductionConfigurationValidator>();
 builder.Services.AddScoped<IApplicationActor, HttpContextApplicationActor>();
 builder.Services.AddHealthChecks()
@@ -29,6 +33,16 @@ if (string.Equals(sessionProvider, "Redis", StringComparison.OrdinalIgnoreCase))
         options.Configuration = builder.Configuration.GetConnectionString("Redis")
             ?? throw new InvalidOperationException("ConnectionStrings:Redis is required when Session:Provider is Redis.");
         options.InstanceName = "pd-mortgages:";
+    });
+}
+else if (string.Equals(sessionProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddDistributedSqlServerCache(options =>
+    {
+        options.ConnectionString = builder.Configuration.GetConnectionString("mortgages")
+            ?? throw new InvalidOperationException("ConnectionStrings:mortgages is required when Session:Provider is SqlServer.");
+        options.SchemaName = "dbo";
+        options.TableName = "MortgageSessionCache";
     });
 }
 else

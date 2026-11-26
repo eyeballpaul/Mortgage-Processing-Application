@@ -45,7 +45,7 @@ public sealed class MortgageApplicationTests
         var application = new MortgageApplication();
         application.UpdateQualification(300_000m, 30_000m);
         application.UpdateFinances(100_000m, 1_000m, EmploymentType.Employed);
-        application.RecordConsents(true, false);
+        application.RecordConsents(true, false, "terms-1", "customer-1");
 
         var result = application.GenerateIndicativeDecisionInPrinciple();
 
@@ -61,7 +61,7 @@ public sealed class MortgageApplicationTests
         application.UpdateQualification(300_000m, 30_000m);
         application.UpdateApplicant("Jane", "Doe", "jane@example.com", "07123456789");
         application.UpdateFinances(100_000m, 1_000m, EmploymentType.Employed);
-        application.RecordConsents(true, true);
+        application.RecordConsents(true, true, "terms-1", "customer-1");
         application.GenerateIndicativeDecisionInPrinciple();
 
         Assert.Throws<InvalidOperationException>(() => application.Submit());
@@ -101,11 +101,50 @@ public sealed class MortgageApplicationTests
         application.UpdateQualification(300_000m, 30_000m);
         application.UpdateApplicant("Jane", "Doe", "jane@example.com", "07123456789");
         application.UpdateFinances(100_000m, 1_000m, EmploymentType.Employed);
-        application.RecordConsents(true, true);
+        application.RecordConsents(true, true, "terms-1", "customer-1");
         application.GenerateIndicativeDecisionInPrinciple();
         application.SelectProduct("fixed-2");
         application.Submit();
 
         Assert.Throws<InvalidOperationException>(() => application.UpdateQualification(400_000m, 40_000m));
+    }
+
+    [Fact]
+    public void ConsentHistoryRetainsEachPurposeDecisionVersionAndActor()
+    {
+        var application = new MortgageApplication();
+
+        application.RecordConsents(true, false, "terms-1", "staff-42");
+        application.RecordConsents(false, true, "terms-2", "customer-17");
+
+        Assert.Equal(4, application.ConsentHistory.Count);
+        Assert.Collection(
+            application.ConsentHistory,
+            creditConsent =>
+            {
+                Assert.Equal(ConsentPurpose.CreditCheck, creditConsent.Purpose);
+                Assert.True(creditConsent.Granted);
+                Assert.Equal("terms-1", creditConsent.TermsVersion);
+                Assert.Equal("staff-42", creditConsent.ActorId);
+            },
+            openBankingConsent =>
+            {
+                Assert.Equal(ConsentPurpose.OpenBanking, openBankingConsent.Purpose);
+                Assert.False(openBankingConsent.Granted);
+                Assert.Equal("terms-1", openBankingConsent.TermsVersion);
+            },
+            creditConsent =>
+            {
+                Assert.Equal(ConsentPurpose.CreditCheck, creditConsent.Purpose);
+                Assert.False(creditConsent.Granted);
+                Assert.Equal("terms-2", creditConsent.TermsVersion);
+                Assert.Equal("customer-17", creditConsent.ActorId);
+            },
+            openBankingConsent =>
+            {
+                Assert.Equal(ConsentPurpose.OpenBanking, openBankingConsent.Purpose);
+                Assert.True(openBankingConsent.Granted);
+                Assert.Equal("terms-2", openBankingConsent.TermsVersion);
+            });
     }
 }

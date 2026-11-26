@@ -30,6 +30,7 @@ builder.AddDotnetProject("mortgages-staff-web", "../PD.Mortgages.Staff.Web/PD.Mo
     .WithEnvironment("ProductService__UseMock", "false")
     .WithEnvironment("ProductService__BaseUrl", productsApi.GetEndpoint("https"))
     .WithEnvironment("Persistence__Provider", "SqlServer")
+    .WithEnvironment("Persistence__RunMigrationsOnStartup", "false")
     .WithEnvironment("Persistence__RootPath", documentStorageRootPath)
     .WaitFor(mortgagesDatabase)
     .WaitFor(productsApi);

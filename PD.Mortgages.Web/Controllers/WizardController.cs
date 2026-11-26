@@ -299,8 +299,11 @@ public sealed class WizardController(
         var prerequisiteRedirect = RedirectIfPrerequisitesMissing(application, 7);
         if (prerequisiteRedirect is not null) return prerequisiteRedirect;
 
+        using var contentStream = document?.OpenReadStream();
         var validation = await documentUploadValidator.ValidateAsync(
-            document,
+            document?.FileName,
+            document?.Length ?? 0,
+            contentStream,
             application.Documents.Count,
             application.Documents.Sum(existing => existing.SizeInBytes),
             cancellationToken);

@@ -6,6 +6,7 @@ public sealed class MortgageApplication
 {
     private readonly List<MortgageDocument> _documents = [];
     private readonly List<MortgageApplicationAuditEntry> _auditTrail = [];
+    private readonly List<CustomerConsent> _consentHistory = [];
 
     public Guid Id { get; private set; } = Guid.NewGuid();
     public long Version { get; private set; }
@@ -31,6 +32,7 @@ public sealed class MortgageApplication
     public SelectedMortgageProductSnapshot? SelectedProduct { get; private set; }
     public IReadOnlyCollection<MortgageDocument> Documents => _documents.AsReadOnly();
     public IReadOnlyCollection<MortgageApplicationAuditEntry> AuditTrail => _auditTrail.AsReadOnly();
+    public IReadOnlyCollection<CustomerConsent> ConsentHistory => _consentHistory.AsReadOnly();
 
     public static MortgageApplication Rehydrate(
         Guid id,
@@ -56,7 +58,8 @@ public sealed class MortgageApplication
         SelectedMortgageProductSnapshot? selectedProduct,
         IEnumerable<MortgageDocument> documents,
         IEnumerable<MortgageApplicationAuditEntry> auditTrail,
-        string? createdByEmployeeId = null)
+        string? createdByEmployeeId = null,
+        IEnumerable<CustomerConsent>? consentHistory = null)
     {
         var application = new MortgageApplication
         {
@@ -85,6 +88,11 @@ public sealed class MortgageApplication
         };
         application._documents.AddRange(documents);
         application._auditTrail.AddRange(auditTrail);
+        if (consentHistory is not null)
+        {
+            application._consentHistory.AddRange(consentHistory);
+        }
+
         return application;
     }
 
@@ -188,12 +196,30 @@ public sealed class MortgageApplication
         Touch();
     }
 
-    public void RecordConsents(bool creditCheckConsent, bool openBankingConsent)
+    public void RecordConsents(bool creditCheckConsent, bool openBankingConsent, string termsVersion, string actorId)
     {
         EnsureEditable();
+        if (string.IsNullOrWhiteSpace(termsVersion) || string.IsNullOrWhiteSpace(actorId))
+        {
+            throw new ArgumentException("Consent records require a terms version and actor.");
+        }
+
+        var recordedAtUtc = DateTime.UtcNow;
         CreditCheckConsent = creditCheckConsent;
         OpenBankingConsent = openBankingConsent;
         ConsentsRecorded = true;
+        _consentHistory.Add(new CustomerConsent(
+            ConsentPurpose.CreditCheck,
+            creditCheckConsent,
+            termsVersion,
+            recordedAtUtc,
+            actorId));
+        _consentHistory.Add(new CustomerConsent(
+            ConsentPurpose.OpenBanking,
+            openBankingConsent,
+            termsVersion,
+            recordedAtUtc,
+            actorId));
         DecisionInPrinciple = null;
         Touch();
     }

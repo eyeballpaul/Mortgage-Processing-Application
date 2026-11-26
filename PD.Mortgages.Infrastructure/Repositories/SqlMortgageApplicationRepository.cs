@@ -67,8 +67,33 @@ public sealed class SqlMortgageApplicationRepository(MortgageDbContext dbContext
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(MortgageApplication application, CancellationToken cancellationToken = default)
+    public async Task AddAsync(
+        MortgageApplication application,
+        MortgageApplicationAuditEntry auditEntry,
+        CancellationToken cancellationToken = default)
     {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        dbContext.Applications.Add(ToRecord(application));
+        dbContext.AuditEntries.Add(ToAuditRecord(application.Id, auditEntry));
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public Task UpdateAsync(MortgageApplication application, CancellationToken cancellationToken = default) =>
+        UpdateCoreAsync(application, null, cancellationToken);
+
+    public Task UpdateAsync(
+        MortgageApplication application,
+        MortgageApplicationAuditEntry auditEntry,
+        CancellationToken cancellationToken = default) =>
+        UpdateCoreAsync(application, auditEntry, cancellationToken);
+
+    private async Task UpdateCoreAsync(
+        MortgageApplication application,
+        MortgageApplicationAuditEntry? auditEntry,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var record = await dbContext.Applications
             .SingleOrDefaultAsync(stored => stored.Id == application.Id, cancellationToken)
             ?? throw new KeyNotFoundException($"Mortgage application '{application.Id}' was not found.");
@@ -88,10 +113,15 @@ public sealed class SqlMortgageApplicationRepository(MortgageDbContext dbContext
         record.LastName = updatedRecord.LastName;
         record.Email = updatedRecord.Email;
         record.SnapshotJson = updatedRecord.SnapshotJson;
+        if (auditEntry is not null)
+        {
+            dbContext.AuditEntries.Add(ToAuditRecord(application.Id, auditEntry));
+        }
 
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException exception)
         {
@@ -129,6 +159,14 @@ public sealed class SqlMortgageApplicationRepository(MortgageDbContext dbContext
             SnapshotJson = JsonSerializer.Serialize(snapshot, JsonOptions)
         };
     }
+
+    private static MortgageApplicationAuditRecord ToAuditRecord(Guid applicationId, MortgageApplicationAuditEntry entry) => new()
+    {
+        ApplicationId = applicationId,
+        RecordedAtUtc = entry.RecordedAtUtc,
+        ActorId = entry.ActorId,
+        Action = entry.Action
+    };
 
     private static MortgageApplication ToDomain(MortgageApplicationRecord record)
     {

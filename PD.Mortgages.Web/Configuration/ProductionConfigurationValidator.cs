@@ -20,6 +20,11 @@ public sealed class ProductionConfigurationValidator(
         {
             failures.Add("ConnectionStrings:Redis is required when Session:Provider is Redis.");
         }
+        if (string.Equals(configuration["Session:Provider"], "SqlServer", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(configuration.GetConnectionString("mortgages")))
+        {
+            failures.Add("ConnectionStrings:mortgages is required when Session:Provider is SqlServer.");
+        }
 
         if (!options.RequireAuthenticatedUser)
         {

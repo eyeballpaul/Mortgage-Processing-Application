@@ -1,11 +1,11 @@
-using Microsoft.AspNetCore.Http;
-
-namespace PD.Mortgages.Web.Services;
+namespace PD.Mortgages.Application.Services;
 
 public interface IDocumentUploadValidator
 {
     Task<DocumentUploadValidationResult> ValidateAsync(
-        IFormFile? document,
+        string? fileName,
+        long fileLength,
+        Stream? contents,
         int existingDocumentCount,
         long existingBytes,
         CancellationToken cancellationToken = default);

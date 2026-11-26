@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using PD.Mortgages.Domain.Entities;
 using PD.Mortgages.Domain.Repositories;
 
@@ -6,30 +5,37 @@ namespace PD.Mortgages.Infrastructure.Repositories;
 
 public sealed class InMemoryMortgageApplicationAuditRepository : IMortgageApplicationAuditRepository
 {
-    private readonly ConcurrentDictionary<Guid, List<MortgageApplicationAuditEntry>> _events = new();
-    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _gates = new();
+    private readonly Dictionary<Guid, List<MortgageApplicationAuditEntry>> _events = [];
+    private readonly Lock _sync = new();
 
-    public async Task AppendAsync(Guid applicationId, MortgageApplicationAuditEntry entry, CancellationToken cancellationToken = default)
+    public Task AppendAsync(Guid applicationId, MortgageApplicationAuditEntry entry, CancellationToken cancellationToken = default)
     {
-        var gate = _gates.GetOrAdd(applicationId, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken);
-        try
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_sync)
         {
-            _events.GetOrAdd(applicationId, _ => []).Add(entry);
+            if (!_events.TryGetValue(applicationId, out var events))
+            {
+                events = [];
+                _events.Add(applicationId, events);
+            }
+
+            events.Add(entry);
         }
-        finally
-        {
-            gate.Release();
-        }
+
+        return Task.CompletedTask;
     }
 
-    public async Task AppendLegacyAsync(Guid applicationId, IReadOnlyCollection<MortgageApplicationAuditEntry> entries, CancellationToken cancellationToken = default)
+    public Task AppendLegacyAsync(Guid applicationId, IReadOnlyCollection<MortgageApplicationAuditEntry> entries, CancellationToken cancellationToken = default)
     {
-        var gate = _gates.GetOrAdd(applicationId, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken);
-        try
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_sync)
         {
-            var events = _events.GetOrAdd(applicationId, _ => []);
+            if (!_events.TryGetValue(applicationId, out var events))
+            {
+                events = [];
+                _events.Add(applicationId, events);
+            }
+
             foreach (var entry in entries)
             {
                 if (!events.Contains(entry))
@@ -38,19 +44,21 @@ public sealed class InMemoryMortgageApplicationAuditRepository : IMortgageApplic
                 }
             }
         }
-        finally
-        {
-            gate.Release();
-        }
+
+        return Task.CompletedTask;
     }
 
     public Task<MortgageApplicationAuditPage> GetPageAsync(Guid applicationId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var events = _events.TryGetValue(applicationId, out var storedEvents)
-            ? storedEvents.OrderByDescending(entry => entry.RecordedAtUtc).ToList()
-            : [];
+        List<MortgageApplicationAuditEntry> events;
+        lock (_sync)
+        {
+            events = _events.TryGetValue(applicationId, out var storedEvents)
+                ? storedEvents.OrderByDescending(entry => entry.RecordedAtUtc).ToList()
+                : [];
+        }
         var totalCount = events.Count;
         var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
         page = Math.Clamp(page, 1, totalPages);

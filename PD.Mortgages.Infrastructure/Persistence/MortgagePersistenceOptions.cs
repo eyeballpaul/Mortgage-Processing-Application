@@ -6,4 +6,5 @@ public sealed class MortgagePersistenceOptions
 
     public string Provider { get; set; } = "InMemory";
     public string RootPath { get; set; } = "data";
+    public bool RunMigrationsOnStartup { get; set; } = true;
 }

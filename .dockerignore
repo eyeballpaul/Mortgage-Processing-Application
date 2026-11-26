@@ -3,7 +3,10 @@
 **/bin/
 **/obj/
 **/appsettings.Development.json
+**/data/
+**/TestResults/
 data/
 TestResults/
+**/.DS_Store
 *.user
 *.suo

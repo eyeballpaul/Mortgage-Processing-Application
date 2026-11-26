@@ -1,4 +1,4 @@
-namespace PD.Mortgages.Web.Services;
+namespace PD.Mortgages.Application.Services;
 
 public sealed record DocumentUploadValidationResult(
     string? ErrorMessage,

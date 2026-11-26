@@ -1,6 +1,4 @@
-using Microsoft.AspNetCore.Http;
-
-namespace PD.Mortgages.Web.Services;
+namespace PD.Mortgages.Application.Services;
 
 public sealed class DocumentUploadValidator : IDocumentUploadValidator
 {
@@ -10,42 +8,50 @@ public sealed class DocumentUploadValidator : IDocumentUploadValidator
     };
 
     public async Task<DocumentUploadValidationResult> ValidateAsync(
-        IFormFile? document,
+        string? fileName,
+        long fileLength,
+        Stream? contents,
         int existingDocumentCount,
         long existingBytes,
         CancellationToken cancellationToken = default)
     {
-        if (document is null || document.Length == 0)
+        if (string.IsNullOrWhiteSpace(fileName) || fileLength <= 0 || contents is null)
         {
             return DocumentUploadValidationResult.Invalid("Choose a file to upload.");
         }
 
-        if (document.Length > DocumentUploadLimits.MaximumFileBytes)
+        if (fileLength > DocumentUploadLimits.MaximumFileBytes)
         {
             return DocumentUploadValidationResult.Invalid("Files must be 5 MB or smaller.");
         }
 
         if (existingDocumentCount >= DocumentUploadLimits.MaximumDocumentCount ||
-            existingBytes + document.Length > DocumentUploadLimits.MaximumApplicationBytes)
+            existingBytes + fileLength > DocumentUploadLimits.MaximumApplicationBytes)
         {
             return DocumentUploadValidationResult.Invalid("This application has reached its document limit (10 files or 25 MB total).");
         }
 
-        var extension = Path.GetExtension(document.FileName);
+        var extension = Path.GetExtension(fileName);
         if (!PermittedExtensions.Contains(extension))
         {
             return DocumentUploadValidationResult.Invalid("Upload a PDF, PNG or JPEG file.");
         }
 
         await using var memoryStream = new MemoryStream();
-        await document.CopyToAsync(memoryStream, cancellationToken);
-        var contents = memoryStream.ToArray();
-        if (!HasAllowedSignature(extension, contents))
+        await contents.CopyToAsync(memoryStream, cancellationToken);
+        if (memoryStream.Length != fileLength)
+        {
+            return DocumentUploadValidationResult.Invalid("The uploaded file could not be read completely.");
+        }
+
+        var documentContents = memoryStream.ToArray();
+        if (!HasAllowedSignature(extension, documentContents))
         {
             return DocumentUploadValidationResult.Invalid("The file content does not match its file type. Please choose a valid PDF, PNG or JPEG.");
         }
 
-        return new DocumentUploadValidationResult(null, Path.GetFileName(document.FileName), contents);
+        var safeFileName = Path.GetFileName(fileName.Replace('\\', '/'));
+        return new DocumentUploadValidationResult(null, safeFileName, documentContents);
     }
 
     private static bool HasAllowedSignature(string extension, byte[] contents)

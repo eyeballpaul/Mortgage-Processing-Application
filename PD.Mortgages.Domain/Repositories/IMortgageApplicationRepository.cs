@@ -13,6 +13,8 @@ public interface IMortgageApplicationRepository
         int pageSize,
         CancellationToken cancellationToken = default);
     Task AddAsync(MortgageApplication application, CancellationToken cancellationToken = default);
+    Task AddAsync(MortgageApplication application, MortgageApplicationAuditEntry auditEntry, CancellationToken cancellationToken = default);
     Task UpdateAsync(MortgageApplication application, CancellationToken cancellationToken = default);
+    Task UpdateAsync(MortgageApplication application, MortgageApplicationAuditEntry auditEntry, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 }

@@ -16,11 +16,15 @@ public sealed class FileMortgageApplicationRepository : IMortgageApplicationRepo
     private readonly string _rootPath;
     private readonly string _lockPath;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly IMortgageApplicationAuditRepository? _auditRepository;
 
-    public FileMortgageApplicationRepository(MortgagePersistenceOptions options)
+    public FileMortgageApplicationRepository(
+        MortgagePersistenceOptions options,
+        IMortgageApplicationAuditRepository? auditRepository = null)
     {
         _rootPath = Path.GetFullPath(Path.Combine(options.RootPath, "applications"));
         _lockPath = Path.Combine(_rootPath, ".repository.lock");
+        _auditRepository = auditRepository;
         Directory.CreateDirectory(_rootPath);
     }
 
@@ -122,6 +126,39 @@ public sealed class FileMortgageApplicationRepository : IMortgageApplicationRepo
         }
     }
 
+    public async Task AddAsync(
+        MortgageApplication application,
+        MortgageApplicationAuditEntry auditEntry,
+        CancellationToken cancellationToken = default)
+    {
+        if (_auditRepository is null)
+        {
+            throw new InvalidOperationException("An audit repository is required for audited application writes.");
+        }
+
+        await AddAsync(application, cancellationToken);
+        try
+        {
+            await _auditRepository.AppendAsync(application.Id, auditEntry, cancellationToken);
+        }
+        catch (Exception auditException)
+        {
+            try
+            {
+                await DeleteAsync(application.Id, CancellationToken.None);
+            }
+            catch (Exception rollbackException)
+            {
+                throw new AggregateException(
+                    "The application was saved but its audit event failed and the new application could not be removed.",
+                    auditException,
+                    rollbackException);
+            }
+
+            throw;
+        }
+    }
+
     public async Task UpdateAsync(MortgageApplication application, CancellationToken cancellationToken = default)
     {
         await _gate.WaitAsync(cancellationToken);
@@ -151,6 +188,41 @@ public sealed class FileMortgageApplicationRepository : IMortgageApplicationRepo
         finally
         {
             _gate.Release();
+        }
+    }
+
+    public async Task UpdateAsync(
+        MortgageApplication application,
+        MortgageApplicationAuditEntry auditEntry,
+        CancellationToken cancellationToken = default)
+    {
+        if (_auditRepository is null)
+        {
+            throw new InvalidOperationException("An audit repository is required for audited application writes.");
+        }
+
+        var previous = await GetByIdAsync(application.Id, cancellationToken)
+            ?? throw new KeyNotFoundException($"Mortgage application '{application.Id}' was not found.");
+        await UpdateAsync(application, cancellationToken);
+        try
+        {
+            await _auditRepository.AppendAsync(application.Id, auditEntry, cancellationToken);
+        }
+        catch (Exception auditException)
+        {
+            try
+            {
+                await RestoreAsync(previous, application.Version, CancellationToken.None);
+            }
+            catch (Exception rollbackException)
+            {
+                throw new AggregateException(
+                    "The application was saved but its audit event failed and the application rollback also failed.",
+                    auditException,
+                    rollbackException);
+            }
+
+            throw;
         }
     }
 
@@ -190,6 +262,32 @@ public sealed class FileMortgageApplicationRepository : IMortgageApplicationRepo
     }
 
     private string GetPath(Guid id) => Path.Combine(_rootPath, $"{id:N}.json");
+
+    private async Task RestoreAsync(
+        MortgageApplication application,
+        long expectedVersion,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var repositoryLock = await AcquireRepositoryLockAsync(cancellationToken);
+            var path = GetPath(application.Id);
+            await using var stream = File.OpenRead(path);
+            var current = await JsonSerializer.DeserializeAsync<MortgageApplicationSnapshot>(stream, JsonOptions, cancellationToken)
+                ?? throw new InvalidDataException($"Mortgage application '{application.Id}' could not be read.");
+            if (current.Version != expectedVersion)
+            {
+                throw new InvalidOperationException("The application changed before its failed audit write could be rolled back.");
+            }
+
+            await WriteAsync(path, MortgageApplicationSnapshot.FromDomain(application), cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     private static async Task WriteAsync(string path, MortgageApplicationSnapshot snapshot, CancellationToken cancellationToken)
     {

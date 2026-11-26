@@ -35,7 +35,10 @@ public static class ProductPersistenceRegistration
         IConfiguration configuration,
         CancellationToken cancellationToken = default)
     {
-        if (!string.Equals(configuration["Persistence:Provider"], "SqlServer", StringComparison.OrdinalIgnoreCase))
+        var migrationsDisabled = bool.TryParse(configuration["Persistence:RunMigrationsOnStartup"], out var runMigrations)
+            && !runMigrations;
+        if (migrationsDisabled ||
+            !string.Equals(configuration["Persistence:Provider"], "SqlServer", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

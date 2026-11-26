@@ -29,6 +29,7 @@ if (!Guid.TryParse(builder.Configuration["AzureAd:TenantId"], out _) ||
 
 builder.Services.AddControllersWithViews();
 builder.Services.AddProblemDetails();
+builder.Services.AddAzureBlobDataProtection(builder.Configuration);
 builder.Services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
     .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("AzureAd"));
 builder.Services.Configure<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme, options =>
@@ -63,6 +64,10 @@ builder.Services.AddHealthChecks()
 builder.Services.AddOptions<ApplicationSecurityOptions>()
     .BindConfiguration(ApplicationSecurityOptions.SectionName)
     .ValidateOnStart();
+builder.Services.AddOptions<MortgageWorkflowOptions>()
+    .BindConfiguration(MortgageWorkflowOptions.SectionName)
+    .Validate(options => !string.IsNullOrWhiteSpace(options.ConsentTermsVersion), "MortgageWorkflow:ConsentTermsVersion is required.");
+builder.Services.AddSingleton<IDocumentUploadValidator, DocumentUploadValidator>();
 
 builder.Services.AddMortgagePersistence(builder.Configuration);
 

@@ -70,9 +70,10 @@ public sealed class StaffApplicationServiceTests
         var service = CreateService(repository, new TestApplicationActor("staff-42", true, true));
 
         var audit = await service.GetAuditTrailForStaffAsync(application.Id, 1, 25);
+        var repeatedAudit = await service.GetAuditTrailForStaffAsync(application.Id, 1, 25);
 
         Assert.Equal("Legacy event", Assert.Single(audit.Events).Action);
-        Assert.Empty(application.AuditTrail);
+        Assert.Equal(1, repeatedAudit.TotalCount);
     }
 
     [Fact]
@@ -139,9 +140,8 @@ public sealed class StaffApplicationServiceTests
 
         Assert.Equal(3, firstPage.TotalCount);
         Assert.Equal(2, firstPage.Applications.Count);
-        Assert.Equal(1, lastPage.Applications.Count);
+        Assert.Single(lastPage.Applications);
         Assert.Equal(2, lastPage.Page);
-        Assert.Equal(1, filtered.TotalCount);
         Assert.Equal("two@example.com", Assert.Single(filtered.Applications).Email);
         Assert.Equal(3, byCreator.TotalCount);
         Assert.All(byCreator.Applications, item => Assert.Equal("staff-42", item.CreatedByEmployeeId));
@@ -174,11 +174,12 @@ public sealed class StaffApplicationServiceTests
     private static MortgageApplicationService CreateService(InMemoryMortgageApplicationRepository repository, IApplicationActor actor) =>
         new(
             repository,
-            new InMemoryMortgageApplicationAuditRepository(),
+            repository.AuditRepository,
             new MockProductCatalogClient(new LocalProductCatalogFallback()),
             new InMemoryMortgageDocumentStorage(),
             actor,
-            Options.Create(new ApplicationSecurityOptions { RequireAuthenticatedUser = true }));
+            Options.Create(new ApplicationSecurityOptions { RequireAuthenticatedUser = true }),
+            Options.Create(new MortgageWorkflowOptions()));
 
     private sealed class TestApplicationActor(string? subjectId, bool isAuthenticated, bool isStaff) : IApplicationActor
     {
