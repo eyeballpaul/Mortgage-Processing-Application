@@ -18,12 +18,14 @@ flowchart LR
         App[PD.Mortgages.Application]
         Domain[PD.Mortgages.Domain]
         Infrastructure[PD.Mortgages.Infrastructure]
+        ProductsApplication[PD.Products.Application]
+        ProductsDomain[PD.Products.Domain]
+        ProductsInfrastructure[PD.Products.Infrastructure]
         SqlServer[(SQL Server container)]
         MortgageDatabase[(mortgages database)]
         ProductsDatabase[(products database)]
         Volume[(Docker volume: mortgages-sql-data)]
         Documents[(Shared local document files)]
-        ProductsInfrastructure[PD.Products.Infrastructure]
 
         AppHost -. starts and configures .-> CustomerWeb
         AppHost -. starts and configures .-> StaffWeb
@@ -44,6 +46,9 @@ flowchart LR
         Infrastructure --> Documents
         CustomerWeb -->|HTTP product lookup| ProductsApi
         StaffWeb -->|HTTP product lookup| ProductsApi
+        ProductsApi --> ProductsApplication
+        ProductsApplication --> ProductsDomain
+        ProductsInfrastructure --> ProductsDomain
     end
 ```
 

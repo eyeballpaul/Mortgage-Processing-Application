@@ -57,7 +57,7 @@ dotnet build PD.Mortgages.slnx
 dotnet run --project PD.Mortgages.Web
 ```
 
-This starts only the customer app. It uses the development mock product catalog and in-memory application, audit, document, and session stores; it does not start SQL Server. Open the local URL printed by `dotnet run`. All application data is lost when the web app restarts. Running the staff project directly instead requires the Entra settings above and defaults to file-backed persistence under `data`; it will not share records with this standalone customer app. Use Aspire when both apps need shared SQL persistence.
+This starts only the customer app. It uses the development mock product catalog and in-memory application, audit, document, and session stores; it does not start SQL Server. Open the local URL printed by `dotnet run`. All application data is lost when the web app restarts. Running the staff project directly instead requires the Entra settings above and defaults to file-backed persistence under `data`; it will not share records with this standalone customer app. Use Aspire when the mortgage apps need shared SQL persistence and the Products API needs its SQL-backed catalog.
 
 ### Run and debug in VS Code
 
