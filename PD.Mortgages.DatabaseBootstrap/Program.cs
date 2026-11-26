@@ -7,7 +7,9 @@ using PD.Mortgages.Infrastructure.Persistence;
 using PD.Products.Infrastructure.Persistence;
 
 var options = ParseArguments(args);
-var credential = new AzureCliCredential();
+var bootstrapClientId = Environment.GetEnvironmentVariable("AZURE_CLIENT_ID")
+    ?? throw new InvalidOperationException("AZURE_CLIENT_ID is required for the database bootstrap managed identity.");
+var credential = new ManagedIdentityCredential(ManagedIdentityId.FromUserAssignedClientId(bootstrapClientId));
 var token = await credential.GetTokenAsync(
     new TokenRequestContext(["https://database.windows.net/.default"]),
     CancellationToken.None);

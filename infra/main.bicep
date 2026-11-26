@@ -53,9 +53,6 @@ param imageTag string = 'latest'
 @description('Object ID of the Azure DevOps service connection service principal.')
 param pipelinePrincipalId string
 
-@description('Display name of the Azure DevOps service connection service principal.')
-param pipelinePrincipalName string
-
 @description('Bootstrap SQL administrator password. SQL authentication is disabled after server provisioning.')
 @secure()
 param sqlAdminPassword string
@@ -70,6 +67,9 @@ param eligibilityServiceApiKey string
 
 @description('Deploy the application Container Apps after their images have been pushed.')
 param deployApps bool = true
+
+@description('Deploy the manual database bootstrap job after its image has been pushed.')
+param deployBootstrap bool = false
 
 @description('Optional email for the paid Azure Monitor 5xx log alert; leave empty to disable it.')
 param alertEmail string = ''
@@ -86,6 +86,74 @@ var acrPullRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/ro
 var appTags = {
   application: 'pd-mortgages-demo'
   managedBy: 'bicep'
+}
+
+resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
+  name: '${containerAppEnvironmentName}-vnet'
+  location: location
+  properties: {
+    addressSpace: {
+      addressPrefixes: ['10.42.0.0/16']
+    }
+  }
+  tags: appTags
+}
+
+resource appSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = {
+  parent: virtualNetwork
+  name: 'container-apps'
+  properties: {
+    addressPrefix: '10.42.0.0/24'
+    delegations: [
+      {
+        name: 'container-apps'
+        properties: {
+          serviceName: 'Microsoft.App/environments'
+        }
+      }
+    ]
+  }
+}
+
+resource privateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = {
+  parent: virtualNetwork
+  name: 'private-endpoints'
+  properties: {
+    addressPrefix: '10.42.1.0/24'
+    privateEndpointNetworkPolicies: 'Disabled'
+  }
+}
+
+resource sqlPrivateDns 'Microsoft.Network/privateDnsZones@2024-06-01' = {
+  name: 'privatelink.database.windows.net'
+  location: 'global'
+  tags: appTags
+}
+
+resource blobPrivateDns 'Microsoft.Network/privateDnsZones@2024-06-01' = {
+  name: 'privatelink.blob.core.windows.net'
+  location: 'global'
+  tags: appTags
+}
+
+resource sqlPrivateDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = {
+  parent: sqlPrivateDns
+  name: 'demo-vnet'
+  location: 'global'
+  properties: {
+    virtualNetwork: { id: virtualNetwork.id }
+    registrationEnabled: false
+  }
+}
+
+resource blobPrivateDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = {
+  parent: blobPrivateDns
+  name: 'demo-vnet'
+  location: 'global'
+  properties: {
+    virtualNetwork: { id: virtualNetwork.id }
+    registrationEnabled: false
+  }
 }
 
 // Admin credentials are disabled; CI push and ACA pulls use scoped Azure RBAC identities.
@@ -136,6 +204,12 @@ resource customerSessionsIdentity 'Microsoft.ManagedIdentity/userAssignedIdentit
   tags: appTags
 }
 
+resource bootstrapIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
+  name: '${containerAppEnvironmentName}-bootstrap'
+  location: location
+  tags: appTags
+}
+
 resource staffIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
   name: '${containerAppEnvironmentName}-staff'
   location: location
@@ -164,7 +238,7 @@ resource documentStorage 'Microsoft.Storage/storageAccounts@2026-09-01' = {
 	allowBlobPublicAccess: false
 	allowSharedKeyAccess: false
 	minimumTlsVersion: 'TLS1_2'
-	publicNetworkAccess: 'Enabled'
+	publicNetworkAccess: 'Disabled'
 	supportsHttpsTrafficOnly: true
   }
   tags: appTags
@@ -227,7 +301,7 @@ resource sqlServer 'Microsoft.Sql/servers@2023-08-01' = {
   properties: {
 	administratorLogin: 'mortgageSqlAdmin'
 	administratorLoginPassword: sqlAdminPassword
-	publicNetworkAccess: 'Enabled'
+	publicNetworkAccess: 'Disabled'
 	minimalTlsVersion: '1.2'
   }
   tags: appTags
@@ -238,8 +312,8 @@ resource sqlEntraAdmin 'Microsoft.Sql/servers/administrators@2022-05-01-preview'
   name: 'ActiveDirectory'
   properties: {
 	administratorType: 'ActiveDirectory'
-	login: pipelinePrincipalName
-	sid: pipelinePrincipalId
+	login: bootstrapIdentity.name
+	sid: bootstrapIdentity.properties.principalId
 	tenantId: tenant().tenantId
   }
 }
@@ -255,12 +329,65 @@ resource sqlEntraOnly 'Microsoft.Sql/servers/azureADOnlyAuthentications@2022-05-
   ]
 }
 
-resource sqlAzureServicesFirewall 'Microsoft.Sql/servers/firewallRules@2023-08-01' = {
-  parent: sqlServer
-  name: 'AllowAzureServices'
+resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
+  name: '${sqlServerName}-private'
+  location: location
   properties: {
-	startIpAddress: '0.0.0.0'
-	endIpAddress: '0.0.0.0'
+    subnet: { id: privateEndpointSubnet.id }
+    privateLinkServiceConnections: [
+      {
+        name: 'sql'
+        properties: {
+          privateLinkServiceId: sqlServer.id
+          groupIds: ['sqlServer']
+        }
+      }
+    ]
+  }
+  tags: appTags
+}
+
+resource sqlPrivateDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = {
+  parent: sqlPrivateEndpoint
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'sql'
+        properties: { privateDnsZoneId: sqlPrivateDns.id }
+      }
+    ]
+  }
+}
+
+resource blobPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
+  name: '${documentStorageAccountName}-private'
+  location: location
+  properties: {
+    subnet: { id: privateEndpointSubnet.id }
+    privateLinkServiceConnections: [
+      {
+        name: 'blob'
+        properties: {
+          privateLinkServiceId: documentStorage.id
+          groupIds: ['blob']
+        }
+      }
+    ]
+  }
+  tags: appTags
+}
+
+resource blobPrivateDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = {
+  parent: blobPrivateEndpoint
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'blob'
+        properties: { privateDnsZoneId: blobPrivateDns.id }
+      }
+    ]
   }
 }
 
@@ -269,13 +396,16 @@ resource mortgagesDatabase 'Microsoft.Sql/servers/databases@2023-08-01' = {
   name: 'mortgages'
   location: location
   sku: {
-	name: 'GP_S_Gen5_2'
+	name: 'GP_S_Gen5'
 	tier: 'GeneralPurpose'
 	family: 'Gen5'
 	capacity: 2
   }
   properties: {
-	autoPauseDelay: 60
+	useFreeLimit: true
+	freeLimitExhaustionBehavior: 'AutoPause'
+	maxSizeBytes: 34359738368
+	requestedBackupStorageRedundancy: 'Local'
 	minCapacity: json('0.5')
   }
   tags: appTags
@@ -286,13 +416,16 @@ resource productsDatabase 'Microsoft.Sql/servers/databases@2023-08-01' = {
   name: 'products'
   location: location
   sku: {
-	name: 'GP_S_Gen5_2'
+	name: 'GP_S_Gen5'
 	tier: 'GeneralPurpose'
 	family: 'Gen5'
 	capacity: 2
   }
   properties: {
-	autoPauseDelay: 60
+	useFreeLimit: true
+	freeLimitExhaustionBehavior: 'AutoPause'
+	maxSizeBytes: 34359738368
+	requestedBackupStorageRedundancy: 'Local'
 	minCapacity: json('0.5')
   }
   tags: appTags
@@ -303,13 +436,16 @@ resource customerSessionsDatabase 'Microsoft.Sql/servers/databases@2023-08-01' =
   name: 'customer-sessions'
   location: location
   sku: {
-    name: 'GP_S_Gen5_2'
+    name: 'GP_S_Gen5'
     tier: 'GeneralPurpose'
     family: 'Gen5'
     capacity: 2
   }
   properties: {
-    autoPauseDelay: 60
+    useFreeLimit: true
+    freeLimitExhaustionBehavior: 'AutoPause'
+    maxSizeBytes: 34359738368
+    requestedBackupStorageRedundancy: 'Local'
     minCapacity: json('0.5')
   }
   tags: appTags
@@ -385,6 +521,16 @@ resource containerEnvironment 'Microsoft.App/managedEnvironments@2026-07-01' = {
   name: containerAppEnvironmentName
   location: location
   properties: {
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
+    vnetConfiguration: {
+      infrastructureSubnetId: appSubnet.id
+      internal: false
+    }
 	appLogsConfiguration: {
 	  destination: 'log-analytics'
 	  logAnalyticsConfiguration: {
@@ -394,6 +540,75 @@ resource containerEnvironment 'Microsoft.App/managedEnvironments@2026-07-01' = {
 	}
   }
   tags: appTags
+}
+
+resource databaseBootstrap 'Microsoft.App/jobs@2025-01-01' = if (deployBootstrap) {
+  name: '${containerAppEnvironmentName}-bootstrap'
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${imagePullIdentity.id}': {}
+      '${bootstrapIdentity.id}': {}
+    }
+  }
+  properties: {
+    environmentId: containerEnvironment.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      triggerType: 'Manual'
+      replicaTimeout: 1800
+      replicaRetryLimit: 0
+      manualTriggerConfig: {
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: [
+        {
+          server: registry.properties.loginServer
+          identity: imagePullIdentity.id
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'database-bootstrap'
+          image: '${registry.properties.loginServer}/database-bootstrap:${imageTag}'
+          args: [
+            '--server'
+            sqlServer.properties.fullyQualifiedDomainName
+            '--mortgages-identity-name'
+            mortgagesIdentity.name
+            '--mortgages-identity-client-id'
+            mortgagesIdentity.properties.clientId
+            '--products-identity-name'
+            productsIdentity.name
+            '--products-identity-client-id'
+            productsIdentity.properties.clientId
+            '--customer-sessions-identity-name'
+            customerSessionsIdentity.name
+            '--customer-sessions-identity-client-id'
+            customerSessionsIdentity.properties.clientId
+          ]
+          env: [
+            { name: 'AZURE_CLIENT_ID', value: bootstrapIdentity.properties.clientId }
+          ]
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+        }
+      ]
+    }
+  }
+  tags: appTags
+  dependsOn: [
+    imagePullRole
+    sqlEntraOnly
+    mortgagesDatabase
+    productsDatabase
+    customerSessionsDatabase
+    sqlPrivateDnsGroup
+    sqlPrivateDnsLink
+  ]
 }
 
 resource productsApi 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) {
@@ -503,7 +718,6 @@ resource productsApi 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) 
 	dataProtectionStorageRole
 	sqlEntraAdmin
 	sqlEntraOnly
-	sqlAzureServicesFirewall
 	mortgagesDatabase
 	productsDatabase
   ]
@@ -805,6 +1019,7 @@ output productsApiInternalUrl string = deployApps ? 'https://${productsApi!.prop
 output mortgageApiInternalUrl string = deployApps ? 'https://${mortgageApi!.properties.configuration.ingress.fqdn}' : ''
 output staffWebUrl string = deployApps ? 'https://${staffWeb!.properties.configuration.ingress.fqdn}' : ''
 output databaseServerName string = sqlServer.properties.fullyQualifiedDomainName
+output databaseBootstrapJobName string = deployBootstrap ? databaseBootstrap!.name : ''
 output mortgagesIdentityName string = mortgagesIdentity.name
 output mortgagesIdentityClientId string = mortgagesIdentity.properties.clientId
 output productsIdentityName string = productsIdentity.name
