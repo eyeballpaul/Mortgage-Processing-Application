@@ -122,11 +122,14 @@ public sealed class MortgageApplicationService(
             return Map(application);
         }
 
-        await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
-        application = await FindAsync(id, cancellationToken);
-        if (application.DecisionInPrinciple is not null)
+        if (application.CreditCheckConsent)
         {
-            return Map(application);
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+            application = await FindAsync(id, cancellationToken);
+            if (application.DecisionInPrinciple is not null)
+            {
+                return Map(application);
+            }
         }
 
         application.GenerateIndicativeDecisionInPrinciple();

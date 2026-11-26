@@ -8,15 +8,22 @@
     }
 
     const requestAssessment = async () => {
-        const loadingMessage = assessment.dataset.creditCheckConsented === "true"
+        const hasCreditCheckConsent = assessment.dataset.creditCheckConsented === "true";
+        const loadingMessage = hasCreditCheckConsent
             ? "Running a simulated credit check…"
-            : "Preparing your indicative guide…";
+            : "Preparing your result without a credit check…";
+        const loadingIndicator = hasCreditCheckConsent
+            ? '<span class="spinner-border text-primary" aria-hidden="true"></span>'
+            : "";
+        const loadingDescription = hasCreditCheckConsent
+            ? "This usually takes a few seconds. No credit agency or lender is contacted."
+            : "No credit agency or lender is contacted.";
         assessment.innerHTML = `
             <div class="dip-loading" role="status" aria-live="polite">
-                <span class="spinner-border text-primary" aria-hidden="true"></span>
+                ${loadingIndicator}
                 <div>
                     <strong>${loadingMessage}</strong>
-                    <p class="mb-0">This usually takes a few seconds. No credit agency or lender is contacted.</p>
+                    <p class="mb-0">${loadingDescription}</p>
                 </div>
             </div>`;
         continueButton.disabled = true;
