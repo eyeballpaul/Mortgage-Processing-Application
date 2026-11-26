@@ -7,6 +7,7 @@ using PD.Mortgages.Web.Services;
 namespace PD.Mortgages.Web.Controllers;
 
 [Route("application")]
+[ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
 public sealed class WizardController(
     IMortgageApplicationService applicationService,
     IWizardSession wizardSession,
@@ -59,21 +60,8 @@ public sealed class WizardController(
         }
 
         wizardSession.SetStep(step);
-        TempData["Notice"] = "Your progress is saved on this device. You can return to this application later.";
+        TempData["Notice"] = "You can continue this draft in the same browser while your session is active.";
         return RedirectToStep(Math.Clamp(step, 1, 8));
-    }
-
-    [HttpGet("dashboard")]
-    public async Task<IActionResult> Dashboard(CancellationToken cancellationToken)
-    {
-        var application = await GetCurrentApplicationAsync(cancellationToken);
-        if (application is null) return RedirectToAction("Index", "Home");
-
-        var product = application.SelectedProductId is null
-            ? null
-            : await applicationService.GetProductAsync(application.SelectedProductId, cancellationToken);
-        var loanAmount = (application.PropertyValue ?? 0) - (application.Deposit ?? 0);
-        return View(viewModelFactory.CreateDashboard(application, product, wizardSession.CurrentStep));
     }
 
     [HttpGet("qualification")]
@@ -371,9 +359,16 @@ public sealed class WizardController(
             return await ReviewViewAsync(application, cancellationToken);
         }
 
-        TempData["Notice"] = "Your application has been submitted. We’ll be in touch with your next steps.";
-        return RedirectToAction(nameof(Dashboard));
+        wizardSession.Clear();
+        TempData["ApplicationSubmitted"] = true;
+        return RedirectToAction(nameof(Submitted));
     }
+
+    [HttpGet("submitted")]
+    public IActionResult Submitted() =>
+        TempData["ApplicationSubmitted"] is true
+            ? View()
+            : RedirectToAction("Index", "Home");
 
     private async Task<IActionResult> ReviewViewAsync(MortgageApplicationDto application, CancellationToken cancellationToken)
     {
@@ -397,7 +392,7 @@ public sealed class WizardController(
         {
             return await applicationService.GetAsync(id.Value, cancellationToken);
         }
-        catch (KeyNotFoundException)
+        catch (Exception exception) when (exception is KeyNotFoundException or UnauthorizedAccessException)
         {
             wizardSession.Clear();
             return null;

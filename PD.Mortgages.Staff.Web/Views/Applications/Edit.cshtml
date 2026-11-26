@@ -84,27 +84,6 @@
         </fieldset>
         @if (!readOnly)
         {
-            <section class="staff-form-section staff-link-section" aria-labelledby="customer-link-heading">
-                <h2 id="customer-link-heading">Link to customer account</h2>
-                @if (Model.OwnerId is not null)
-                {
-                    <p>This application is linked to customer subject ID <code>@Model.OwnerId</code>. Ownership cannot be changed here.</p>
-                }
-                else
-                {
-                    <p class="staff-link-warning">Enter the customer's exact authentication subject ID. Email addresses do not verify account ownership. Customer sign-in and identity lookup are not configured in this local build, so this portal cannot verify the ID or create a customer account.</p>
-                    <label asp-for="CustomerSubjectId" class="form-label"></label>
-                    <input asp-for="CustomerSubjectId" class="form-control" autocomplete="off" />
-                    <span asp-validation-for="CustomerSubjectId" class="field-validation"></span>
-                }
-            </section>
-        }
-        else if (Model.OwnerId is not null)
-        {
-            <p>Linked customer subject ID: <code>@Model.OwnerId</code></p>
-        }
-        @if (!readOnly)
-        {
             <div class="form-actions">
                 <a class="btn btn-outline-secondary" asp-action="Index">Cancel</a>
                 <button class="btn btn-primary btn-lg" type="submit">@(isNew ? "Create draft" : "Save changes")</button>

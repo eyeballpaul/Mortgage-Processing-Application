@@ -3,6 +3,7 @@ namespace PD.Mortgages.Web.Services;
 public interface IWizardSession
 {
     Guid? CurrentApplicationId { get; }
+    string ActorId { get; }
     int CurrentStep { get; }
     void SetApplication(Guid applicationId, int step);
     void SetStep(int step);

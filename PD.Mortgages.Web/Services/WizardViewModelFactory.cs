@@ -43,17 +43,6 @@ public sealed class WizardViewModelFactory
         Products = products
     };
 
-    public DashboardViewModel CreateDashboard(
-        MortgageApplicationDto application,
-        MortgageProductDto? product,
-        int currentStep) => new()
-    {
-        Application = application,
-        Product = product,
-        CurrentStep = currentStep,
-        EstimatedMonthlyPayment = CalculatePayment(application, product)
-    };
-
     public ReviewViewModel CreateReview(
         MortgageApplicationDto application,
         MortgageProductDto? product) => new()

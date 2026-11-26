@@ -154,11 +154,6 @@ public sealed class ApplicationWizardController(
                         model.Email!.Trim(),
                         model.PhoneNumber!.Trim(),
                         cancellationToken);
-                    if (!string.IsNullOrWhiteSpace(model.CustomerSubjectId))
-                    {
-                        await applicationService.LinkToCustomerAsync(id, model.CustomerSubjectId.Trim(), cancellationToken);
-                    }
-
                     return RedirectToAction(nameof(Step), new { id, step = 3 });
                 case 3:
                     await applicationService.SaveFinancesAsync(
@@ -194,11 +189,6 @@ public sealed class ApplicationWizardController(
                 case 7:
                     return RedirectToAction(nameof(Step), new { id, step = 8 });
                 case 8:
-                    if (!string.IsNullOrWhiteSpace(model.CustomerSubjectId) && application.OwnerId is null)
-                    {
-                        await applicationService.LinkToCustomerAsync(id, model.CustomerSubjectId.Trim(), cancellationToken);
-                    }
-
                     await applicationService.SubmitAsync(id, cancellationToken);
                     TempData["Notice"] = "The mortgage application was submitted.";
                     return RedirectToAction("Index", "Applications");
@@ -249,39 +239,6 @@ public sealed class ApplicationWizardController(
         return RedirectToAction(nameof(Step), new { id, step = 7 });
     }
 
-    [HttpPost("{id:guid}/link-customer")]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> LinkCustomer(Guid id, string? customerSubjectId, CancellationToken cancellationToken)
-    {
-        var application = await GetApplicationAsync(id, cancellationToken);
-        if (application is null)
-        {
-            return NotFound();
-        }
-
-        if (string.IsNullOrWhiteSpace(customerSubjectId) || customerSubjectId.Length > 200)
-        {
-            TempData["Error"] = "Enter a customer subject ID of 1 to 200 characters.";
-            return RedirectToAction(nameof(Step), new { id, step = 8 });
-        }
-
-        try
-        {
-            await applicationService.LinkToCustomerAsync(id, customerSubjectId, cancellationToken);
-            TempData["Notice"] = "The application was linked to the customer subject ID.";
-        }
-        catch (ArgumentException exception)
-        {
-            TempData["Error"] = exception.Message;
-        }
-        catch (InvalidOperationException exception)
-        {
-            TempData["Error"] = exception.Message;
-        }
-
-        return RedirectToAction(nameof(Step), new { id, step = 8 });
-    }
-
     private async Task<IActionResult> RenderStepAsync(
         MortgageApplicationDto application,
         StaffApplicationStepViewModel model,
@@ -301,7 +258,6 @@ public sealed class ApplicationWizardController(
         page.CreditCheckConsent = model.CreditCheckConsent;
         page.OpenBankingConsent = model.OpenBankingConsent;
         page.SelectedProductId = model.SelectedProductId;
-        page.CustomerSubjectId = model.CustomerSubjectId;
         return View("~/Views/Applications/Step.cshtml", page);
     }
 

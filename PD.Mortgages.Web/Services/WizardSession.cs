@@ -6,6 +6,7 @@ public sealed class WizardSession(IHttpContextAccessor httpContextAccessor) : IW
 {
     private const string ApplicationSessionKey = "CurrentApplicationId";
     private const string StepSessionKey = "CurrentApplicationStep";
+    private const string ActorSessionKey = "ApplicationSessionActor";
 
     private ISession Session => httpContextAccessor.HttpContext?.Session
         ?? throw new InvalidOperationException("An active HTTP session is required.");
@@ -14,6 +15,21 @@ public sealed class WizardSession(IHttpContextAccessor httpContextAccessor) : IW
         Guid.TryParse(Session.GetString(ApplicationSessionKey), out var id) ? id : null;
 
     public int CurrentStep => Session.GetInt32(StepSessionKey) ?? 1;
+
+    public string ActorId
+    {
+        get
+        {
+            var actorId = Session.GetString(ActorSessionKey);
+            if (actorId is null)
+            {
+                actorId = $"session:{Guid.NewGuid():N}";
+                Session.SetString(ActorSessionKey, actorId);
+            }
+
+            return actorId;
+        }
+    }
 
     public void SetApplication(Guid applicationId, int step)
     {
@@ -27,5 +43,6 @@ public sealed class WizardSession(IHttpContextAccessor httpContextAccessor) : IW
     {
         Session.Remove(ApplicationSessionKey);
         Session.Remove(StepSessionKey);
+        Session.Remove(ActorSessionKey);
     }
 }

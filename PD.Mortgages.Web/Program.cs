@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Options;
 using PD.Mortgages.Application.Services;
 using PD.Mortgages.Application.Security;
 using PD.Mortgages.Web.Health;
@@ -15,14 +14,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
 builder.Services.AddProblemDetails();
 builder.Services.AddAzureBlobDataProtection(builder.Configuration);
-builder.Services.AddOptions<ApplicationSecurityOptions>()
-    .BindConfiguration(ApplicationSecurityOptions.SectionName)
-    .ValidateOnStart();
+ProductionConfigurationValidator.Validate(builder.Environment, builder.Configuration);
 builder.Services.AddOptions<MortgageWorkflowOptions>()
     .BindConfiguration(MortgageWorkflowOptions.SectionName)
     .Validate(options => !string.IsNullOrWhiteSpace(options.ConsentTermsVersion), "MortgageWorkflow:ConsentTermsVersion is required.");
-builder.Services.AddSingleton<IValidateOptions<ApplicationSecurityOptions>, ProductionConfigurationValidator>();
-builder.Services.AddScoped<IApplicationActor, HttpContextApplicationActor>();
+builder.Services.AddScoped<IApplicationActor, SessionApplicationActor>();
 builder.Services.AddHealthChecks()
     .AddCheck<ApplicationHealthCheck>("application", tags: ["ready"]);
 var sessionProvider = builder.Configuration["Session:Provider"] ?? "Memory";

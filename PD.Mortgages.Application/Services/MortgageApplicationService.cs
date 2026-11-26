@@ -13,14 +13,13 @@ public sealed class MortgageApplicationService(
     IProductCatalogClient productCatalogClient,
     IMortgageDocumentStorage documentStorage,
     IApplicationActor applicationActor,
-    IOptions<ApplicationSecurityOptions> securityOptions,
     IOptions<MortgageWorkflowOptions> workflowOptions) : IMortgageApplicationService
 {
     public async Task<MortgageApplicationDto> CreateAsync(CancellationToken cancellationToken = default)
     {
         var application = new MortgageApplication();
         AssignOwner(application);
-        application.RecordAudit(GetActorId(application), "Application created");
+        application.RecordAudit(GetActorId(), "Application created");
         var auditEntry = application.AuditTrail.Last();
         application.ClearAuditTrail();
         await applicationRepository.AddAsync(application, auditEntry, cancellationToken);
@@ -83,16 +82,6 @@ public sealed class MortgageApplicationService(
             results.PageSize);
     }
 
-    public async Task LinkToCustomerAsync(Guid id, string customerSubjectId, CancellationToken cancellationToken = default)
-    {
-        EnsureStaff();
-        await ChangeAsync(
-            id,
-            application => application.LinkToCustomer(customerSubjectId),
-            "Application linked to customer",
-            cancellationToken);
-    }
-
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await FindOwnedAsync(id, cancellationToken);
@@ -116,7 +105,7 @@ public sealed class MortgageApplicationService(
                 creditCheckConsent,
                 openBankingConsent,
                 workflowOptions.Value.ConsentTermsVersion,
-                GetActorId(application)),
+                GetActorId()),
             "Customer consents recorded",
             cancellationToken);
 
@@ -140,7 +129,7 @@ public sealed class MortgageApplicationService(
 
         application.GenerateIndicativeDecisionInPrinciple();
         await MigrateLegacyAuditAsync(application, cancellationToken);
-        application.RecordAudit(GetActorId(application), "Decision in Principle generated");
+        application.RecordAudit(GetActorId(), "Decision in Principle generated");
         await PersistMutationAsync(application, cancellationToken);
         return Map(application);
     }
@@ -178,7 +167,7 @@ public sealed class MortgageApplicationService(
             product.MaximumLoanToValue,
             product.CatalogVersion));
         await MigrateLegacyAuditAsync(application, cancellationToken);
-        application.RecordAudit(GetActorId(application), $"Product '{productId}' selected");
+        application.RecordAudit(GetActorId(), $"Product '{productId}' selected");
         await PersistMutationAsync(application, cancellationToken);
     }
 
@@ -194,7 +183,7 @@ public sealed class MortgageApplicationService(
             await documentStorage.SaveAsync(id, documentId, contents, cancellationToken);
             documentStored = true;
             application.AddDocument(documentId, fileName, contents.LongLength);
-            application.RecordAudit(GetActorId(application), "Document uploaded");
+            application.RecordAudit(GetActorId(), "Document uploaded");
             await PersistMutationAsync(application, cancellationToken);
         }
         catch (Exception operationException)
@@ -256,7 +245,7 @@ public sealed class MortgageApplicationService(
         var application = await FindAsync(id, cancellationToken);
         await MigrateLegacyAuditAsync(application, cancellationToken);
         change(application);
-        application.RecordAudit(GetActorId(application), auditAction);
+        application.RecordAudit(GetActorId(), auditAction);
         await PersistMutationAsync(application, cancellationToken);
     }
 
@@ -286,34 +275,31 @@ public sealed class MortgageApplicationService(
         var application = await applicationRepository.GetByIdAsync(id, cancellationToken)
             ?? throw new KeyNotFoundException($"Mortgage application '{id}' was not found.");
 
-        if (securityOptions.Value.RequireAuthenticatedUser && !applicationActor.IsAuthenticated)
-        {
-            throw new UnauthorizedAccessException("An authenticated user is required.");
-        }
-
         if (applicationActor.IsStaff)
         {
             EnsureStaff();
             return application;
         }
 
-        if (securityOptions.Value.RequireAuthenticatedUser &&
-            !string.Equals(application.OwnerId, applicationActor.SubjectId, StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(applicationActor.SubjectId) ||
+            !string.Equals(application.OwnerId, applicationActor.SubjectId, StringComparison.Ordinal) ||
+            application.Status != ApplicationStatus.InProgress)
         {
-            throw new UnauthorizedAccessException("The application does not belong to the current user.");
+            throw new UnauthorizedAccessException("The application is not available in this session.");
         }
 
         return application;
     }
 
-    private string GetActorId(MortgageApplication application) =>
+    private string GetActorId() =>
         !string.IsNullOrWhiteSpace(applicationActor.SubjectId)
             ? applicationActor.SubjectId
-            : application.OwnerId ?? "development-anonymous";
+            : throw new UnauthorizedAccessException("An application actor is required.");
 
     private void EnsureStaff()
     {
-        if (!applicationActor.IsAuthenticated || !applicationActor.IsStaff)
+        if (!applicationActor.IsAuthenticated || !applicationActor.IsStaff ||
+            string.IsNullOrWhiteSpace(applicationActor.SubjectId))
         {
             throw new UnauthorizedAccessException("An authenticated staff member is required.");
         }
@@ -321,23 +307,17 @@ public sealed class MortgageApplicationService(
 
     private void AssignOwner(MortgageApplication application)
     {
-        if (applicationActor.IsAuthenticated && !string.IsNullOrWhiteSpace(applicationActor.SubjectId))
+        if (!applicationActor.IsStaff && !string.IsNullOrWhiteSpace(applicationActor.SubjectId))
         {
             application.AssignOwner(applicationActor.SubjectId);
             return;
         }
 
-        if (securityOptions.Value.RequireAuthenticatedUser)
-        {
-            throw new UnauthorizedAccessException("An authenticated user is required to create an application.");
-        }
-
-        application.AssignOwner("development-anonymous");
+        throw new UnauthorizedAccessException("An active customer session is required to create an application.");
     }
 
     private static MortgageApplicationDto Map(MortgageApplication application) => new(
         application.Id,
-        application.OwnerId,
         application.CreatedAtUtc,
         application.UpdatedAtUtc,
         application.Status,

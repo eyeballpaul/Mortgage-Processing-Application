@@ -16,7 +16,6 @@ public interface IMortgageApplicationService
         int page,
         int pageSize,
         CancellationToken cancellationToken = default);
-    Task LinkToCustomerAsync(Guid id, string customerSubjectId, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
     Task SaveApplicantAsync(Guid id, string firstName, string lastName, string email, string phoneNumber, CancellationToken cancellationToken = default);
     Task SaveQualificationAsync(Guid id, decimal propertyValue, decimal deposit, CancellationToken cancellationToken = default);

@@ -133,23 +133,6 @@ public sealed class MortgageApplication
         OwnerId = ownerId;
     }
 
-    public void LinkToCustomer(string customerSubjectId)
-    {
-        EnsureEditable();
-        if (string.IsNullOrWhiteSpace(customerSubjectId))
-        {
-            throw new ArgumentException("A customer identity is required.", nameof(customerSubjectId));
-        }
-
-        if (OwnerId is not null)
-        {
-            throw new InvalidOperationException("This application is already linked to a customer.");
-        }
-
-        OwnerId = customerSubjectId;
-        Touch();
-    }
-
     public void UpdateApplicant(string firstName, string lastName, string email, string phoneNumber)
     {
         EnsureEditable();

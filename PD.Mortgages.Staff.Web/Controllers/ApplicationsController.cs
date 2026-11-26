@@ -110,7 +110,6 @@ public sealed class ApplicationsController(IMortgageApplicationService applicati
     {
         Id = application.Id,
         Status = application.Status,
-        OwnerId = application.OwnerId,
         CreatedByEmployeeId = application.CreatedByEmployeeId,
         FirstName = application.FirstName ?? string.Empty,
         LastName = application.LastName ?? string.Empty,

@@ -5,6 +5,7 @@
 	<ProjectReference Include="..\PD.Mortgages.Domain\PD.Mortgages.Domain.csproj" />
 	  <ProjectReference Include="..\PD.Mortgages.Infrastructure\PD.Mortgages.Infrastructure.csproj" />
 	  <ProjectReference Include="..\PD.Mortgages.Staff.Web\PD.Mortgages.Staff.Web.csproj" />
+	  <ProjectReference Include="..\PD.Mortgages.Web\PD.Mortgages.Web.csproj" />
   </ItemGroup>
 
   <ItemGroup>

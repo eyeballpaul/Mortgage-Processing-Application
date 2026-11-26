@@ -8,12 +8,7 @@ public sealed class StaffApplicationViewModel : IValidatableObject
 {
     public Guid? Id { get; set; }
     public ApplicationStatus? Status { get; set; }
-    public string? OwnerId { get; set; }
     public string? CreatedByEmployeeId { get; set; }
-
-    [StringLength(200)]
-    [Display(Name = "Customer identity subject ID")]
-    public string? CustomerSubjectId { get; set; }
 
     [Required, StringLength(60, MinimumLength = 2)]
     [Display(Name = "First name")]

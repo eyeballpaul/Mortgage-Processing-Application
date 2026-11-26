@@ -28,7 +28,6 @@ public sealed class StaffApplicationServiceTests
 
         Assert.Equal(1, matching.TotalCount);
         Assert.Equal(created.Id, result.Id);
-        Assert.Null(details.OwnerId);
         Assert.Equal("staff-42", details.CreatedByEmployeeId);
         Assert.Equal("Qualification updated", audit.Events[0].Action);
         Assert.Equal("Applicant details updated", audit.Events[1].Action);
@@ -84,7 +83,6 @@ public sealed class StaffApplicationServiceTests
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SearchForStaffAsync(null, null, 1, 25));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetAuditTrailForStaffAsync(Guid.NewGuid(), 1, 25));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.CreateForStaffAsync());
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.LinkToCustomerAsync(Guid.NewGuid(), "customer-1"));
     }
 
     [Fact]
@@ -98,6 +96,19 @@ public sealed class StaffApplicationServiceTests
     }
 
     [Fact]
+    public async Task StaffOperationsRequireAnAuthenticatedStaffActor()
+    {
+        var repository = new InMemoryMortgageApplicationRepository();
+        var staff = CreateService(repository, new TestApplicationActor("staff-42", true, true));
+        var application = await staff.CreateForStaffAsync();
+        var unauthenticated = CreateService(repository, new TestApplicationActor("staff-42", false, true));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.GetForStaffAsync(application.Id));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.GetAsync(application.Id));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.SaveQualificationAsync(application.Id, 300_000m, 30_000m));
+    }
+
+    [Fact]
     public async Task CustomerCreatedApplicationHasNoEmployeeCreator()
     {
         var service = CreateService(
@@ -106,7 +117,6 @@ public sealed class StaffApplicationServiceTests
 
         var application = await service.CreateAsync();
 
-        Assert.Equal("customer-1", application.OwnerId);
         Assert.Null(application.CreatedByEmployeeId);
     }
 
@@ -150,25 +160,15 @@ public sealed class StaffApplicationServiceTests
     }
 
     [Fact]
-    public async Task StaffCanLinkUnassignedApplicationToCustomerSubjectWithoutChangingOwnerLater()
+    public async Task StaffCanReadCustomerDraft()
     {
         var repository = new InMemoryMortgageApplicationRepository();
+        var customerService = CreateService(repository, new TestApplicationActor("session-1", false, false));
+        var application = await customerService.CreateAsync();
         var staffService = CreateService(repository, new TestApplicationActor("staff-42", true, true));
-        var application = await staffService.CreateForStaffAsync();
 
-        await staffService.LinkToCustomerAsync(application.Id, "customer-subject-17");
-
-        var details = await staffService.GetForStaffAsync(application.Id);
-        var audit = await staffService.GetAuditTrailForStaffAsync(application.Id, 1, 25);
-        var customerService = CreateService(repository, new TestApplicationActor("customer-subject-17", true, false));
-        var otherCustomerService = CreateService(repository, new TestApplicationActor("customer-subject-18", true, false));
-
-        Assert.Equal("customer-subject-17", details.OwnerId);
-        Assert.Equal("Application linked to customer", audit.Events[0].Action);
-        Assert.Equal("staff-42", audit.Events[0].ActorId);
-        Assert.Equal(application.Id, (await customerService.GetAsync(application.Id)).Id);
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => otherCustomerService.GetAsync(application.Id));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => staffService.LinkToCustomerAsync(application.Id, "customer-subject-18"));
+        Assert.Equal(application.Id, (await staffService.GetForStaffAsync(application.Id)).Id);
+        Assert.Equal(application.Id, (await staffService.GetAsync(application.Id)).Id);
     }
 
     private static MortgageApplicationService CreateService(InMemoryMortgageApplicationRepository repository, IApplicationActor actor) =>
@@ -178,7 +178,6 @@ public sealed class StaffApplicationServiceTests
             new MockProductCatalogClient(new LocalProductCatalogFallback()),
             new InMemoryMortgageDocumentStorage(),
             actor,
-            Options.Create(new ApplicationSecurityOptions { RequireAuthenticatedUser = true }),
             Options.Create(new MortgageWorkflowOptions()));
 
     private sealed class TestApplicationActor(string? subjectId, bool isAuthenticated, bool isStaff) : IApplicationActor

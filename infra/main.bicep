@@ -426,10 +426,6 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = if (deployApps)
 			  value: mortgagesIdentity.properties.clientId
 			}
 			{
-			  name: 'ApplicationSecurity__RequireAuthenticatedUser'
-			  value: 'true'
-			}
-			{
 			  name: 'ProductService__UseMock'
 			  value: 'false'
 			}

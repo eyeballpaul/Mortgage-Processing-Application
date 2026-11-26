@@ -49,6 +49,4 @@ public sealed class StaffApplicationStepViewModel
     public bool OpenBankingConsent { get; set; }
     public string? SelectedProductId { get; set; }
 
-    [StringLength(200)]
-    public string? CustomerSubjectId { get; set; }
 }

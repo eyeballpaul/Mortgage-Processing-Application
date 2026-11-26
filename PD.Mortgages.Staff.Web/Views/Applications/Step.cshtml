@@ -10,7 +10,7 @@
     <div>
         <p class="eyebrow">Employee workspace · Application @application.Id.ToString("N")[..8].ToUpperInvariant()</p>
         <h1>@(Model.Step == 8 ? "Review application" : titles[Model.Step - 1])</h1>
-        <p class="mb-0">Created by @(application.CreatedByEmployeeId ?? "Customer") · @(application.OwnerId is null ? "Not linked to a customer" : "Linked to a customer account")</p>
+        <p class="mb-0">Created by @(application.CreatedByEmployeeId ?? "Customer")</p>
     </div>
     <a class="btn btn-outline-secondary" asp-controller="Applications" asp-action="Index">Back to applications</a>
 </div>
@@ -52,16 +52,6 @@
                     <div class="col-md-6"><label asp-for="Email" class="form-label">Email address</label><input asp-for="Email" class="form-control" autocomplete="email" /><span asp-validation-for="Email" class="field-validation"></span></div>
                     <div class="col-md-6"><label asp-for="PhoneNumber" class="form-label">Phone number</label><input asp-for="PhoneNumber" class="form-control" autocomplete="tel" /><span asp-validation-for="PhoneNumber" class="field-validation"></span></div>
                 </div>
-                @if (application.OwnerId is null)
-                {
-                    <div class="staff-link-section mt-4">
-                        <h3>Link to customer account (optional)</h3>
-                        <p class="staff-link-warning">Customer sign-in and identity lookup are not configured in this local build. Email does not verify account ownership; an entered subject ID cannot be verified.</p>
-                        <label asp-for="CustomerSubjectId" class="form-label">Customer authentication subject ID</label>
-                        <input asp-for="CustomerSubjectId" class="form-control" autocomplete="off" />
-                        <span asp-validation-for="CustomerSubjectId" class="field-validation"></span>
-                    </div>
-                }
             </section>
         }
         else if (Model.Step == 3)
@@ -173,20 +163,6 @@
                     <section class="review-section"><div class="review-heading"><h3>Decision in Principle</h3><a asp-action="Step" asp-route-id="@Model.Id" asp-route-step="5">View</a></div><p>@(application.DecisionInPrinciple is { } decision ? decision.Outcome.GetDisplayName() : "Not assessed") · requested loan @application.DecisionInPrinciple?.RequestedLoanAmount.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("en-GB"))</p></section>
                     <section class="review-section"><div class="review-heading"><h3>Mortgage product</h3><a asp-action="Step" asp-route-id="@Model.Id" asp-route-step="6">Change</a></div><p>@(Model.SelectedProduct?.Name ?? application.SelectedProductId ?? "No product selected")</p></section>
                     <section class="review-section"><div class="review-heading"><h3>Documents</h3><a asp-action="Step" asp-route-id="@Model.Id" asp-route-step="7">Manage</a></div><p>@(application.Documents.Count == 0 ? "No documents added." : $"{application.Documents.Count} document(s) added.")</p></section>
-                </div>
-                <div class="staff-link-section mt-4">
-                    <h3>Customer account</h3>
-                    @if (application.OwnerId is not null)
-                    {
-                        <p>Linked to customer subject ID <code>@application.OwnerId</code>. This link cannot be changed.</p>
-                    }
-                    else
-                    {
-                        <p class="staff-link-warning">Customer sign-in and identity lookup are not configured in this local build. Entering an ID does not verify the customer.</p>
-                        <label asp-for="CustomerSubjectId" class="form-label">Customer authentication subject ID</label>
-                        <input asp-for="CustomerSubjectId" class="form-control" autocomplete="off" />
-                        <button type="submit" formaction="/applications/@Model.Id/link-customer" class="btn btn-outline-primary mt-2">Save customer link</button>
-                    }
                 </div>
                 <h3 class="staff-audit-heading">Audit history</h3>
                 <a asp-controller="Applications" asp-action="AuditTrail" asp-route-id="@Model.Id">View audit history</a>

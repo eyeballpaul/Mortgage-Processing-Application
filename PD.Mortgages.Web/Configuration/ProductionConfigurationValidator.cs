@@ -1,17 +1,12 @@
-using Microsoft.Extensions.Options;
-using PD.Mortgages.Application.Security;
-
 namespace PD.Mortgages.Web.Configuration;
 
-public sealed class ProductionConfigurationValidator(
-    IHostEnvironment environment,
-    IConfiguration configuration) : IValidateOptions<ApplicationSecurityOptions>
+public static class ProductionConfigurationValidator
 {
-    public ValidateOptionsResult Validate(string? name, ApplicationSecurityOptions options)
+    public static void Validate(IHostEnvironment environment, IConfiguration configuration)
     {
         if (environment.IsDevelopment())
         {
-            return ValidateOptionsResult.Success;
+            return;
         }
 
         var failures = new List<string>();
@@ -26,18 +21,14 @@ public sealed class ProductionConfigurationValidator(
             failures.Add("ConnectionStrings:mortgages is required when Session:Provider is SqlServer.");
         }
 
-        if (!options.RequireAuthenticatedUser)
-        {
-            failures.Add("ApplicationSecurity:RequireAuthenticatedUser must be true outside Development.");
-        }
-
         if (string.IsNullOrWhiteSpace(configuration["ProductService:BaseUrl"]))
         {
             failures.Add("ProductService:BaseUrl is required outside Development.");
         }
 
-        return failures.Count == 0
-            ? ValidateOptionsResult.Success
-            : ValidateOptionsResult.Fail(failures);
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException(string.Join(" ", failures));
+        }
     }
 }

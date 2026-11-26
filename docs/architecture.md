@@ -63,7 +63,7 @@ The customer and staff web apps share SQL application and audit data in the `mor
 - **PD.Products.Api** exposes the product catalog over HTTP and uses the separate `PD.Products.Application`, `PD.Products.Domain`, and `PD.Products.Infrastructure` projects. It uses SQL in Aspire and Azure; standalone runs use an in-memory catalog.
 - **PD.Mortgages.AppHost** orchestrates the local web apps, Products API, and SQL Server container; it is not required for standalone project runs.
 
-Staff MVC routes require an authenticated Entra identity with the `MortgageStaff` app role. The staff actor uses the tenant and object IDs from the validated identity for audit attribution. Customer sign-in is not configured in this demonstration.
+Staff MVC routes require an authenticated Entra identity with the `MortgageStaff` app role. The staff actor uses the tenant and object IDs from the validated identity for audit attribution. Customer drafts are scoped to a randomly generated server-side session actor; only that session can access its in-progress application.
 
 ## Persistence by run mode
 
@@ -96,4 +96,4 @@ flowchart LR
 
 The pipeline builds and pushes images for all three projects, but deploys only the customer app and internal Products API. Azure SQL is Entra-only: the pipeline service principal bootstraps the two application identities and applies EF migrations; runtime identities are separately scoped, with product-catalog read access and mortgage-data read/write access. Blob shared-key access and anonymous container access are disabled. The SQL server and Blob endpoint currently use Azure public endpoints with Azure SQL's trusted-Azure-services firewall rule; use private endpoints/VNet integration before a production deployment.
 
-The staff image still has no Container App deployment or production Entra configuration. Both portals support persistent Data Protection keys when `DataProtection:BlobUri` is configured; the mortgage app is configured to use its Blob key object in Azure. Customer authentication remains intentionally unconfigured in this demonstration: production configuration still requires an authenticated customer, so the customer journey is not usable until a customer identity scheme is implemented.
+The staff image still has no Container App deployment or production Entra configuration. Both portals support persistent Data Protection keys when `DataProtection:BlobUri` is configured; the mortgage app is configured to use its Blob key object in Azure. A customer session can continue its draft until expiry or submission; submission clears the session's application access, while staff retain access.

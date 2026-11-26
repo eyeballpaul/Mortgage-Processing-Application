@@ -5,7 +5,6 @@ namespace PD.Mortgages.Application.Models;
 
 public sealed record MortgageApplicationDto(
     Guid Id,
-    string? OwnerId,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
     ApplicationStatus Status,
