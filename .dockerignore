@@ -1,4 +1,9 @@
 .git
+.github
+infra
+.env
+.env.*
+*.bicepparam
 .vs
 **/bin/
 **/obj/

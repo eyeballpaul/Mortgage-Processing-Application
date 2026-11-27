@@ -17,6 +17,12 @@ case "$*" in
   "ad signed-in-user show --query id --output tsv") echo "user-id" ;;
   "group exists --name test-rg --output tsv") echo true ;;
   "group show --name test-rg --query location --output tsv") echo uksouth ;;
+  "sql server list --resource-group test-rg --output json")
+    if [[ "${TEST_EXISTING_SERVER:-false}" == "true" ]]; then
+      echo '[{"name":"sql-server"}]'
+    else
+      echo '[]'
+    fi ;;
   "ad sp show --id api-client --output json")
     echo '{"id":"api-principal","appRoles":[{"value":"MortgageCustomer","isEnabled":true,"allowedMemberTypes":["Application"],"id":"role-id"}]}' ;;
   "ad sp show --id customer-client --output none") exit 0 ;;
@@ -61,13 +67,20 @@ export PATH="$test_dir:$PATH" TEST_LOG="$test_dir/log"
 
 inputs=$'test-rg\nregistryname\nsql-server\nstorageaccount\napi-client\nstaff-client\nstaff-secret\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nyes\n'
 printf '%s' "$inputs" | bash "$root/infra/quickstart-deploy.sh" > "$test_dir/output"
-grep -q 'deployment group create --name mortgage-bootstrap .*deployApps=false deployBootstrap=true' "$TEST_LOG"
+grep -q 'deployment group create --name mortgage-foundation .*createSqlServer=true' "$TEST_LOG"
+grep -q 'deployment group create --name mortgage-bootstrap .*deployApps=false deployBootstrap=true createSqlServer=false' "$TEST_LOG"
 grep -q 'containerapp job start --name bootstrap-job' "$TEST_LOG"
-grep -q 'deployment group create --name mortgage-apps .*deployApps=true deployBootstrap=true' "$TEST_LOG"
+grep -q 'deployment group create --name mortgage-apps .*deployApps=true deployBootstrap=true createSqlServer=false' "$TEST_LOG"
 grep -q -- '--image mortgages-api:latest --file PD.Mortgages.Api/Dockerfile' "$TEST_LOG"
 grep -q -- '--image mortgages-staff-web:latest --file PD.Mortgages.Staff.Web/Dockerfile' "$TEST_LOG"
 grep -q 'curl .*https://customer.example/health/ready' "$TEST_LOG"
 grep -q 'curl .*https://staff.example/health/ready' "$TEST_LOG"
+
+: > "$TEST_LOG"
+printf '%s' "$inputs" | TEST_EXISTING_SERVER=true bash "$root/infra/quickstart-deploy.sh" > "$test_dir/output"
+grep -q 'deployment group create --name mortgage-foundation .*createSqlServer=false' "$TEST_LOG"
+grep -q 'deployment group create --name mortgage-bootstrap .*createSqlServer=false' "$TEST_LOG"
+grep -q 'deployment group create --name mortgage-apps .*createSqlServer=false' "$TEST_LOG"
 
 : > "$TEST_LOG"
 if printf '%s' "$inputs" | TEST_JOB_STATUS=Failed bash "$root/infra/quickstart-deploy.sh" > "$test_dir/output" 2>&1; then

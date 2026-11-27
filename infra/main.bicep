@@ -57,9 +57,8 @@ param pipelinePrincipalId string
 @description('Directory principal type of the identity granted AcrPush.')
 param pipelinePrincipalType string = 'ServicePrincipal'
 
-@description('Bootstrap SQL administrator password. SQL authentication is disabled after server provisioning.')
-@secure()
-param sqlAdminPassword string
+@description('Set to true only when creating a new SQL server; false when redeploying an existing server.')
+param createSqlServer bool = true
 
 @description('Random API key shared by the internal Products API and its callers. Supply securely.')
 @secure()
@@ -305,12 +304,19 @@ resource staffDataProtectionStorageRole 'Microsoft.Authorization/roleAssignments
 resource sqlServer 'Microsoft.Sql/servers@2023-08-01' = {
   name: sqlServerName
   location: location
-  properties: {
-	administratorLogin: 'mortgageSqlAdmin'
-	administratorLoginPassword: sqlAdminPassword
-	publicNetworkAccess: 'Disabled'
-	minimalTlsVersion: '1.2'
-  }
+  properties: union({
+    publicNetworkAccess: 'Disabled'
+    minimalTlsVersion: '1.2'
+  }, createSqlServer ? {
+    administrators: {
+      administratorType: 'ActiveDirectory'
+      principalType: 'Application'
+      login: bootstrapIdentity.name
+      sid: bootstrapIdentity.properties.principalId
+      tenantId: tenant().tenantId
+      azureADOnlyAuthentication: true
+    }
+  } : {})
   tags: appTags
 }
 

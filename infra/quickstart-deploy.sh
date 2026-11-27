@@ -84,7 +84,6 @@ chmod 600 "$parameter_file"
 trap 'rm -f -- "$parameter_file"' EXIT
 
 export location registry sql_server storage api_client_id staff_client_id staff_secret principal_id products_key eligibility_key
-export sql_admin_password="Aa1!$(openssl rand -hex 24)"
 jq -n '{
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   contentVersion: "1.0.0.0",
@@ -104,22 +103,29 @@ jq -n '{
     staffClientSecret: {value: env.staff_secret},
     pipelinePrincipalId: {value: env.principal_id},
     pipelinePrincipalType: {value: "User"},
-    sqlAdminPassword: {value: env.sql_admin_password},
     productServiceApiKey: {value: env.products_key},
     eligibilityServiceApiKey: {value: env.eligibility_key},
     imageTag: {value: "latest"}
   }
 }' > "$parameter_file"
-unset staff_secret products_key eligibility_key sql_admin_password
+unset staff_secret products_key eligibility_key
 
 deploy() {
   az deployment group create --name "$1" --resource-group "$resource_group" \
     --template-file infra/main.bicep --parameters "@$parameter_file" \
-    --parameters "deployApps=$2" "deployBootstrap=$3" --output none
+    --parameters "deployApps=$2" "deployBootstrap=$3" "createSqlServer=$4" --output none
 }
 
+servers="$(az sql server list --resource-group "$resource_group" --output json)"
+if jq -e --arg name "$sql_server" 'any(.[]; .name == $name)' <<< "$servers" >/dev/null; then
+  create_sql_server=false
+  echo "Reusing existing SQL server: $sql_server"
+else
+  create_sql_server=true
+fi
+
 echo "Deploying foundation..."
-deploy mortgage-foundation false false
+deploy mortgage-foundation false false "$create_sql_server"
 customer_principal="$(az deployment group show --name mortgage-foundation --resource-group "$resource_group" \
   --query properties.outputs.customerSessionsIdentityPrincipalId.value --output tsv)"
 customer_client="$(az deployment group show --name mortgage-foundation --resource-group "$resource_group" \
@@ -166,7 +172,7 @@ for image_and_dockerfile in \
 done
 
 echo "Deploying the private database bootstrap job..."
-deploy mortgage-bootstrap false true
+deploy mortgage-bootstrap false true false
 job_name="$(az deployment group show --name mortgage-bootstrap --resource-group "$resource_group" \
   --query properties.outputs.databaseBootstrapJobName.value --output tsv)"
 execution="$(az containerapp job start --name "$job_name" --resource-group "$resource_group" --query name --output tsv)"
@@ -193,7 +199,7 @@ if [[ "$bootstrap_succeeded" != true ]]; then
 fi
 
 echo "Deploying applications..."
-deploy mortgage-apps true true
+deploy mortgage-apps true true false
 customer_url="$(az deployment group show --name mortgage-apps --resource-group "$resource_group" \
   --query properties.outputs.mortgagesWebUrl.value --output tsv)"
 staff_url="$(az deployment group show --name mortgage-apps --resource-group "$resource_group" \

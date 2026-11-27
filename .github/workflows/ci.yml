@@ -31,6 +31,12 @@ jobs:
       - name: Test
         run: dotnet test PD.Mortgages.slnx --configuration Release --no-build --no-restore --verbosity normal
 
+      - name: Test deployment scripts
+        run: |
+          python3 -m unittest discover -s infra/tests -p 'test_affected.py'
+          bash infra/tests/deploy-existing-test.sh
+          bash infra/tests/quickstart-test.sh
+
       - name: Check vulnerable NuGet packages
         shell: pwsh
         run: |
@@ -56,3 +62,32 @@ jobs:
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
+
+  deploy-existing:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-test-scan
+    runs-on: ubuntu-latest
+    concurrency:
+      group: mortgage-prototype-deployment
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy changed applications
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+        run: bash infra/deployment/deploy-existing.sh

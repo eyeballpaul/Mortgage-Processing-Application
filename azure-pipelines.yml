@@ -99,7 +99,12 @@ stages:
                   echo 'Set the secret pipeline variable eligibilityServiceApiKey to 32-128 URL-safe characters.' >&2
                   exit 1
                 fi
-                sqlAdminPassword="$(openssl rand -base64 32)"
+                servers="$(az sql server list --resource-group "$RESOURCE_GROUP" --output json)"
+                if jq -e --arg name "$SQL_SERVER_NAME" 'any(.[]; .name == $name)' <<< "$servers" > /dev/null; then
+                  createSqlServer=false
+                else
+                  createSqlServer=true
+                fi
 
                 commonParameters=(
                   "location=$AZURE_LOCATION"
@@ -118,7 +123,6 @@ stages:
                   "imageTag=$BUILD_BUILDID"
                   "pipelinePrincipalId=$pipelinePrincipalId"
                   "pipelinePrincipalName=$PIPELINE_PRINCIPAL_NAME"
-                  "sqlAdminPassword=$sqlAdminPassword"
                   "productServiceApiKey=$productApiKey"
                   "eligibilityServiceApiKey=$ELIGIBILITY_SERVICE_API_KEY"
                   "alertEmail=$ALERT_EMAIL"
@@ -130,14 +134,14 @@ stages:
                 az deployment group validate \
                   --resource-group "$RESOURCE_GROUP" \
                   --template-file infra/main.bicep \
-                  --parameters "${commonParameters[@]}" deployApps=false \
+                  --parameters "${commonParameters[@]}" "createSqlServer=$createSqlServer" deployApps=false \
                   --output none
 
                 az deployment group create \
                   --name pd-mortgages-foundation \
                   --resource-group "$RESOURCE_GROUP" \
                   --template-file infra/main.bicep \
-                  --parameters "${commonParameters[@]}" deployApps=false
+                  --parameters "${commonParameters[@]}" "createSqlServer=$createSqlServer" deployApps=false
 
                 deploymentOutputs="$(az deployment group show \
                   --name pd-mortgages-foundation \
@@ -214,14 +218,14 @@ stages:
                 az deployment group validate \
                   --resource-group "$RESOURCE_GROUP" \
                   --template-file infra/main.bicep \
-                  --parameters "${commonParameters[@]}" deployApps=true \
+                  --parameters "${commonParameters[@]}" createSqlServer=false deployApps=true \
                   --output none
 
                 az deployment group create \
                   --name pd-mortgages-apps \
                   --resource-group "$RESOURCE_GROUP" \
                   --template-file infra/main.bicep \
-                  --parameters "${commonParameters[@]}" deployApps=true
+                  --parameters "${commonParameters[@]}" createSqlServer=false deployApps=true
 
                 for output in mortgagesWebUrl staffWebUrl; do
                   url="$(az deployment group show --name pd-mortgages-apps --resource-group "$RESOURCE_GROUP" \

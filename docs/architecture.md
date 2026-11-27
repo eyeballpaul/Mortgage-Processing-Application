@@ -54,7 +54,8 @@ In Aspire, the Mortgage API, Products API and customer web app apply their own d
 
 ```mermaid
 flowchart LR
-    Pipeline[Azure DevOps] --> Registry[Container Registry]
+    Quickstart[Manual quickstart] --> Registry[Container Registry]
+    Pipeline[GitHub Actions] -->|Affected images| Registry
     Registry --> Customer[Customer Container App]
     Registry --> Staff[Staff Container App]
     Registry --> API[Internal Mortgage API Container App]
@@ -70,14 +71,19 @@ flowchart LR
     Products --> ProductDb[(Products SQL)]
     Customer --> CustomerKeys[(Customer key Blob)]
     Staff --> StaffKeys[(Staff key Blob)]
-    Pipeline -->|Identity bootstrap and migrations| Mortgage
-    Pipeline -->|Identity bootstrap and migrations| Sessions
-    Pipeline -->|Identity bootstrap and migrations| ProductDb
+    Registry --> Bootstrap[Private database bootstrap job]
+    Quickstart -->|Run bootstrap| Bootstrap
+    Pipeline -->|Run when affected| Bootstrap
+    Bootstrap -->|Users and migrations| Mortgage
+    Bootstrap -->|Users and migrations| Sessions
+    Bootstrap -->|Users and migrations| ProductDb
 ```
 
-The customer and staff web apps have public HTTPS ingress. All three APIs have internal ingress. The Eligibility API has no database and shares a separate secret with Mortgage API. The customer managed identity can access only its session database and customer key container, and is assigned the API application role. The Mortgage API identity can access the mortgage database and document container; the Products API identity has read access to its catalog database. The staff identity accesses its own key container and has no SQL or document access. Staff API authorization uses delegated tokens, not the staff app's managed identity. The pipeline identity provisions SQL users, applies migrations and assigns the customer API role.
+The customer and staff web apps have public HTTPS ingress. All three APIs have internal ingress. The Eligibility API has no database and shares a separate secret with Mortgage API. The customer managed identity can access only its session database and customer key container, and is assigned the API application role. The Mortgage API identity can access the mortgage database and document container; the Products API identity has read access to its catalog database. The staff identity accesses its own key container and has no SQL or document access. Staff API authorization uses delegated tokens, not the staff app's managed identity. The quickstart assigns the customer API role; the bootstrap job's managed identity provisions SQL users and applies migrations.
 
-This deployment is cost-conscious but not a production security boundary: public SQL/Blob endpoints and the trusted-Azure-services SQL firewall rule remain, and the staff web ingress is public. Add private endpoints, VNet integration and restricted staff ingress before using sensitive data. The in-memory staff token cache is lost on restart; staff may be prompted to sign in again. See the [README](../README.md#azure-devops-deployment) for prerequisites, Entra assignments, migration implications and cost notes.
+One VNet (`10.42.0.0/16`) contains a delegated Container Apps subnet (`10.42.0.0/24`) and a private-endpoint subnet (`10.42.1.0/24`). SQL and Blob private endpoints use linked private DNS zones; public network access is disabled for both services. The registry remains publicly reachable with identity-based access. The Container Apps environment has public ingress enabled, but only the two web apps expose external ingress.
+
+This is not a production security boundary: staff ingress is public, and the prototype needs further security, privacy, backup and retention review before handling real data. The in-memory staff token cache is lost on restart; staff may be prompted to sign in again. The manual quickstart provisions the infrastructure, while GitHub Actions updates changed images on existing resources only; its Azure deployment path has not yet been validated end-to-end. See the [Azure deployment guide](../AZURE_DEPLOYMENT.md) for identity setup, migration implications and cost notes.
 
 ## Operations and observability
 
@@ -85,4 +91,4 @@ All five apps log request route, status, duration and W3C trace/span IDs; HTTP c
 
 An optional `otlpEndpoint` enables OpenTelemetry HTTP server and client span export to a trusted, separately provisioned OTLP collector; it is off by default. The endpoint must use HTTPS outside Development and cannot contain credentials. Set `otlpProtocol` to `grpc` (the default) or `http/protobuf` to match the collector. Root traces are sampled at 10%, with downstream services honoring the parent decision. URL path and query tags are removed before export, but telemetry can still contain operational metadata: assess the destination, security and retention before enabling it. An Azure Monitor connection string is not an OTLP collector endpoint. Collector and ingestion costs are additional; test connectivity and data handling before relying on traces.
 
-Liveness checks only the process; readiness checks required dependencies. Health probes are exempt from the Products API rate limiter. Customer web readiness includes the Mortgage API and its configured distributed session store. Separately, the rate-limited `/health/dependencies` customer endpoint checks Products and Eligibility through the Mortgage API using their configured service credentials; the pipeline runs this on demand, not on every probe. It does not exercise staff sign-in or complete business flows. The regular SQL readiness probes and maintenance prevent the configured SQL auto-pause in normal operation. Setting `alertEmail` provisions an optional paid five-minute Azure Monitor log alert for repeated 5xx responses and an email action group; it is disabled by default. The alert depends on console-log ingestion and does not detect a complete logging outage. Verify delivery in Azure and add an independent availability/replica alert before relying on the demo. Review ingestion, alert frequency and retention costs. Follow the [restore exercise](../README.md#restore-exercise) and migration guidance before deploying future schema changes.
+Liveness checks only the process; readiness checks required dependencies. Health probes are exempt from the Products API rate limiter. Customer web readiness includes the Mortgage API and its configured distributed session store. Separately, the rate-limited `/health/dependencies` customer endpoint checks Products and Eligibility through the Mortgage API using their configured service credentials; the GitHub workflow runs this on demand after deployment, not on every probe. It does not exercise staff sign-in or complete business flows. Regular SQL readiness probes and maintenance may keep databases active; the template requests the SQL free offer with auto-pause on allowance exhaustion, which makes the database unavailable until the next month. Setting `alertEmail` provisions an optional paid five-minute Azure Monitor log alert for repeated 5xx responses and an email action group; it is disabled by default. The alert depends on console-log ingestion and does not detect a complete logging outage. Verify delivery in Azure and add an independent availability/replica alert before relying on the demo. Review ingestion, alert frequency and retention costs. Follow the [restore exercise](../README.md#restore-exercise) and migration guidance before deploying future schema changes.

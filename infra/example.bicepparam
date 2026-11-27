@@ -36,14 +36,12 @@ param staffClientSecret = '<your-staff-web-secret-value>'
 // Container image tag (use 'latest' or specific version)
 param imageTag = 'latest'
 
-// Azure DevOps Service Connection Principal
-// Get with: az account show --query id
+// Entra object ID of the user or service principal granted AcrPush.
+// The subscription ID returned by az account show --query id is not this value.
 param pipelinePrincipalId = '<your-pipeline-principal-object-id>'
 
-// SQL Admin Password (bootstrap only, then disabled)
-// Generate with: openssl rand -base64 32
-@secure()
-param sqlAdminPassword = '<generate-strong-password>'
+// Set to false when redeploying an existing SQL server.
+param createSqlServer = true
 
 // API Keys for internal services
 // Generate with: openssl rand -hex 16 (produces 32 char hex string)
