@@ -203,7 +203,7 @@ stages:
                   sleep 30
                 done
 
-                docker build --file PD.Mortgages.Web/Dockerfile --tag "$loginServer/mortgages-web:$BUILD_BUILDID" .
+                docker build --file PD.Mortgages.Customer.Web/Dockerfile --tag "$loginServer/mortgages-web:$BUILD_BUILDID" .
                 docker build --file PD.Mortgages.Api/Dockerfile --tag "$loginServer/mortgages-api:$BUILD_BUILDID" .
                 docker build --file PD.Products.Api/Dockerfile --tag "$loginServer/products-api:$BUILD_BUILDID" .
                 docker build --file PD.Eligibility.Api/Dockerfile --tag "$loginServer/eligibility-api:$BUILD_BUILDID" .

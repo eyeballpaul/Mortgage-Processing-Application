@@ -50,8 +50,8 @@ class RepositoryDependencyTests(unittest.TestCase):
 
     def test_staff_app_includes_customer_shared_styles(self):
         project = Path("PD.Mortgages.Staff.Web/PD.Mortgages.Staff.Web.csproj")
-        self.assertTrue(affected.affects(self.root, project, ["PD.Mortgages.Web/wwwroot/css/PDMortgages.css"]))
-        self.assertFalse(affected.affects(self.root, project, ["PD.Mortgages.Web/Program.cs"]))
+        self.assertTrue(affected.affects(self.root, project, ["PD.Mortgages.Customer.Web/wwwroot/css/PDMortgages.css"]))
+        self.assertFalse(affected.affects(self.root, project, ["PD.Mortgages.Customer.Web/Program.cs"]))
 
     def test_shared_telemetry_does_not_affect_bootstrap(self):
         change = ["PD.Shared/RequestTelemetryMiddleware.cs"]

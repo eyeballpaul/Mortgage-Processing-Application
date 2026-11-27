@@ -148,6 +148,7 @@ grep -q 'deployment group create --name mortgage-bootstrap .*deployApps=false de
 grep -q 'containerapp job start --name bootstrap-job' "$TEST_LOG"
 grep -q 'deployment group create --name mortgage-apps .*deployApps=true deployBootstrap=true createSqlServer=false' "$TEST_LOG"
 grep -q -- '--image mortgages-api:latest --file PD.Mortgages.Api/Dockerfile' "$TEST_LOG"
+grep -q -- '--image mortgages-web:latest --file PD.Mortgages.Customer.Web/Dockerfile' "$TEST_LOG"
 grep -q -- '--image notifications-worker:latest --file PD.Notifications.Worker/Dockerfile' "$TEST_LOG"
 grep -q -- '--image mortgages-staff-web:latest --file PD.Mortgages.Staff.Web/Dockerfile' "$TEST_LOG"
 grep -q 'curl .*https://customer.example/health/ready' "$TEST_LOG"

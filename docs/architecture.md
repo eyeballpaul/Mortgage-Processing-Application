@@ -22,6 +22,29 @@ holds messages until a consumer processes them. A **worker** is a background
 program rather than a web page. A **migration** is a versioned database
 change. A **replica** is a running copy of an app.
 
+## Project grouping
+
+Open [PD.Mortgages.slnx](../PD.Mortgages.slnx) to browse the projects in
+solution folders. These folders are for navigation; the actual project
+directories remain at the repository root.
+
+| Solution folder | What it contains |
+| --- | --- |
+| Mortgages | Customer and staff web apps, the Mortgage API, its supporting libraries and the mortgage test project |
+| Products | Products API, its supporting libraries and tests |
+| Eligibility | Eligibility API and contracts |
+| Notifications | Notifications Worker |
+| Hosting | Aspire AppHost and the database bootstrap job, which support multiple areas |
+
+The customer web project and directory are
+[PD.Mortgages.Customer.Web](../PD.Mortgages.Customer.Web/); the staff project is
+[PD.Mortgages.Staff.Web](../PD.Mortgages.Staff.Web/). The customer app still
+uses `PD.Mortgages.Web` for its assembly and source namespace, preserving its
+application identity and telemetry. Its Azure app and image remain named
+`mortgages-web`. The mortgage test project also contains some eligibility and
+notification tests. [PD.Shared](../PD.Shared/) holds shared source files; it
+is not a separate project.
+
 ## Runtime boundaries
 
 ### Azure runtime

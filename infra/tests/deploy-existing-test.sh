@@ -94,6 +94,7 @@ fi
 : > "$TEST_LOG"
 bash infra/deployment/deploy-existing.sh > "$test_dir/output"
 [[ "$(grep -c '^acr build ' "$TEST_LOG")" == 7 ]]
+grep -q -- '--image mortgages-web:.* --file PD.Mortgages.Customer.Web/Dockerfile' "$TEST_LOG"
 [[ "$(grep -c '^containerapp update ' "$TEST_LOG")" == 6 ]]
 [[ "$(grep -c '^tag update ' "$TEST_LOG")" == 7 ]]
 grep -q 'curl .*https://staff-web.example/health/ready' "$TEST_LOG"

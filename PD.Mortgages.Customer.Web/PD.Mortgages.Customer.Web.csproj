@@ -21,6 +21,8 @@
   </ItemGroup>
 
   <PropertyGroup>
+    <AssemblyName>PD.Mortgages.Web</AssemblyName>
+    <RootNamespace>PD.Mortgages.Web</RootNamespace>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

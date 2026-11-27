@@ -11,8 +11,8 @@
   <ItemGroup>
 	<ProjectReference Include="..\PD.Mortgages.Abstractions\PD.Mortgages.Abstractions.csproj" />
 	<ProjectReference Include="..\PD.Mortgages.Client\PD.Mortgages.Client.csproj" />
-	<Content Include="..\PD.Mortgages.Web\wwwroot\lib\bootstrap\dist\css\bootstrap.min.css" Link="wwwroot\lib\bootstrap\dist\css\bootstrap.min.css" CopyToOutputDirectory="PreserveNewest" />
-	<Content Include="..\PD.Mortgages.Web\wwwroot\css\PDMortgages.css" Link="wwwroot\css\PDMortgages.css" CopyToOutputDirectory="PreserveNewest" />
+	<Content Include="..\PD.Mortgages.Customer.Web\wwwroot\lib\bootstrap\dist\css\bootstrap.min.css" Link="wwwroot\lib\bootstrap\dist\css\bootstrap.min.css" CopyToOutputDirectory="PreserveNewest" />
+	<Content Include="..\PD.Mortgages.Customer.Web\wwwroot\css\PDMortgages.css" Link="wwwroot\css\PDMortgages.css" CopyToOutputDirectory="PreserveNewest" />
 	<Content Update="wwwroot\css\staff.css" CopyToOutputDirectory="PreserveNewest" />
 	<Content Update="wwwroot\js\staff-decision-in-principle.js" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

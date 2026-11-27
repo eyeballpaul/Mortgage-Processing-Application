@@ -7,8 +7,8 @@ USER $APP_UID
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY . .
-RUN dotnet restore "PD.Mortgages.Web/PD.Mortgages.Web.csproj"
-RUN dotnet publish "PD.Mortgages.Web/PD.Mortgages.Web.csproj" --configuration Release --no-restore --output /app/publish /p:UseAppHost=false
+RUN dotnet restore "PD.Mortgages.Customer.Web/PD.Mortgages.Customer.Web.csproj"
+RUN dotnet publish "PD.Mortgages.Customer.Web/PD.Mortgages.Customer.Web.csproj" --configuration Release --no-restore --output /app/publish /p:UseAppHost=false
 
 FROM runtime AS final
 WORKDIR /app

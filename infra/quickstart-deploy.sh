@@ -375,7 +375,7 @@ fi
 echo "Building images in Azure Container Registry..."
 for image_and_dockerfile in \
   "database-bootstrap:PD.Mortgages.DatabaseBootstrap/Dockerfile" \
-  "mortgages-web:PD.Mortgages.Web/Dockerfile" \
+  "mortgages-web:PD.Mortgages.Customer.Web/Dockerfile" \
   "mortgages-staff-web:PD.Mortgages.Staff.Web/Dockerfile" \
   "mortgages-api:PD.Mortgages.Api/Dockerfile" \
   "notifications-worker:PD.Notifications.Worker/Dockerfile" \

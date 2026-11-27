@@ -22,7 +22,7 @@ fi
 
 app_names=(products-api eligibility-api mortgage-api mortgages-web staff-web notifications-worker)
 image_names=(products-api eligibility-api mortgages-api mortgages-web mortgages-staff-web notifications-worker)
-project_names=(PD.Products.Api PD.Eligibility.Api PD.Mortgages.Api PD.Mortgages.Web PD.Mortgages.Staff.Web PD.Notifications.Worker)
+project_names=(PD.Products.Api PD.Eligibility.Api PD.Mortgages.Api PD.Mortgages.Customer.Web PD.Mortgages.Staff.Web PD.Notifications.Worker)
 job_name=mortgage-demo-env-bootstrap
 job_json="$(az containerapp job show --name "$job_name" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
 job_id="$(jq -er '.id' <<< "$job_json")"

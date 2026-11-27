@@ -25,9 +25,9 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build solution",
-      "program": "${workspaceFolder}/PD.Mortgages.Web/bin/Debug/net10.0/PD.Mortgages.Web.dll",
+      "program": "${workspaceFolder}/PD.Mortgages.Customer.Web/bin/Debug/net10.0/PD.Mortgages.Web.dll",
       "args": [],
-      "cwd": "${workspaceFolder}/PD.Mortgages.Web",
+      "cwd": "${workspaceFolder}/PD.Mortgages.Customer.Web",
       "env": {
         "ASPNETCORE_ENVIRONMENT": "Development",
         "ASPNETCORE_URLS": "http://localhost:5085"

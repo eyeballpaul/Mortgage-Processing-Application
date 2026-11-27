@@ -9,7 +9,7 @@
 	  <ProjectReference Include="..\PD.Notifications.Worker\PD.Notifications.Worker.csproj" Aliases="NotificationWorker" />
 	  <ProjectReference Include="..\PD.Mortgages.DatabaseBootstrap\PD.Mortgages.DatabaseBootstrap.csproj" />
 	  <ProjectReference Include="..\PD.Mortgages.Staff.Web\PD.Mortgages.Staff.Web.csproj" />
-	  <ProjectReference Include="..\PD.Mortgages.Web\PD.Mortgages.Web.csproj" />
+	  <ProjectReference Include="..\PD.Mortgages.Customer.Web\PD.Mortgages.Customer.Web.csproj" />
   </ItemGroup>
 
   <ItemGroup>

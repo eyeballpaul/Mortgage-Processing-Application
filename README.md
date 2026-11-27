@@ -22,6 +22,19 @@ The customer and staff journeys record an optional credit-check choice. Declinin
 Azure resources cost money while they exist. A budget sends alerts; it does not
 stop charges. Deleting prototype resources also permanently deletes their data.
 
+## Project layout
+
+The [solution](PD.Mortgages.slnx) groups projects by Mortgages, Products,
+Eligibility, Notifications and Hosting. These are solution folders for
+navigation; the individual project folders remain at the repository root.
+In the Mortgages group, the customer and staff web projects are
+[PD.Mortgages.Customer.Web](PD.Mortgages.Customer.Web/) and
+[PD.Mortgages.Staff.Web](PD.Mortgages.Staff.Web/).
+The customer project's assembly and source namespace remain
+`PD.Mortgages.Web` to preserve its existing application identity and telemetry.
+Azure app and image names are unchanged. See the
+[project grouping](docs/architecture.md#project-grouping) for what each group contains.
+
 ## Architecture
 
 The customer and staff MVC apps call the internal **Mortgage API**; neither connects to the mortgage database or document storage. The API owns the application service, mortgage and audit data and document storage, and calls the internal Products and stateless Eligibility APIs. The customer app owns a separate SQL database for its distributed session cache. The staff app has no database because it has no independent data to persist. Both apps use separate Blob-backed Data Protection key stores in Azure.
@@ -115,7 +128,7 @@ Without that setup, staff sign-in will not work.
 
 Aspire starts both web apps, the internal Mortgage, Products and Eligibility APIs, the Notifications Worker, and a local Service Bus emulator. One SQL Server container has separate `mortgages`, `products`, `customer-sessions` and `notifications` database resources; a second SQL Server container supports the emulator. Aspire generates separate, process-scoped keys for Mortgage's calls to Products and Eligibility; no local service key needs to be configured manually.
 
-Aspire runs the .NET apps locally and the SQL servers and emulator in Docker. For a container image, build from the repository root using the relevant service Dockerfile, for example `docker build -f PD.Mortgages.Web/Dockerfile .`. Azure deployment uses six service images and a separate database-bootstrap image.
+Aspire runs the .NET apps locally and the SQL servers and emulator in Docker. For a container image, build from the repository root using the relevant service Dockerfile, for example `docker build -f PD.Mortgages.Customer.Web/Dockerfile .`. Azure deployment uses six service images and a separate database-bootstrap image.
 
 The Mortgage API stores documents under `LocalApplicationData/PD.Mortgages`; the SQL Docker volume persists data across restarts. The APIs migrate the mortgage and product databases locally at startup, and the customer web app migrates the customer-session database. Aspire creates a fresh, process-scoped development credential for customer-to-API calls; it is accepted **only** by an API running in Development. Staff still need real Entra sign-in and a delegated API token.
 

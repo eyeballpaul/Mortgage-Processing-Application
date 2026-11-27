@@ -11,20 +11,26 @@
     <Project Path="PD.Products.Infrastructure/PD.Products.Infrastructure.csproj" />
     <Project Path="PD.Products.Tests/PD.Products.Tests.csproj" />
   </Folder>
-  <Project Path="PD.Mortgages.DatabaseBootstrap/PD.Mortgages.DatabaseBootstrap.csproj" />
-  <Project Path="PD.Mortgages.AppHost/PD.Mortgages.AppHost.csproj" />
-  <Project Path="PD.Mortgages.Api/PD.Mortgages.Api.csproj" />
-  <Project Path="PD.Mortgages.Application/PD.Mortgages.Application.csproj" />
-  <Project Path="PD.Mortgages.Abstractions/PD.Mortgages.Abstractions.csproj" />
-  <Project Path="PD.Mortgages.Client/PD.Mortgages.Client.csproj" />
-  <Project Path="PD.Mortgages.Contracts/PD.Mortgages.Contracts.csproj" />
-  <Project Path="PD.Mortgages.CustomerSessions/PD.Mortgages.CustomerSessions.csproj" />
-  <Project Path="PD.Mortgages.Domain/PD.Mortgages.Domain.csproj" />
-  <Project Path="PD.Mortgages.Infrastructure/PD.Mortgages.Infrastructure.csproj" />
-  <Project Path="PD.Mortgages.SharedKernel/PD.Mortgages.SharedKernel.csproj" />
-  <Project Path="PD.Mortgages.Transport/PD.Mortgages.Transport.csproj" />
-  <Project Path="PD.Mortgages.Staff.Web/PD.Mortgages.Staff.Web.csproj" />
-  <Project Path="PD.Mortgages.Tests/PD.Mortgages.Tests.csproj" />
-  <Project Path="PD.Mortgages.Web/PD.Mortgages.Web.csproj" />
-  <Project Path="PD.Notifications.Worker/PD.Notifications.Worker.csproj" />
+  <Folder Name="/Mortgages/">
+    <Project Path="PD.Mortgages.Abstractions/PD.Mortgages.Abstractions.csproj" />
+    <Project Path="PD.Mortgages.Api/PD.Mortgages.Api.csproj" />
+    <Project Path="PD.Mortgages.Application/PD.Mortgages.Application.csproj" />
+    <Project Path="PD.Mortgages.Client/PD.Mortgages.Client.csproj" />
+    <Project Path="PD.Mortgages.Contracts/PD.Mortgages.Contracts.csproj" />
+    <Project Path="PD.Mortgages.Customer.Web/PD.Mortgages.Customer.Web.csproj" />
+    <Project Path="PD.Mortgages.CustomerSessions/PD.Mortgages.CustomerSessions.csproj" />
+    <Project Path="PD.Mortgages.Domain/PD.Mortgages.Domain.csproj" />
+    <Project Path="PD.Mortgages.Infrastructure/PD.Mortgages.Infrastructure.csproj" />
+    <Project Path="PD.Mortgages.SharedKernel/PD.Mortgages.SharedKernel.csproj" />
+    <Project Path="PD.Mortgages.Staff.Web/PD.Mortgages.Staff.Web.csproj" />
+    <Project Path="PD.Mortgages.Tests/PD.Mortgages.Tests.csproj" />
+    <Project Path="PD.Mortgages.Transport/PD.Mortgages.Transport.csproj" />
+  </Folder>
+  <Folder Name="/Notifications/">
+    <Project Path="PD.Notifications.Worker/PD.Notifications.Worker.csproj" />
+  </Folder>
+  <Folder Name="/Hosting/">
+    <Project Path="PD.Mortgages.AppHost/PD.Mortgages.AppHost.csproj" />
+    <Project Path="PD.Mortgages.DatabaseBootstrap/PD.Mortgages.DatabaseBootstrap.csproj" />
+  </Folder>
 </Solution>

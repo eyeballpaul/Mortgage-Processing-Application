@@ -85,7 +85,7 @@ else
     notificationsWorker.WithEnvironment("Notifications__Enabled", "false");
 }
 
-builder.AddDotnetProject("mortgages-web", "../PD.Mortgages.Web/PD.Mortgages.Web.csproj")
+builder.AddDotnetProject("mortgages-web", "../PD.Mortgages.Customer.Web/PD.Mortgages.Customer.Web.csproj")
     .WithHttpHealthCheck("/health/ready")
     .WithReference(customerSessionsDatabase)
     .WithEnvironment("Session__Provider", "SqlServer")
