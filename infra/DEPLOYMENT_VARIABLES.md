@@ -4,14 +4,18 @@ The [Azure deployment guide](../AZURE_DEPLOYMENT.md) is the authoritative
 procedure. This page summarizes the values used by the quickstart and the
 GitHub Actions workflow.
 
+For the on-demand GitHub create and delete workflows, including the additional
+repository variables, secrets, retained identities and required permissions,
+see [on-demand workflows](../AZURE_DEPLOYMENT.md#on-demand-github-workflows).
+
 ## Interactive quickstart
 
-The quickstart reads the current subscription and signed-in Entra user, requires
-an existing resource group, and uses that group's location. It prompts for:
+The quickstart reads the current subscription and signed-in Entra user, and
+creates a missing resource group after confirmation. It prompts for:
 
 | Value | Meaning |
 | --- | --- |
-| Resource group | Existing group in the selected subscription |
+| Resource group and region | Existing or new group; a region is requested only for a new group |
 | Container registry | Globally unique registry name; reuse it when retrying |
 | SQL server | Globally unique logical server name; reuse it when retrying |
 | Storage account | Globally unique lowercase storage account name; reuse it when retrying |
@@ -19,11 +23,18 @@ an existing resource group, and uses that group's location. It prompts for:
 | Staff web client ID | Application/client ID of the staff app registration |
 | Staff web client secret | Secret **value** belonging to that staff registration |
 | Products and Eligibility keys | Two different 32–128 character keys using letters, digits, underscores or hyphens |
+| GitHub setup and repository | Optional automatic setup for an existing deployment app and `owner/name` repository |
 
 Generate each API key with `openssl rand -hex 32` and retain it securely for
 retries. Do not commit credentials or paste them into logs or chat. The
 quickstart creates a restricted temporary parameters file and removes it on
 normal exit; it does not persist the credentials for you.
+Automatic GitHub setup requires `gh`, authentication and repository variable
+management access, plus existing `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`
+repository variables and the deployment app's federated credential.
+The quickstart grants Azure roles, updates the subscription, group and registry
+repository variables, and adds staff callbacks to Entra. Choose manual GitHub
+setup on first-time deployment if those prerequisites do not yet exist.
 
 It uses `mortgage-demo-env` as the Container Apps environment, and names the
 five apps `mortgages-web`, `staff-web`, `mortgage-api`, `products-api` and

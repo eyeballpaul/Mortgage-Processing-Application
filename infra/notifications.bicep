@@ -64,3 +64,4 @@ resource receiver 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 
 output fullyQualifiedNamespace string = first(split(replace(replace(serviceBus.properties.serviceBusEndpoint, 'https://', ''), '/', ''), ':'))
 output queueName string = queue.name
+output queueId string = queue.id

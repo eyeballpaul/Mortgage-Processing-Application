@@ -10,18 +10,27 @@ environment. Creating every registration from scratch and a later selective
 incremental deployment have not been independently validated. Use fictional
 data only.
 
+For the separate, unverified one-click create and delete workflows, complete
+the [on-demand workflow setup](../AZURE_DEPLOYMENT.md#on-demand-github-workflows)
+after the initial interactive deployment and GitHub identity setup below.
+
 If you deleted only the resource group, the Entra registrations and GitHub
-configuration are outside it. Reuse them rather than creating duplicates, but
-verify their settings and reassign resource-group permissions after recreation.
+configuration are outside it. Reuse them rather than creating duplicates. The
+quickstart can recreate the group, update staff callbacks and restore GitHub
+permissions and variables; see [recreation](../AZURE_DEPLOYMENT.md#after-deleting-the-resource-group).
 If you create new registrations, use their new IDs rather than old ones.
 
 ## 1. Prepare
 
 1. Install Azure CLI with Container Apps commands, `jq`, `openssl` and `curl`.
-   Check out this repository and open a terminal at its root.
+   For automatic GitHub setup, also install GitHub CLI and sign in using
+   `gh auth login --hostname github.com`. Check out this repository and open a
+   terminal at its root.
 2. Use an Entra user allowed to deploy resources, create Azure RBAC assignments
-   and assign Entra app roles. An appropriate Entra administrator must grant
-   API consent. GitHub repository administration access is needed for variables.
+   and assign Entra app roles, and allowed to update the staff app registration.
+   The user also needs permission to create a group in the subscription if it
+   does not exist. An appropriate Entra administrator must grant API consent.
+   GitHub repository administration access is needed to update variables.
 3. Sign in, select your subscription and check it:
 
    ```bash
@@ -67,8 +76,8 @@ If you create new registrations, use their new IDs rather than old ones.
 ## 3. Create Staff Web and configure access
 
 1. Under **App registrations → New registration**, create a single-tenant app
-   named `Staff Web`. Copy its **Application (client) ID**. The Azure callback
-   URLs can be added after the quickstart prints the staff URL.
+   named `Staff Web`. Copy its **Application (client) ID**. The quickstart adds
+   the Azure callback URLs.
 2. Under **App roles**, create an enabled role with display name and **Value**
    exactly `MortgageStaff`, allowed member types **Users/Groups**, and a
    description.
@@ -92,19 +101,9 @@ If you create new registrations, use their new IDs rather than old ones.
 
 ## 4. Create the resource group and deploy
 
-1. Check whether your intended group exists:
-
-   ```bash
-   az group exists --name "<resource-group>"
-   ```
-
-   If it returns `false`, create it in your chosen region, for example UK South:
-
-   ```bash
-   az group create --name "<resource-group>" --location uksouth
-   ```
-
-   If it already exists, inspect it first; do not overwrite unrelated resources.
+1. Choose a resource group name and region. The quickstart creates a missing
+   group after confirmation. If the group already exists, inspect it first; do
+   not overwrite unrelated resources.
 2. Generate **two different** service API keys by running this command twice.
    Store each result separately in a password manager as the Products key and
    Eligibility key. Do not paste the outputs into Git, chat or logs.
@@ -121,11 +120,15 @@ If you create new registrations, use their new IDs rather than old ones.
    bash infra/quickstart-deploy.sh
    ```
 
-4. Enter the existing resource group, globally available registry name, SQL
+4. Enter the resource group (and region if new), globally available registry name, SQL
    server name and storage account name. Supply the Mortgage API and Staff Web
    **client IDs**, the staff secret **value**, and the two service keys when
    prompted. Secret prompts are hidden. Check the subscription, group and names
-   before confirming. Record the resource names securely for retries.
+   before confirming. Record the resource names securely for retries. On the
+   first setup, choose **no** for automatic GitHub configuration unless the
+   deployment app, its OIDC credential and the `AZURE_CLIENT_ID` and
+   `AZURE_TENANT_ID` repository variables already exist. Complete sections 6–7
+   manually otherwise. On recreation, choose **yes** and confirm the repository.
 5. The script deploys the infrastructure, including a public Service Bus Basic
    namespace and queue, assigns the customer API role, builds
    six images, runs the private database bootstrap job and deploys five apps.
@@ -134,22 +137,21 @@ If you create new registrations, use their new IDs rather than old ones.
    and can overwrite app settings, images and secrets. Use the intended source
    revision, existing names and matching secrets.
    The notification flow records a simulation only; it sends no email. The new
-   queue and notification flow have not yet been validated in Azure. See
+   customer notification simulation has been observed in Azure. See
    [notification setup and operations](../AZURE_DEPLOYMENT.md#submission-notifications).
 
 ## 5. Finish Staff Web setup and test
 
-1. In **App registrations → Staff Web → Authentication**, add a **Web**
-   platform if needed and add these redirect URIs, replacing the placeholder
-   with the deployed HTTPS staff URL:
+1. The quickstart adds these **Web** redirect URIs to the staff registration
+   while retaining existing redirects, replacing the placeholder with the
+   deployed HTTPS staff URL:
 
    ```text
    <staff-url>/signin-oidc
    <staff-url>/signout-callback-oidc
    ```
 
-   Save the changes. If a redeployment gives you a different URL, add its
-   callbacks too; retain any other callbacks still in use.
+   Check **App registrations → Staff Web → Authentication** if sign-in fails.
 2. Open the customer and staff URLs. Sign in to Staff Web with the assigned
    account and exercise a customer-to-staff journey with fictional data.
    Readiness checks alone do not verify sign-in, document upload or submission.
@@ -158,8 +160,9 @@ If you create new registrations, use their new IDs rather than old ones.
 
 ## 6. Create the GitHub deployment identity
 
-If reusing an existing deployment app, verify its credential and resource-group
-role assignment instead of creating a duplicate.
+If reusing an existing deployment app and choosing automatic GitHub setup in
+the quickstart, verify its OIDC credential instead of creating a duplicate;
+the script restores its permissions. Otherwise follow these manual steps.
 
 1. Create a separate single-tenant Entra app registration for GitHub deployment,
    with no redirect URI. Copy its **Application (client) ID** and **Directory
@@ -188,12 +191,11 @@ role assignment instead of creating a duplicate.
 3. Azure Portal → **Resource groups → your group → Access control (IAM) → Add
    → Add role assignment**. Choose **Contributor**, then **User, group, or
    service principal**. Select the GitHub deployment app and choose **Review +
-   assign**. After recreating the group, check and reassign this permission as
-   needed; the Entra registration itself remains.
+   assign**. The Entra registration itself remains after group deletion.
 4. An Azure administrator must also grant the GitHub deployment identity the
    constrained role-assignment permission in the [deployment guide](../AZURE_DEPLOYMENT.md#one-time-github-deployment-permission).
-   Recreate this condition using the new Mortgage API managed identity after
-   deleting and recreating the group.
+   When using manual setup after recreation, use the new Mortgage API managed
+   identity; automatic setup handles this instead.
 
 ## 7. Configure and run GitHub Actions
 
@@ -211,7 +213,8 @@ role assignment instead of creating a duplicate.
    These are identifiers, not secret values. The workflow does not select a
    GitHub environment, so environment-only variables are not available to it.
 2. Protect `main` and restrict workflow-editing access: the deployment identity
-   has Contributor access and constrained role-assignment access to the resource group.
+   has Contributor access to the resource group and constrained role-assignment
+   access to the notification queue (or the group when set up manually).
 3. Push or merge an application change to `main`. After build and tests pass,
    the workflow deploys to the **existing** resources. On the first deployment
    after quickstart, no commit baselines exist, so it builds all six images and

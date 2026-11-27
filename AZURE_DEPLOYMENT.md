@@ -9,14 +9,117 @@ customer-to-staff journey have not yet been validated.
 
 For detailed first-time setup, see the [setup-from-scratch guide](docs/azure-setup-from-scratch.md).
 
+## On-demand GitHub workflows
+
+The **Create prototype** and **Delete prototype resources** workflows are an
+alternative to running the interactive quickstart. They require the one-time
+setup below. They have not yet been tested against live Azure or GitHub.
+
+The delete workflow removes recognized prototype resources and their data,
+including SQL databases, blobs, the Service Bus queue, images, and the Log
+Analytics workspace and its logs. The workspace is permanently deleted so its
+name can be reused. It retains the resource group, six managed identities and
+group-scoped permissions. If it finds an unrecognized resource or a resource
+without the expected prototype tags, it stops **before deleting resources** and
+lists the resource for review; a billable resource may remain. It removes the
+current deployed staff app's two callback URIs while preserving other staff
+registration settings. Older callbacks from previous deployments must be
+reviewed separately.
+
+### One-time setup
+
+1. Keep a **dedicated, existing** resource group and the six
+   `mortgage-demo-env-*` managed identities. Run the interactive quickstart
+   first if needed so the customer-sessions identity already has the
+   `MortgageCustomer` application role. Do not delete these identities: the
+   workflow checks them before deploying and does not grant Entra app roles.
+   The group and identities are retained between runs.
+2. Reuse the GitHub deployment Entra app and its `main` branch OIDC credential.
+   Its service principal needs Contributor at the group. In addition, an Azure
+   role administrator must grant **Role Based Access Control Administrator**
+   at the group with a condition allowing only these roles:
+   **AcrPush**, **AcrPull**, **Storage Blob Data Contributor**,
+   **Azure Service Bus Data Sender**, and **Azure Service Bus Data Receiver**.
+   Restrict the principals to the GitHub deployment service principal and the
+   `mortgage-demo-env-pull`, `mortgage-demo-env-mortgages`,
+   `mortgage-demo-env-customer-sessions`, and `mortgage-demo-env-staff`
+   managed identities. Configure the condition for both create/update and
+   delete role assignments using the portal's **Constrain roles and principals**
+   option. If the existing group-scoped administrator assignment is already
+   conditional, an authorized administrator must update its condition rather
+   than create a duplicate. This cross-product condition allows any of those
+   five roles for any of the selected principals within the group; review other
+   assignments too, since broader permissions still apply.
+3. In the GitHub deployment app registration's **API permissions**, add
+   Microsoft Graph **Application permissions** `Application.Read.All` and
+   `Application.ReadWrite.OwnedBy`, and have an authorized Entra administrator
+   grant admin consent. On the **Staff Web app registration → Owners**, add the
+   GitHub deployment service principal as an owner. The first permission
+   permits directory application reads; the second permits full management of
+   *every* application it owns, not just redirect changes. Check its other
+   ownerships and remove unintended ones. Protect the deployment identity and
+   review its permissions before granting consent.
+4. In GitHub **Settings → Secrets and variables → Actions**, configure these
+   **repository variables**:
+
+   | Variable | Value |
+   | --- | --- |
+   | `AZURE_CLIENT_ID` | Existing GitHub deployment app client ID |
+   | `AZURE_TENANT_ID` | Tenant ID |
+   | `AZURE_SUBSCRIPTION_ID` | Subscription ID |
+   | `AZURE_RESOURCE_GROUP` | Dedicated persistent resource group name |
+   | `AZURE_CONTAINER_REGISTRY` | Prototype registry name |
+   | `AZURE_SQL_SERVER` | Prototype SQL server name |
+   | `AZURE_STORAGE_ACCOUNT` | Prototype storage account name |
+   | `MORTGAGE_API_CLIENT_ID` | Mortgage API registration client ID |
+   | `STAFF_CLIENT_ID` | Staff Web registration client ID |
+
+   Add these **repository secrets**, not variables: `STAFF_CLIENT_SECRET`,
+   `PRODUCTS_API_KEY` and `ELIGIBILITY_API_KEY`. Use the current staff secret
+   value and matching current service keys when updating a running deployment.
+   The two keys must be different and each 32–128 letters, digits, underscores
+   or hyphens. Generate new keys with `openssl rand -hex 32` if setting up a
+   fresh disposable deployment, and save them securely for retries. Do not
+   put their values in Git or chat. Rotate the staff secret before expiry and
+   update the GitHub secret; key rotation can interrupt running services.
+5. Protect `main`, restrict workflow edits and who can run workflows, and
+   confirm the Entra federated credential accepts only the intended repository
+   and `main` subject. The workflows require `main`, use OIDC and pin their
+   third-party actions to commits. Anyone able to change trusted workflow code
+   can potentially use its permissions and secrets. Review changes before merging.
+
+### Run
+
+1. Commit and push these workflow and script changes to `main`. On GitHub,
+   open **Actions → Create prototype → Run workflow**, select
+   `main` and run it. The summary contains the customer and staff links after
+   readiness succeeds. Builds and running resources can incur charges.
+2. When finished, open **Actions → Delete prototype resources → Run workflow**
+   on `main`. This destroys the prototype's data. Wait for success; on failure,
+   inspect the log, resolve the issue and rerun. Partial resources can remain
+   billable.
+3. Check Cost Management, including resources outside this group and delayed
+   charges. The workflow cannot guarantee a zero bill or find all external
+   charges. Subscription-level budgets and Entra registrations remain.
+
+The existing application deployment and both on-demand workflows share a
+GitHub concurrency group. Do not start a manual quickstart concurrently, and
+avoid queuing multiple lifecycle runs: GitHub may replace a pending run.
+Successful pushes to `main` skip application deployment when the registry is
+absent, but a missing registry does not prove that all billable resources are
+gone. Readiness does not test sign-in, document uploads or a full submission.
+
 ## Before deploying
 
 - Install Azure CLI with Container Apps commands, `jq`, `openssl` and `curl`.
   Sign in with `az login` and select the intended subscription using
-  `az account set --subscription <subscription>`.
-- Create an empty resource group in the chosen region. The signed-in Entra user
-  needs permission to deploy resources and create Azure RBAC role assignments in
-  that group, plus permission to assign app roles in Entra.
+  `az account set --subscription <subscription>`. To automate GitHub setup,
+  also install GitHub CLI and sign in with `gh auth login --hostname github.com`
+  using an account allowed to manage repository variables.
+- The signed-in Azure user needs permission to create a resource group at the
+  subscription scope if it does not exist, deploy resources and create role
+  assignments in that group. The user also needs Entra permission to assign app
+  roles and update the staff registration's authentication settings.
 - Set up the Mortgage API and staff app registrations as described in
   [README.md](README.md#configure-entra-for-staff-and-the-api), including admin
   consent and the staff role assignments.
@@ -48,14 +151,15 @@ always-running Container App but sharing its identity and compute. Queue
 messages contain only an event ID, application ID, type/version and timestamp.
 The consumer writes a simulated notification to SQL: **no email is sent**.
 
-The namespace, queue, role assignments and new flow have not yet been deployed
-or tested end to end in Azure. Health checks do not test them. Use fictional
-data and verify both customer and staff submissions.
+A customer submission has produced a simulated notification in Azure. Health
+checks do not test the notification flow. Use fictional data and also verify
+staff submissions.
 
 ### Enable on an existing quickstart deployment
 
-Before pushing these changes, grant the existing GitHub deployment identity
-the additional, constrained role-assignment permission described below.
+The quickstart can grant the existing GitHub deployment identity the additional,
+constrained role-assignment permission described below, or it can be granted
+manually.
 No new Entra app registration, client secret or Service Bus key is needed.
 Also check **Subscriptions → your subscription → Resource providers** for
 `Microsoft.ServiceBus`. If it is not registered, a subscription administrator
@@ -85,11 +189,16 @@ in-memory providers do not create outbox events; the workers require SQL Server.
 ### One-time GitHub deployment permission
 
 The existing GitHub deployment app already needs **Contributor** on the
-resource group. An Azure administrator with permission to grant role assignments
-must also grant its service principal **Role Based Access Control Administrator**
-on that same resource group, with a condition restricting it to the two Service
-Bus data roles and the Mortgage API managed identity. Contributor alone cannot
-create the queue-scoped role assignments.
+resource group. If automatic GitHub setup is selected, the quickstart grants
+Contributor at that scope and **Role Based Access Control Administrator** at
+the notification queue, restricted to the two Service Bus data roles and the
+current Mortgage API managed identity. It reuses the app specified by the
+repository's existing `AZURE_CLIENT_ID`. It does not remove other assignments;
+broader permissions elsewhere still apply. Contributor alone cannot create
+the queue-scoped role assignments.
+
+For manual setup, an Azure administrator may instead grant the constrained
+administrator role at the resource group scope as follows:
 
 In Azure Portal, open the resource group's **Access control (IAM) → Add role
 assignment**. Select **Role Based Access Control Administrator**, select the
@@ -103,12 +212,12 @@ not its client ID). Review the scope and condition before assigning. See
 Check for other unconditioned role-assignment permissions on the same identity:
 an additional broad assignment can override this restriction.
 
-The deployment identity's Contributor access remains powerful, and even the
-conditioned role permits these two data roles for this identity anywhere within
-the resource group. Protect `main` and restrict workflow edits. Role propagation
+The deployment identity's Contributor access remains powerful, and the manual
+group-scoped condition permits these two data roles for this identity anywhere
+within the resource group. Protect `main` and restrict workflow edits. Role propagation
 can take several minutes; if the workflow fails due to permissions, correct
-them and rerun the failed job. This permission must be granted again after
-deleting and recreating the resource group or managed identity.
+them and rerun the failed job. After deleting and recreating the group, rerun
+the quickstart's automatic GitHub setup or grant the permissions again manually.
 
 ### Monitoring, retries and cost
 
@@ -146,19 +255,29 @@ From the repository root, run:
 bash infra/quickstart-deploy.sh
 ```
 
-Confirm the subscription and resource group carefully. The script deploys the
-foundation, assigns the customer managed identity its API role, builds six images
-in Azure Container Registry, runs the database bootstrap job inside the VNet,
-then deploys the apps and checks their public readiness endpoints. It exits on
-failure; partial deployments remain billable. On retry, use the same resource
-names and the same API keys. Save the names shown by the script. It detects an
-existing SQL server in the selected resource group and omits the creation-only
-administrator settings on subsequent deployments.
+Confirm the subscription, resource group, resource names, staff registration
+and GitHub repository carefully. If the group is missing, choose its region and
+the script creates it only after confirmation. It deploys the foundation,
+assigns the customer managed identity its API role, builds six images, runs the
+private database bootstrap, deploys the apps, adds the staff URL's `/signin-oidc`
+and `/signout-callback-oidc` paths without removing existing redirect URIs, and
+checks public readiness. Avoid changing the registration concurrently.
 
-Add the resulting staff URL's `/signin-oidc` and `/signout-callback-oidc` paths
-to the staff app registration before testing sign-in. Readiness checks do not
-verify sign-in, document uploads or a complete submission. Test those separately
-with fictional data.
+For automatic GitHub setup, the repository must already have the correct
+`AZURE_CLIENT_ID` and `AZURE_TENANT_ID` repository variables and an existing
+deployment app with the correct OIDC federated credential. The selected tenant
+must match. The script grants the Azure permissions and, after readiness,
+updates `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP` and
+`AZURE_CONTAINER_REGISTRY` in the confirmed repository. It does not create an
+Entra app or federated credential. Choose no for manual GitHub setup if this is
+a first-time setup or GitHub CLI is unavailable.
+
+The script exits on failure; partial Azure resources and configuration changes
+remain and can be billable. GitHub variable updates can also be partial. Correct
+the error and retry with the same names and API keys. It detects an existing SQL
+server and omits its creation-only administrator settings on subsequent runs.
+Readiness checks do not verify sign-in, document uploads or a complete
+submission. Test those separately with fictional data.
 
 For retries, specify the same registry, SQL and storage names rather than accepting
 new random defaults; otherwise additional billable resources can be created.
@@ -269,21 +388,25 @@ plan and usage; that billing is separate from an Azure budget.
 The workflow fails if the group is missing or has been recreated empty; it does
 not provision the registry, apps, job or databases. To recreate the prototype:
 
-1. Create the resource group in the intended subscription and region, then run
-   the quickstart as above. Resource names must be globally available.
-2. Reassign the GitHub deployment identity's Contributor and constrained
-   role-assignment permissions on the recreated group, using the new Mortgage
-   API managed identity principal ID. The Entra app registration and its
-   federated credential are outside the group and can be reused.
-3. Update the GitHub resource-group and registry variables if their names
-   changed. Add any new staff URL callback paths to Entra and test sign-in.
-4. Push or merge a change to `main`, or rerun the appropriate failed workflow
+1. Sign in to Azure and GitHub CLI, select the intended subscription and run
+   the quickstart. Enter the missing group name and region; choose automatic
+   GitHub setup and confirm the exact repository. Resource names must be globally
+   available. Supply the existing registration IDs, current staff secret and
+   two service keys.
+2. The script recreates the group, infrastructure, staff callbacks and GitHub
+   permissions and updates the repository variables. Entra registrations and
+   the federated credential are outside the group and are reused. If automatic
+   GitHub setup is skipped, perform those GitHub permission and variable steps
+   manually. Test staff sign-in.
+3. Push or merge a change to `main`, or rerun the appropriate failed workflow
    for the current `main` commit from GitHub Actions. The new resources lack
    successful Git commit markers, so the first workflow deployment builds all
    images and runs the bootstrap job.
 
 GitHub serializes workflow deployments, but cannot serialize a manual
 quickstart run. Avoid running them against the same group simultaneously.
+This new automated recreation flow has not yet been tested against live Azure
+and GitHub.
 
 ## When finished
 

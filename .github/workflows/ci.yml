@@ -36,6 +36,7 @@ jobs:
           python3 -m unittest discover -s infra/tests -p 'test_affected.py'
           bash infra/tests/deploy-existing-test.sh
           bash infra/tests/quickstart-test.sh
+          bash infra/tests/delete-prototype-test.sh
 
       - name: Check vulnerable NuGet packages
         shell: pwsh
@@ -75,18 +76,43 @@ jobs:
       id-token: write
     steps:
       - name: Checkout full history
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Sign in to Azure
-        uses: azure/login@v2
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Check whether prototype is deployed
+        id: prototype
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+        run: |
+          if [[ -z "$AZURE_RESOURCE_GROUP" || -z "$AZURE_CONTAINER_REGISTRY" ]]; then
+            echo "Resource group and registry variables must be configured." >&2
+            exit 1
+          fi
+          registries="$(az resource list --resource-group "$AZURE_RESOURCE_GROUP" \
+            --resource-type Microsoft.ContainerRegistry/registries --name "$AZURE_CONTAINER_REGISTRY" --output json)"
+          if ! jq -e 'type == "array" and length <= 1' <<< "$registries" >/dev/null; then
+            echo "Invalid registry listing; refusing to skip deployment." >&2
+            exit 1
+          fi
+          if jq -e 'length == 1' <<< "$registries" >/dev/null; then
+            echo "deployed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Registry not found; skipping application deployment. Other resources may still incur charges."
+            echo "deployed=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy notifications and changed applications
+        if: steps.prototype.outputs.deployed == 'true'
         env:
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
