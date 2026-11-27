@@ -199,7 +199,7 @@ flowchart TD
     Push[Push to main] --> CI[Build, test and security checks]
     CI -->|Registry exists| Update[Deploy existing application]
     Update -->|Affected images and bootstrap| Registry[Container Registry and bootstrap job]
-    Update -->|Reconcile queue and settings| Notifications[Service Bus and Mortgage API]
+    Update -->|Reconcile queue, roles and API settings| Notifications[Service Bus, API and worker identities]
     CI -->|Registry absent| Skip[Skip application deployment]
 
     Delete[GitHub: Delete prototype resources] --> Review[Check known resources and staff callbacks]
@@ -217,9 +217,12 @@ an error after deletion starts can leave a partially deleted, billable
 environment. It permanently deletes databases, blobs, queue data, images and
 logs. There is no verified whole-environment pause.
 
-The regular push-to-main deployment updates **existing** resources. It
-reconciles the queue and notification settings and builds affected images; it
-does not recreate core infrastructure if the registry is absent. All three
+The regular push-to-main deployment updates **existing** compatible resources.
+It reconciles the queue, notification roles and Mortgage API settings, and
+builds affected images, including the worker when needed. It cannot create a
+missing worker or upgrade an API-hosted legacy consumer; follow the
+[legacy cutover](azure-advanced-deployment.md#enable-on-an-existing-quickstart-deployment).
+It does not recreate core infrastructure if the registry is absent. All three
 GitHub lifecycle deployments share a concurrency group, but manual quickstart
 runs do not. For the required setup and step-by-step operation, see the
 [prototype lifecycle guide](../AZURE_PROTOTYPE_GUIDE.md).

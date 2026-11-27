@@ -45,8 +45,12 @@ Automatic GitHub setup requires `gh`, authentication and repository variable
 management access, plus existing `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`
 repository variables and the deployment app's federated credential.
 The quickstart grants Azure roles, updates the subscription, group and registry
-repository variables, and adds staff callbacks to Entra. Choose manual GitHub
-setup on first-time deployment if those prerequisites do not yet exist.
+repository variables, and adds staff callbacks to Entra. Its optional
+queue-scoped condition covers only the Mortgage API identity and is not
+sufficient for the worker and scaler; complete the
+[group-scoped setup and notification extension](../docs/azure-on-demand-setup.md#2-allow-the-deployment-identity-to-manage-azure-resources).
+Choose manual GitHub setup on first-time deployment if those prerequisites do
+not yet exist.
 
 It uses `mortgage-demo-env` as the Container Apps environment, and names the
 six apps `mortgages-web`, `staff-web`, `mortgage-api`, `products-api`,
@@ -111,9 +115,12 @@ identity receives queue-scoped receiver access. A separate scaler-only identity
 receives namespace-scoped Service Bus Data Owner; it is unavailable to the
 containers. `Notifications__Enabled`, `Notifications__ServiceBusNamespace` and
 `Notifications__QueueName` are set by the template; no Service Bus key is used.
-The workflow applies this notification module and settings to the existing app.
-It requires the additional constrained role-assignment permission described in
-the [deployment guide](../docs/azure-advanced-deployment.md#one-time-github-deployment-permission).
+The regular workflow applies this notification module and Mortgage API settings
+to an existing compatible deployment. It cannot create a missing worker or
+upgrade an API-hosted consumer; see the
+[legacy cutover](../docs/azure-advanced-deployment.md#enable-on-an-existing-quickstart-deployment).
+It requires the constrained group-scoped role-assignment permissions described
+in the [deployment guide](../docs/azure-advanced-deployment.md#one-time-github-deployment-permission).
 
 The example parameters file is illustrative; it does not run the required
 bootstrap or configure Entra role assignments by itself. Never put real

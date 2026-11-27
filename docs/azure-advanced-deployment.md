@@ -73,7 +73,10 @@ two consumers writing to different databases could record a duplicate.
    automated.
 2. If the prototype is disposable and you accept permanent data loss, use
    [Delete when finished](../AZURE_PROTOTYPE_GUIDE.md#delete-when-finished).
-   Confirm deletion succeeded and inspect costs.
+   Confirm deletion succeeded and inspect costs. Make sure the updated
+   deletion workflow and scripts are committed and pushed to `main` first.
+   The push may trigger a regular deployment that fails while the legacy
+   consumer is present; that failure does not perform the cutover.
 3. Complete the updated [one-time setup](azure-on-demand-setup.md#one-time-setup),
    including the two new retained identities and the restricted role condition.
    Then run [Create when needed](../AZURE_PROTOTYPE_GUIDE.md#create-when-needed).
@@ -186,8 +189,12 @@ deployment app with the correct OIDC federated credential. The selected tenant
 must match. The script grants the Azure permissions and, after readiness,
 updates `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP` and
 `AZURE_CONTAINER_REGISTRY` in the confirmed repository. It does not create an
-Entra app or federated credential. Choose no for manual GitHub setup if this is
-a first-time setup or GitHub CLI is unavailable.
+Entra app or federated credential. Its queue-scoped condition only covers
+sender and receiver assignments for the Mortgage API identity; it is not
+sufficient for the worker and scaler. Complete the
+[group-scoped setup and notification extension](azure-on-demand-setup.md#2-allow-the-deployment-identity-to-manage-azure-resources)
+for either GitHub deployment path. Choose no for manual GitHub setup if this
+is a first-time setup or GitHub CLI is unavailable.
 
 The script exits on failure; partial Azure resources and configuration changes
 remain and can be billable. GitHub variable updates can also be partial. Correct
@@ -234,10 +241,12 @@ Redact personal data, tokens, authorization codes and secrets before sharing log
 
 The existing GitHub Actions workflow builds and tests pull requests. After a
 successful build on a push to `main`, it deploys changed application images to
-the **existing** quickstart deployment and applies the notification Bicep and
-settings. It does not create the resource group, core infrastructure or Entra
-registrations, or manage secrets. Review other infrastructure changes and deploy
-them separately.
+an **existing compatible** quickstart deployment and applies the notification
+Bicep and settings. It cannot create a missing worker or upgrade an older
+API-hosted consumer; follow the
+[legacy cutover](#enable-on-an-existing-quickstart-deployment). It does not
+create the resource group, core infrastructure or Entra registrations, or
+manage secrets. Review other infrastructure changes and deploy them separately.
 
 1. In Entra, create a **separate** single-tenant app registration for deployment,
    with no redirect URI required. On the registration, open **Certificates &
@@ -297,6 +306,9 @@ plan and usage; that billing is separate from an Azure budget.
   issuer, audience and exact subject shown by the login step against the
   credential on the app identified by `AZURE_CLIENT_ID`. This repository uses
   the immutable subject above, not the older name-only subject.
+- If deployment reports a legacy consumer or a missing `notifications-worker`,
+  follow the [legacy cutover](#enable-on-an-existing-quickstart-deployment).
+  Do not delete data you need; a data-preserving cutover is not automated.
 - After correcting the configuration, select **Re-run jobs → Re-run failed
   jobs** on the GitHub Actions run. Readiness checks do not replace testing
   staff sign-in and a full journey with fictional data.

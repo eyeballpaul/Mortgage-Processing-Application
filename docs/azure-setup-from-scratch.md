@@ -230,8 +230,9 @@ If you create new registrations, use their new IDs rather than old ones.
 
 If reusing an existing deployment app and choosing automatic GitHub setup in
 the quickstart, verify its OIDC credential instead of creating a duplicate;
-the script restores Contributor and a narrower queue-scoped permission.
-The on-demand workflows still need the group-scoped condition below.
+the script restores Contributor and a queue-scoped permission for the Mortgage
+API identity. Both GitHub deployment paths still need the group-scoped
+condition and notification extension below.
 Otherwise follow these manual steps.
 
 1. Open **Microsoft Entra ID → App registrations → New registration**. Create
@@ -281,14 +282,14 @@ Otherwise follow these manual steps.
    → Add role assignment**. Choose **Contributor**, then **User, group, or
    service principal**. Select the GitHub deployment app and choose **Review +
    assign**. The Entra registration itself remains after group deletion.
-4. An Azure administrator must also grant a constrained role-assignment
-   permission. For the on-demand create and delete workflows, use the
-   initial five-role, five-principal **group-scoped** condition and the
-   notification extension in
-   [one-time setup](azure-on-demand-setup.md#2-allow-the-deployment-identity-to-manage-azure-resources).
-   The quickstart's optional queue-scoped condition alone is not sufficient for
-   those workflows. For application-only deployment, see the narrower
-   [notification permission](azure-advanced-deployment.md#one-time-github-deployment-permission).
+4. An Azure administrator must also grant constrained role-assignment
+   permissions. Follow the
+   [one-time setup](azure-on-demand-setup.md#2-allow-the-deployment-identity-to-manage-azure-resources)
+   for the initial five-role, five-principal **group-scoped** condition and
+   its notification extension. This is the documented setup for both the
+   on-demand workflows and the regular application deployment. The
+   quickstart's optional queue-scoped condition alone is insufficient for
+   the separate worker and scaler.
 
 ## 7. Configure and run GitHub Actions
 
@@ -307,14 +308,17 @@ Otherwise follow these manual steps.
    GitHub environment, so environment-only variables are not available to it.
 2. Protect `main` and restrict workflow-editing access: the deployment identity
    has Contributor access to the resource group and constrained role-assignment
-   access to the notification queue or, for on-demand workflows, a
-   conditioned group-scoped role assignment.
+   access through a conditioned group-scoped role assignment.
 3. To enable the on-demand workflows, complete
    [one-time setup](azure-on-demand-setup.md#one-time-setup), including the
    additional repository variables, secrets, Graph consent and Staff Web
    ownership. Return here when those checks are complete.
 4. Push or merge an application change to `main`. After build and tests pass,
-   the workflow deploys to the **existing** resources. On the first deployment
+   the workflow deploys to the **existing compatible** resources. It cannot
+   create a missing worker or upgrade a legacy API-hosted consumer. If an
+   older prototype is still running, follow the
+   [legacy cutover](azure-advanced-deployment.md#enable-on-an-existing-quickstart-deployment)
+   before expecting the deployment to succeed. On the first deployment
    after quickstart, no commit baselines exist, so it builds all seven images and
    runs bootstrap. Later runs select affected projects; this selective path still
    needs a live test. The workflow applies the Service Bus notification Bicep and

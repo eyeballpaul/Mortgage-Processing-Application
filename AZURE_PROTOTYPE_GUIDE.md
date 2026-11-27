@@ -59,20 +59,23 @@ reviewed separately.
 
 #### Create when needed
 
-1. Make sure the workflow and script changes you intend to use have been
+1. If an older prototype still has the consumer inside the Mortgage API, first
+   follow the [legacy cutover](docs/azure-advanced-deployment.md#enable-on-an-existing-quickstart-deployment).
+   The create workflow cannot upgrade it in place. Do not delete data you need.
+2. Make sure the workflow and script changes you intend to use have been
    committed and pushed to `main`. In GitHub, open the repository →
    **Actions → Create prototype**. Select
    **Run workflow**, choose `main`, and select **Run workflow** again.
    If the workflow or button is missing, check that the files are on the
    default branch and that GitHub Actions is enabled for the repository.
-2. Open the new run. Wait for a green check; building images and creating
+3. Open the new run. Wait for a green check; building images and creating
    Azure resources can take time and incur charges. If it fails, open the
    failed step, read the first useful error and follow
    [troubleshooting](#workflow-troubleshooting). Partial resources may remain.
-3. On the successful run's **Summary**, open **Customer app** and confirm the
+4. On the successful run's **Summary**, open **Customer app** and confirm the
    page loads. Open **Staff app**, sign in as an assigned staff user, and
    confirm it loads.
-4. Submit an application with **fictional data only** and check it appears in
+5. Submit an application with **fictional data only** and check it appears in
    Staff Web. For notifications, open Azure Portal → resource group →
    `notifications-worker` → **Log stream**, then submit another fictional application.
    Look for `Simulated notification recorded`. It may take time; **no email is
@@ -143,10 +146,10 @@ remain. To recreate the prototype:
    customer role and updates staff callbacks. It can incur charges.
 3. If choosing its optional automatic GitHub setup, first sign in to GitHub
    CLI and confirm the existing repository variables and exact repository.
-   It restores Contributor and a **queue-scoped** condition for the two
-   Service Bus roles, and updates three repository variables. This is not the
-   full five-role, five-principal group-scoped condition needed by the
-   on-demand create workflow.
+   It restores Contributor and a **queue-scoped** condition for sender and
+   receiver assignments to the Mortgage API identity, and updates three
+   repository variables. This is not sufficient for either the worker and
+   scaler or the on-demand create workflow.
 4. Repeat [one-time setup](docs/azure-on-demand-setup.md#one-time-setup),
    particularly the group-scoped condition using the **new** managed identity principal IDs, the customer
    app-role check, and all repository variables and secrets. If automatic

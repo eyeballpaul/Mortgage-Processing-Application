@@ -26,6 +26,8 @@ See [retained resources and the customer identity](docs/azure-on-demand-setup.md
 #### 2. Allow the deployment identity to manage Azure resources
 
 See [Azure permissions](docs/azure-on-demand-setup.md#2-allow-the-deployment-identity-to-manage-azure-resources).
+For the separate worker, see
+[notification identities and permissions](docs/azure-on-demand-setup.md#add-the-notification-worker-identities-and-permissions).
 
 #### 3. Add Microsoft Graph permissions and grant consent
 
