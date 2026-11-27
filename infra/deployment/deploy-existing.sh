@@ -45,9 +45,24 @@ needs_build() {
 
 app_changes=()
 app_ids=()
+notification_settings_current=false
+identity_name=mortgage-demo-env-mortgages
+identity_json="$(az identity show --name "$identity_name" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
+identity_id="$(jq -er '.id | select(type == "string" and length > 0)' <<< "$identity_json")"
+identity_client_id="$(jq -er '.clientId | select(type == "string" and length > 0)' <<< "$identity_json")"
 for ((i=0; i<${#app_names[@]}; i++)); do
   app_json="$(az containerapp show --name "${app_names[$i]}" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
   app_ids+=("$(jq -er '.id' <<< "$app_json")")
+  if [[ "${app_names[$i]}" == mortgage-api ]]; then
+    if ! jq -e --arg id "$identity_id" --arg client "$identity_client_id" '
+      any((.identity.userAssignedIdentities // {}) | keys[]; ascii_downcase == ($id | ascii_downcase)) and
+      any(.properties.template.containers[0].env[]?; .name == "AZURE_CLIENT_ID" and .value == $client)
+    ' <<< "$app_json" >/dev/null; then
+      echo "Mortgage API must use the expected managed identity and AZURE_CLIENT_ID before enabling notifications." >&2
+      exit 1
+    fi
+    mortgage_app_json="$app_json"
+  fi
   image="$(jq -er '.properties.template.containers[0].image' <<< "$app_json")"
   deployed_commit="$(jq -r '.tags["pd-deployed-commit"] // ""' <<< "$app_json")"
   prefix="$registry_server/${image_names[$i]}:"
@@ -99,9 +114,44 @@ if [[ "$bootstrap_changed" == true ]]; then
     --tags "pd-bootstrap-commit=$GITHUB_SHA" --output none
 fi
 
+echo "Deploying the Service Bus notification queue and permissions..."
+notification_outputs="$(az deployment group create --name mortgage-notifications-pipeline \
+  --resource-group "$AZURE_RESOURCE_GROUP" --template-file infra/notifications.bicep \
+  --parameters "mortgagesIdentityName=$identity_name" --query properties.outputs --output json)"
+service_bus_namespace="$(jq -er '.fullyQualifiedNamespace.value | select(type == "string" and length > 0)' <<< "$notification_outputs")"
+queue_name="$(jq -er '.queueName.value | select(type == "string" and length > 0)' <<< "$notification_outputs")"
+if [[ ! "$service_bus_namespace" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z0-9.-]+$ ||
+      ! "$queue_name" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+  echo "Notification deployment returned an invalid namespace or queue name." >&2
+  exit 1
+fi
+if jq -e --arg namespace "$service_bus_namespace" --arg queue "$queue_name" '
+  [.properties.template.containers[0].env[]?] as $env |
+  any($env[]; .name == "Notifications__Enabled" and .value == "true") and
+  any($env[]; .name == "Notifications__ServiceBusNamespace" and .value == $namespace) and
+  any($env[]; .name == "Notifications__QueueName" and .value == $queue)
+' <<< "$mortgage_app_json" >/dev/null; then
+  notification_settings_current=true
+fi
+
 deployed=false
 for ((i=0; i<${#app_names[@]}; i++)); do
-  if [[ "${app_changes[$i]}" == true ]]; then
+  if [[ "${app_names[$i]}" == mortgage-api && "$notification_settings_current" != true ]]; then
+    echo "Updating mortgage-api notification configuration..."
+    if [[ "${app_changes[$i]}" == true ]]; then
+      az containerapp update --name mortgage-api --resource-group "$AZURE_RESOURCE_GROUP" \
+        --image "$registry_server/${image_names[$i]}:$GITHUB_SHA" \
+        --set-env-vars Notifications__Enabled=true \
+        "Notifications__ServiceBusNamespace=$service_bus_namespace" \
+        "Notifications__QueueName=$queue_name" --output none
+    else
+      az containerapp update --name mortgage-api --resource-group "$AZURE_RESOURCE_GROUP" \
+        --set-env-vars Notifications__Enabled=true \
+        "Notifications__ServiceBusNamespace=$service_bus_namespace" \
+        "Notifications__QueueName=$queue_name" --output none
+    fi
+    deployed=true
+  elif [[ "${app_changes[$i]}" == true ]]; then
     echo "Updating ${app_names[$i]}..."
     az containerapp update --name "${app_names[$i]}" --resource-group "$AZURE_RESOURCE_GROUP" \
       --image "$registry_server/${image_names[$i]}:$GITHUB_SHA" --output none

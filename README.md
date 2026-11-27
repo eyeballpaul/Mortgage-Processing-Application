@@ -18,6 +18,8 @@ Staff browser -> Staff web --------^
                      -> Microsoft Entra ID
 ```
 
+For SQL-backed submissions, the Mortgage API commits an `ApplicationSubmitted` outbox entry with the application and audit entry. When notifications are enabled, API-hosted workers publish it to an Azure Service Bus Basic queue and record a simulated notification. **No email is sent.** Delivery is at least once; duplicate messages are deduplicated when recording the simulation. See [architecture.md](docs/architecture.md) and the [Azure deployment guide](AZURE_DEPLOYMENT.md#submission-notifications) for limitations and operation.
+
 Customer submissions are anonymous. A random server-side session actor owns each draft; the customer cannot reopen it after submission. A submission can be safely retried using the same session-bound attempt key and application version; a minimal reference and submission time can be recovered for 24 hours in the same session. Losing the session prevents recovery. Staff must sign in with Entra and have the `MortgageStaff` role. The API validates both the calling app and the delegated staff identity, scope and role; audit entries use the validated tenant/object IDs. In Azure the customer app uses a managed identity with the API's `MortgageCustomer` application role. Browser-supplied identity or role headers are not accepted as staff identity.
 
 Starting or restarting a customer application requires an anti-forgery-protected POST and is limited to five attempts per observed remote address per ten minutes per web replica. Behind a reverse proxy, this may be the proxy's address, so multiple customers can share a limit. This in-process limit is a basic demo safeguard, not a distributed abuse-prevention boundary; use a trusted edge rate limiter for production.
@@ -72,15 +74,17 @@ dotnet test PD.Mortgages.slnx
 
 Tests include API authorization, cross-session isolation, submission, staff audit attribution, document validation, draft lifecycle, concurrent edits, and migration shape. Test tokens are signed locally, not issued by Entra; an actual staff login and Azure deployment require the tenant setup above.
 
+SQL notification integration tests are skipped unless `MORTGAGE_TEST_SQL_CONNECTION` points to a **disposable** SQL Server whose login can create and delete databases. They create and delete uniquely named test databases; do not point them at Azure or a server with important data. Never commit the connection string.
+
 ## Azure prototype deployment
 
-The [setup-from-scratch guide](docs/azure-setup-from-scratch.md) gives step-by-step Azure, Entra and GitHub setup without secret values. The [Azure deployment guide](AZURE_DEPLOYMENT.md) covers the interactive quickstart, costs, troubleshooting and recreation after resource-group deletion. The quickstart provisions one VNet with Container Apps and private-endpoint subnets, five Container Apps, three SQL databases, private SQL and Blob endpoints, and a private database-bootstrap job. Both web apps have public HTTPS ingress; the three APIs have internal ingress. SQL and Blob public network access is disabled. Staff access still requires Entra authentication and the staff app is not private-network-only. Use fictional data only; this is not a production security boundary.
+The [setup-from-scratch guide](docs/azure-setup-from-scratch.md) gives step-by-step Azure, Entra and GitHub setup without secret values. The [Azure deployment guide](AZURE_DEPLOYMENT.md) covers the interactive quickstart, costs, troubleshooting and recreation after resource-group deletion. The quickstart provisions one VNet with Container Apps and private-endpoint subnets, five Container Apps, three SQL databases, private SQL and Blob endpoints, a private database-bootstrap job and a public Service Bus Basic namespace. Both web apps have public HTTPS ingress; the three APIs have internal ingress. SQL and Blob public network access is disabled. Staff access still requires Entra authentication and the staff app is not private-network-only. Use fictional data only; this is not a production security boundary.
 
-The [GitHub Actions workflow](.github/workflows/ci.yml) tests pull requests and, after tests succeed on a push to `main`, deploys changed application images to an **existing** quickstart deployment. It does not create resources or deploy infrastructure changes. An initial workflow deployment succeeded in Azure, including readiness and dependency checks; a subsequent selective incremental deployment and a complete customer-to-staff journey have not yet been validated. The older [Azure DevOps pipeline](azure-pipelines.yml) is not compatible with the current private SQL bootstrap and should not be used without changes.
+The [GitHub Actions workflow](.github/workflows/ci.yml) tests pull requests and, after tests succeed on a push to `main`, deploys changed application images and the Service Bus notification resources and settings to an **existing** quickstart deployment. It does not create the core infrastructure or manage secrets. The notification deployment needs a one-time constrained role assignment described in the [deployment guide](AZURE_DEPLOYMENT.md#one-time-github-deployment-permission). An initial app-only workflow deployment succeeded in Azure; this notification deployment and a complete customer-to-staff journey have not yet been validated. The older [Azure DevOps pipeline](azure-pipelines.yml) is not compatible with the current private SQL bootstrap and should not be used without changes.
 
 The SQL template requests the free offer with auto-pause on free-limit exhaustion; once the allowance is used, a database is unavailable until the next month. The apps have at least one replica each, and readiness probes and background maintenance can consume database compute even when idle. Do not assume ordinary idle auto-pause will occur. Registry, image builds, private endpoints, logging and other resources may incur charges; an Azure budget is an alert, not a spending cap. There is no verified whole-environment pause/resume procedure or guaranteed £20 monthly cost.
 
-Products API key rotation is not zero-downtime: the services do not accept overlapping keys. Schedule a maintenance window and update the matching secret on both services. The GitHub workflow updates images only, not secrets. If an update fails, restore the same previously working secret to both services; do not roll back only one.
+Products API key rotation is not zero-downtime: the services do not accept overlapping keys. Schedule a maintenance window and update the matching secret on both services. The GitHub workflow does not update secrets. If an update fails, restore the same previously working secret to both services; do not roll back only one.
 
 Eligibility API key rotation has the same limitation: coordinate matching secrets between Mortgage and Eligibility during a maintenance window. For standalone local processes, set matching `EligibilityService__ApiKey` values of at least 32 characters on both APIs and set `EligibilityService__BaseUrl` on Mortgage. See the [Eligibility HTTP examples](PD.Eligibility.Api/PD.Eligibility.Api.http).
 
@@ -88,11 +92,11 @@ Deployments are incremental: clearing `alertEmail` later does not remove a previ
 
 ### Database migrations
 
-Each database has a separate EF Core migration history and one initial migration:
+Each database has a separate EF Core migration history:
 
 | Database | Migration project | Owned data | Local migration runner |
 | --- | --- | --- | --- |
-| `mortgages` | [PD.Mortgages.Infrastructure](PD.Mortgages.Infrastructure/Persistence/Migrations) | Applications, tombstones and audit entries | Mortgage API |
+| `mortgages` | [PD.Mortgages.Infrastructure](PD.Mortgages.Infrastructure/Persistence/Migrations) | Applications, tombstones, audit, submission outbox and simulated notifications | Mortgage API |
 | `products` | [PD.Products.Infrastructure](PD.Products.Infrastructure/Persistence/Migrations) | Product catalog and seed data | Products API |
 | `customer-sessions` | [PD.Mortgages.CustomerSessions](PD.Mortgages.CustomerSessions/Migrations) | Distributed customer session cache | Customer web app |
 

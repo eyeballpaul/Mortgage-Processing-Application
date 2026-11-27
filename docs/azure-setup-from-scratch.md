@@ -126,12 +126,16 @@ If you create new registrations, use their new IDs rather than old ones.
    **client IDs**, the staff secret **value**, and the two service keys when
    prompted. Secret prompts are hidden. Check the subscription, group and names
    before confirming. Record the resource names securely for retries.
-5. The script deploys the infrastructure, assigns the customer API role, builds
+5. The script deploys the infrastructure, including a public Service Bus Basic
+   namespace and queue, assigns the customer API role, builds
    six images, runs the private database bootstrap job and deploys five apps.
    Record the customer and staff URLs printed at the end. On failure, inspect
    the error; partial resources remain billable. A retry reapplies the template
    and can overwrite app settings, images and secrets. Use the intended source
    revision, existing names and matching secrets.
+   The notification flow records a simulation only; it sends no email. The new
+   queue and notification flow have not yet been validated in Azure. See
+   [notification setup and operations](../AZURE_DEPLOYMENT.md#submission-notifications).
 
 ## 5. Finish Staff Web setup and test
 
@@ -186,6 +190,10 @@ role assignment instead of creating a duplicate.
    service principal**. Select the GitHub deployment app and choose **Review +
    assign**. After recreating the group, check and reassign this permission as
    needed; the Entra registration itself remains.
+4. An Azure administrator must also grant the GitHub deployment identity the
+   constrained role-assignment permission in the [deployment guide](../AZURE_DEPLOYMENT.md#one-time-github-deployment-permission).
+   Recreate this condition using the new Mortgage API managed identity after
+   deleting and recreating the group.
 
 ## 7. Configure and run GitHub Actions
 
@@ -203,13 +211,14 @@ role assignment instead of creating a duplicate.
    These are identifiers, not secret values. The workflow does not select a
    GitHub environment, so environment-only variables are not available to it.
 2. Protect `main` and restrict workflow-editing access: the deployment identity
-   has Contributor access to the resource group.
+   has Contributor access and constrained role-assignment access to the resource group.
 3. Push or merge an application change to `main`. After build and tests pass,
    the workflow deploys to the **existing** resources. On the first deployment
    after quickstart, no commit baselines exist, so it builds all six images and
    runs bootstrap. Later runs select affected projects; this selective path still
-   needs a live test. The workflow does not create infrastructure or update
-   secrets. Do not run it at the same time as the manual quickstart.
+   needs a live test. The workflow applies the Service Bus notification Bicep and
+   settings, but does not create the core infrastructure or update secrets.
+   Do not run it at the same time as the manual quickstart.
 4. Watch **Actions → Build, test and security checks → deploy-existing**.
    Verify readiness, staff sign-in and the application journey separately.
    Builds and Azure resources can incur charges.

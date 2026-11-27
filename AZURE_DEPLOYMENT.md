@@ -38,6 +38,106 @@ by resource to identify actual charges; check the subscription scope for costs
 outside the group. Five continuously running apps, two private endpoints and the
 Basic registry are important costs to monitor.
 
+## Submission notifications
+
+The quickstart now provisions a **public** Service Bus Basic namespace and one
+`submission-notifications` queue. Basic does not offer a private endpoint. The
+Mortgage API managed identity has queue-scoped sender and receiver roles; SAS
+authentication is disabled. The API hosts both workers, avoiding another
+always-running Container App but sharing its identity and compute. Queue
+messages contain only an event ID, application ID, type/version and timestamp.
+The consumer writes a simulated notification to SQL: **no email is sent**.
+
+The namespace, queue, role assignments and new flow have not yet been deployed
+or tested end to end in Azure. Health checks do not test them. Use fictional
+data and verify both customer and staff submissions.
+
+### Enable on an existing quickstart deployment
+
+Before pushing these changes, grant the existing GitHub deployment identity
+the additional, constrained role-assignment permission described below.
+No new Entra app registration, client secret or Service Bus key is needed.
+Also check **Subscriptions → your subscription → Resource providers** for
+`Microsoft.ServiceBus`. If it is not registered, a subscription administrator
+with resource-provider registration permission must register it.
+
+On each successful push to `main`, the deployment workflow runs the database
+bootstrap if needed, applies [notifications.bicep](infra/notifications.bicep),
+then updates the Mortgage API image and notification settings. It creates or
+reconciles the namespace, queue and queue-scoped roles, even when no images
+have changed. It expects the quickstart identity `mortgage-demo-env-mortgages`
+to be attached to `mortgage-api` and selected by `AZURE_CLIENT_ID`. The
+workflow fails rather than enabling notifications with a different identity.
+It preserves unrelated app settings and secrets, and skips the app update if
+the image and notification settings already match.
+
+After deployment, submit fictional customer and staff applications. Check the
+Mortgage API console logs for `Simulated notification recorded` and inspect the
+queue and SQL records. A successful submission is independent of Service Bus
+availability; the outbox publishes later. Submissions made before the new
+SQL-backed code was deployed are not backfilled.
+
+The pipeline restores `Notifications__Enabled=true` on each deployment; a
+manual disable is therefore temporary. New SQL submissions accumulate outbox
+rows while disabled and will be published after re-enabling. Local file and
+in-memory providers do not create outbox events; the workers require SQL Server.
+
+### One-time GitHub deployment permission
+
+The existing GitHub deployment app already needs **Contributor** on the
+resource group. An Azure administrator with permission to grant role assignments
+must also grant its service principal **Role Based Access Control Administrator**
+on that same resource group, with a condition restricting it to the two Service
+Bus data roles and the Mortgage API managed identity. Contributor alone cannot
+create the queue-scoped role assignments.
+
+In Azure Portal, open the resource group's **Access control (IAM) → Add role
+assignment**. Select **Role Based Access Control Administrator**, select the
+existing GitHub deployment service principal, and on the **Conditions** tab
+select **Allow user to only assign selected roles to selected principals** →
+**Select roles and principals** → **Constrain roles and principals**. Allow
+only **Azure Service Bus Data Sender** and **Azure Service Bus Data Receiver**, and only the
+`mortgage-demo-env-mortgages` managed identity (use its principal/object ID,
+not its client ID). Review the scope and condition before assigning. See
+[Microsoft's delegation examples](https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-examples#example-constrain-roles-and-specific-groups).
+Check for other unconditioned role-assignment permissions on the same identity:
+an additional broad assignment can override this restriction.
+
+The deployment identity's Contributor access remains powerful, and even the
+conditioned role permits these two data roles for this identity anywhere within
+the resource group. Protect `main` and restrict workflow edits. Role propagation
+can take several minutes; if the workflow fails due to permissions, correct
+them and rerun the failed job. This permission must be granted again after
+deleting and recreating the resource group or managed identity.
+
+### Monitoring, retries and cost
+
+The publisher checks SQL approximately every 30 seconds per running replica;
+a failed or interrupted claim becomes available after its five-minute lease.
+Sending followed by a crash can produce duplicates. The SQL simulation record
+deduplicates by event ID, but this is **at-least-once**, not exactly-once
+delivery. Processing errors are retried by Service Bus and eventually
+dead-lettered; invalid events are dead-lettered immediately. Active messages
+expire after 14 days and are moved to the dead-letter queue. Dead-lettered
+messages are not automatically deleted.
+
+Inspect Mortgage API error logs, unpublished `SubmissionOutbox` rows, the queue's
+active/dead-letter counts, and `SimulatedNotifications` in the private mortgage
+database. In the Azure portal, use Service Bus Explorer with suitable Entra
+data-plane permissions to peek at dead-lettered messages and their reasons.
+After fixing the cause, resend a valid message with its original message ID;
+resending leaves the original in the dead-letter queue, so explicitly remove it
+only after checking the result. There is no automated dead-letter replay, alert,
+outbox/inbox cleanup or retention policy in this prototype.
+
+Basic has usage-based operation charges rather than the Standard tier's hourly
+base charge. Microsoft retail pricing checked for UK South was approximately
+£0.0376 per million operations; rates and exchange rates change, and polling,
+retries and management operations also count. SQL polling, Container Apps,
+logging and network usage can add cost. Check
+[Service Bus pricing](https://azure.microsoft.com/pricing/details/service-bus/)
+and actual Cost Management charges; the £20 budget is not a spending cap.
+
 ## Deploy
 
 From the repository root, run:
@@ -98,9 +198,10 @@ Redact personal data, tokens, authorization codes and secrets before sharing log
 
 The existing GitHub Actions workflow builds and tests pull requests. After a
 successful build on a push to `main`, it deploys changed application images to
-the **existing** quickstart deployment. It does not create a resource group,
-apply Bicep, change app configuration or manage secrets. Deploy infrastructure
-changes separately and review them before applying them.
+the **existing** quickstart deployment and applies the notification Bicep and
+settings. It does not create the resource group, core infrastructure or Entra
+registrations, or manage secrets. Review other infrastructure changes and deploy
+them separately.
 
 1. In Entra, create a **separate** single-tenant app registration for deployment,
    with no redirect URI required. On the registration, open **Certificates &
@@ -119,7 +220,9 @@ changes separately and review them before applying them.
    GitHub OIDC subject may need a different value. Match the exact subject in
    the GitHub login log; see [GitHub's Azure OIDC guidance](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-azure).
    Grant the deployment app's service principal **Contributor** on the existing
-   resource group. The workflow uses OIDC and does not need a client secret.
+   resource group, plus the constrained role-assignment permission in
+   [One-time GitHub deployment permission](#one-time-github-deployment-permission).
+   The workflow uses OIDC and does not need a client secret.
    Protect `main` and restrict who can change the workflow: the federated
    identity can update the resources in that group.
 2. In GitHub, under **Settings → Secrets and variables → Actions → Variables**,
@@ -168,8 +271,9 @@ not provision the registry, apps, job or databases. To recreate the prototype:
 
 1. Create the resource group in the intended subscription and region, then run
    the quickstart as above. Resource names must be globally available.
-2. Verify and, if necessary, reassign the GitHub deployment identity's
-   Contributor role on the recreated group. The Entra app registration and its
+2. Reassign the GitHub deployment identity's Contributor and constrained
+   role-assignment permissions on the recreated group, using the new Mortgage
+   API managed identity principal ID. The Entra app registration and its
    federated credential are outside the group and can be reused.
 3. Update the GitHub resource-group and registry variables if their names
    changed. Add any new staff URL callback paths to Entra and test sign-in.

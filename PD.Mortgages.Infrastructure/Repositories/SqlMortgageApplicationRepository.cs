@@ -109,6 +109,7 @@ public sealed class SqlMortgageApplicationRepository(MortgageDbContext dbContext
             throw new InvalidOperationException("This application was changed elsewhere. Reload it before saving your changes.");
         }
 
+        var submitted = record.Status == ApplicationStatus.InProgress && application.Status == ApplicationStatus.Submitted;
         var updatedRecord = ToRecord(application);
         record.Version = updatedRecord.Version;
         record.IdSearchText = updatedRecord.IdSearchText;
@@ -123,6 +124,15 @@ public sealed class SqlMortgageApplicationRepository(MortgageDbContext dbContext
         if (auditEntry is not null)
         {
             dbContext.AuditEntries.Add(ToAuditRecord(application.Id, auditEntry));
+        }
+        if (submitted)
+        {
+            dbContext.SubmissionOutbox.Add(new SubmissionOutboxRecord
+            {
+                Id = Guid.NewGuid(),
+                ApplicationId = application.Id,
+                OccurredAtUtc = application.UpdatedAtUtc
+            });
         }
 
         try

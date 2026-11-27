@@ -198,6 +198,14 @@ resource mortgagesIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@202
   tags: appTags
 }
 
+module notifications './notifications.bicep' = {
+  name: 'mortgage-notifications'
+  params: {
+    location: location
+    mortgagesIdentityName: mortgagesIdentity.name
+  }
+}
+
 resource productsIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
   name: '${containerAppEnvironmentName}-products'
   location: location
@@ -840,6 +848,9 @@ resource mortgageApi 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) 
             { name: 'Persistence__Provider', value: 'SqlServer' }
             { name: 'Persistence__RunMigrationsOnStartup', value: 'false' }
             { name: 'ConnectionStrings__mortgages', value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=mortgages;Authentication=Active Directory Managed Identity;User Id=${mortgagesIdentity.properties.clientId};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;' }
+            { name: 'Notifications__Enabled', value: 'true' }
+            { name: 'Notifications__ServiceBusNamespace', value: notifications.outputs.fullyQualifiedNamespace }
+            { name: 'Notifications__QueueName', value: notifications.outputs.queueName }
             { name: 'DocumentStorage__Provider', value: 'AzureBlob' }
             { name: 'DocumentStorage__BlobServiceUri', value: 'https://${documentStorage.name}.blob.${environment().suffixes.storage}/' }
             { name: 'DocumentStorage__ContainerName', value: 'mortgage-documents' }

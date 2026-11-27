@@ -1,4 +1,6 @@
 using System.Text.Json.Serialization;
+using Azure.Identity;
+using Azure.Messaging.ServiceBus;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -55,6 +57,20 @@ builder.Services.AddHealthChecks()
     .AddCheck<EligibilityDependencyHealthCheck>("eligibility-api", tags: ["dependencies"]);
 builder.Services.AddMortgagePersistence(builder.Configuration);
 builder.Services.AddHostedService<DraftMaintenanceService>();
+if (builder.Configuration.GetValue<bool>("Notifications:Enabled"))
+{
+    var serviceBusNamespace = builder.Configuration["Notifications:ServiceBusNamespace"];
+    var queueName = builder.Configuration["Notifications:QueueName"];
+    if (!string.Equals(builder.Configuration["Persistence:Provider"], "SqlServer", StringComparison.OrdinalIgnoreCase) ||
+        string.IsNullOrWhiteSpace(serviceBusNamespace) || string.IsNullOrWhiteSpace(queueName))
+    {
+        throw new InvalidOperationException("Notifications require SQL Server, Notifications:ServiceBusNamespace and Notifications:QueueName.");
+    }
+    builder.Services.AddSingleton(new ServiceBusClient(serviceBusNamespace, new DefaultAzureCredential()));
+    builder.Services.AddScoped<SimulatedNotificationStore>();
+    builder.Services.AddHostedService<SubmissionOutboxPublisher>();
+    builder.Services.AddHostedService<SubmissionNotificationWorker>();
+}
 builder.Services.AddOptions<MortgageWorkflowOptions>().BindConfiguration(MortgageWorkflowOptions.SectionName)
     .Validate(options => !string.IsNullOrWhiteSpace(options.ConsentTermsVersion), "MortgageWorkflow:ConsentTermsVersion is required.")
     .ValidateOnStart();

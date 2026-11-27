@@ -6,6 +6,8 @@ public sealed class MortgageDbContext(DbContextOptions<MortgageDbContext> option
 {
     public DbSet<MortgageApplicationRecord> Applications => Set<MortgageApplicationRecord>();
     public DbSet<MortgageApplicationAuditRecord> AuditEntries => Set<MortgageApplicationAuditRecord>();
+    public DbSet<SubmissionOutboxRecord> SubmissionOutbox => Set<SubmissionOutboxRecord>();
+    public DbSet<SimulatedNotificationRecord> SimulatedNotifications => Set<SimulatedNotificationRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,5 +42,18 @@ public sealed class MortgageDbContext(DbContextOptions<MortgageDbContext> option
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<SubmissionOutboxRecord>(entity =>
+        {
+            entity.ToTable("SubmissionOutbox");
+            entity.HasKey(entry => entry.Id);
+            entity.HasIndex(entry => entry.ApplicationId).IsUnique();
+            entity.HasIndex(entry => new { entry.PublishedAtUtc, entry.LeaseUntilUtc, entry.OccurredAtUtc });
+        });
+
+        modelBuilder.Entity<SimulatedNotificationRecord>(entity =>
+        {
+            entity.ToTable("SimulatedNotifications");
+            entity.HasKey(entry => entry.EventId);
+        });
     }
 }

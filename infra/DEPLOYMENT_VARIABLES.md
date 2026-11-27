@@ -2,7 +2,7 @@
 
 The [Azure deployment guide](../AZURE_DEPLOYMENT.md) is the authoritative
 procedure. This page summarizes the values used by the quickstart and the
-application-only GitHub Actions workflow.
+GitHub Actions workflow.
 
 ## Interactive quickstart
 
@@ -64,6 +64,15 @@ principal granted registry push permission; it is not the subscription ID
 returned by `az account show --query id`. `pipelinePrincipalType` must match
 that identity. The quickstart supplies the signed-in user and sets the type to
 `User`. No SQL administrator password is needed.
+
+The quickstart also creates a public Basic Service Bus namespace and the
+`submission-notifications` queue using [notifications.bicep](notifications.bicep).
+The Mortgage API managed identity receives queue-scoped sender and receiver
+roles. `Notifications__Enabled`, `Notifications__ServiceBusNamespace` and
+`Notifications__QueueName` are set by the template; no Service Bus key is used.
+The workflow applies this notification module and settings to the existing app.
+It requires the additional constrained role-assignment permission described in
+the [deployment guide](../AZURE_DEPLOYMENT.md#one-time-github-deployment-permission).
 
 The example parameters file is illustrative; it does not run the required
 bootstrap or configure Entra role assignments by itself. Never put real

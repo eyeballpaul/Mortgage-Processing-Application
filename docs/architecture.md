@@ -11,6 +11,7 @@ flowchart LR
     Staff -->|Delegated staff token| API
     Customer --> Sessions[(customer-sessions SQL)]
     API --> Mortgage[(mortgages SQL)]
+    API -->|Publish and consume| Bus[Public Service Bus Basic queue]
     API --> Documents[(Mortgage document storage)]
     API -->|Internal product lookup| Products[Internal Products API]
     API -->|Indicative decision| Eligibility[Internal Eligibility API]
@@ -33,6 +34,8 @@ Deleted and expired drafts leave a minimal tombstone and audit history. SQL mark
 Staff can look up retained audit history, including deleted drafts, using the full application ID. Upload content is retained when the storage or SQL outcome is ambiguous; only known pre-commit failures and concurrency conflicts are compensated immediately. There is no durable orphan reconciliation for active applications; operators must investigate the logged IDs as described in the README.
 
 The file persistence provider is for development only: unlike SQL, its audit and tombstone writes are not transactional across files.
+
+For both submission paths, SQL saves the status change, audit entry and one minimal outbox event in the same transaction. The API's publisher uses expiring SQL leases to claim pending events, then sends their IDs, application IDs, event type/version and timestamp to one Service Bus queue. A crash after sending but before recording publication can cause a duplicate. The consumer atomically records one `SimulatedNotifications` row per event before completing the message; it does not send an email. Invalid messages are dead-lettered; repeated processing failures are eventually dead-lettered by Service Bus. This is at-least-once delivery, not exactly once. Existing submissions are not backfilled. File and in-memory providers do not create outbox events; notification workers are disabled by default locally and require SQL.
 
 Mortgage API request and response shapes and their enums live in `PD.Mortgages.Contracts`, which does not reference the domain. The API and typed client use `PD.Mortgages.Transport` to map wire contracts to the models and service interface in `PD.Mortgages.Abstractions`. The application service implements that interface; neither web app nor the client references the application or domain implementation projects. The small `PD.Mortgages.SharedKernel` contains shared mortgage value enums and their display names, but no entities, persistence or business services. Its existing `PD.Mortgages.Domain.Enums` namespace is retained for compatibility.
 
@@ -65,6 +68,9 @@ flowchart LR
     Customer --> API
     Staff --> API
     API --> Mortgage[(Mortgage SQL)]
+    API -->|Managed identity| Bus[Public Service Bus Basic queue]
+    Pipeline -->|Queue and roles| Bus
+    Pipeline -->|Notification settings| API
     API --> Documents[(Mortgage documents Blob)]
     API --> Products
     API --> Eligibility
@@ -81,9 +87,9 @@ flowchart LR
 
 The customer and staff web apps have public HTTPS ingress. All three APIs have internal ingress. The Eligibility API has no database and shares a separate secret with Mortgage API. The customer managed identity can access only its session database and customer key container, and is assigned the API application role. The Mortgage API identity can access the mortgage database and document container; the Products API identity has read access to its catalog database. The staff identity accesses its own key container and has no SQL or document access. Staff API authorization uses delegated tokens, not the staff app's managed identity. The quickstart assigns the customer API role; the bootstrap job's managed identity provisions SQL users and applies migrations.
 
-One VNet (`10.42.0.0/16`) contains a delegated Container Apps subnet (`10.42.0.0/24`) and a private-endpoint subnet (`10.42.1.0/24`). SQL and Blob private endpoints use linked private DNS zones; public network access is disabled for both services. The registry remains publicly reachable with identity-based access. The Container Apps environment has public ingress enabled, but only the two web apps expose external ingress.
+One VNet (`10.42.0.0/16`) contains a delegated Container Apps subnet (`10.42.0.0/24`) and a private-endpoint subnet (`10.42.1.0/24`). SQL and Blob private endpoints use linked private DNS zones; public network access is disabled for both services. The registry and Service Bus Basic namespace remain publicly reachable with identity-based access. The API identity has sender and receiver permissions scoped to the queue; local Service Bus authentication is disabled. Hosting both workers in the API avoids another always-on Container App but sacrifices independent scaling and identity isolation. The Container Apps environment has public ingress enabled, but only the two web apps expose external ingress.
 
-This is not a production security boundary: staff ingress is public, and the prototype needs further security, privacy, backup and retention review before handling real data. The in-memory staff token cache is lost on restart; staff may be prompted to sign in again. The manual quickstart provisions the infrastructure, while GitHub Actions updates changed images on existing resources only. An initial GitHub deployment succeeded in Azure with readiness and dependency checks; a subsequent selective incremental deployment and complete customer-to-staff journey remain unvalidated. See the [Azure deployment guide](../AZURE_DEPLOYMENT.md) for identity setup, migration implications and cost notes.
+This is not a production security boundary: staff ingress is public, and the prototype needs further security, privacy, backup and retention review before handling real data. The in-memory staff token cache is lost on restart; staff may be prompted to sign in again. The manual quickstart provisions the core infrastructure; GitHub Actions deploys the notification queue and settings and updates changed images on existing resources. An initial app-only GitHub deployment succeeded with readiness and dependency checks; the notification pipeline and complete customer-to-staff journey remain unvalidated. See the [Azure deployment guide](../AZURE_DEPLOYMENT.md) for identity setup, migration implications and cost notes.
 
 ## Operations and observability
 

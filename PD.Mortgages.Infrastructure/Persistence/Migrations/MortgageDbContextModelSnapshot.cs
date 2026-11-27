@@ -118,6 +118,54 @@ namespace PD.Mortgages.Infrastructure.Persistence.Migrations
                     b.ToTable("MortgageApplications", (string)null);
                 });
 
+            modelBuilder.Entity("PD.Mortgages.Infrastructure.Persistence.SimulatedNotificationRecord", b =>
+                {
+                    b.Property<Guid>("EventId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("RecordedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("EventId");
+
+                    b.ToTable("SimulatedNotifications", (string)null);
+                });
+
+            modelBuilder.Entity("PD.Mortgages.Infrastructure.Persistence.SubmissionOutboxRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("LeaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("LeaseUntilUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("PublishedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId")
+                        .IsUnique();
+
+                    b.HasIndex("PublishedAtUtc", "LeaseUntilUtc", "OccurredAtUtc");
+
+                    b.ToTable("SubmissionOutbox", (string)null);
+                });
+
             modelBuilder.Entity("PD.Mortgages.Infrastructure.Persistence.MortgageApplicationAuditRecord", b =>
                 {
                     b.HasOne("PD.Mortgages.Infrastructure.Persistence.MortgageApplicationRecord", null)

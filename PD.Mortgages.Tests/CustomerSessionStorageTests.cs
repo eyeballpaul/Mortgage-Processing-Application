@@ -37,10 +37,12 @@ public sealed class CustomerSessionStorageTests
         using var context = new MortgageDbContext(options);
 
         Assert.False(context.Database.HasPendingModelChanges());
-        Assert.Single(context.Database.GetMigrations());
+        Assert.Equal(2, context.Database.GetMigrations().Count());
         var script = context.GetService<IMigrator>().GenerateScript();
         Assert.Contains("CREATE TABLE [MortgageApplications]", script);
         Assert.Contains("CREATE TABLE [MortgageApplicationAuditEntries]", script);
+        Assert.Contains("CREATE TABLE [SubmissionOutbox]", script);
+        Assert.Contains("CREATE TABLE [SimulatedNotifications]", script);
         Assert.DoesNotContain("MortgageSessionCache", script);
     }
 
