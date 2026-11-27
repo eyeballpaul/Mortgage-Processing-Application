@@ -7,6 +7,8 @@ have succeeded in one Azure environment. The workflow's readiness and dependency
 checks passed, but a subsequent selective incremental deployment and a complete
 customer-to-staff journey have not yet been validated.
 
+For detailed first-time setup, see the [setup-from-scratch guide](docs/azure-setup-from-scratch.md).
+
 ## Before deploying
 
 - Install Azure CLI with Container Apps commands, `jq`, `openssl` and `curl`.
