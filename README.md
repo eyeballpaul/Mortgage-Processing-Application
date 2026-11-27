@@ -25,15 +25,17 @@ stop charges. Deleting prototype resources also permanently deletes their data.
 ## Project layout
 
 The [solution](PD.Mortgages.slnx) groups projects by Mortgages, Products,
-Eligibility, Notifications and Hosting. These are solution folders for
+Eligibility, Notifications, User Interfaces and Hosting. These are solution folders for
 navigation; the individual project folders remain at the repository root.
-In the Mortgages group, the customer and staff web projects are
+In the User Interfaces group, the customer and staff web projects are
 [PD.Mortgages.Customer.Web](PD.Mortgages.Customer.Web/) and
 [PD.Mortgages.Staff.Web](PD.Mortgages.Staff.Web/).
 The customer project's assembly and source namespace remain
 `PD.Mortgages.Web` to preserve its existing application identity and telemetry.
 Azure app and image names are unchanged. See the
 [project grouping](docs/architecture.md#project-grouping) for what each group contains.
+The Aspire host is now [PD.AppHost](PD.AppHost/); its user-secrets ID is
+unchanged, so existing local settings remain available under the same account.
 
 ## Architecture
 
@@ -90,7 +92,7 @@ See [architecture.md](docs/architecture.md) for boundaries, local and Azure host
    If you accept both, record your acknowledgement on this computer:
 
    ```bash
-   dotnet user-secrets set LocalNotifications:AcceptEmulatorLicense true --project PD.Mortgages.AppHost
+   dotnet user-secrets set LocalNotifications:AcceptEmulatorLicense true --project PD.AppHost
    ```
 
    Run this from the repository root. You should see `Successfully saved`.
@@ -115,7 +117,7 @@ Without that setup, staff sign-in will not work.
    `PD.Mortgages.slnx`. Then run:
 
    ```bash
-   dotnet run --project PD.Mortgages.AppHost --launch-profile https
+   dotnet run --project PD.AppHost --launch-profile https
    ```
 
 3. Open the Aspire dashboard URL printed in the terminal. It is a local page
@@ -153,7 +155,7 @@ To check the flow:
 To start without the emulator for one run, use this Bash or zsh command:
 
 ```bash
-LocalNotifications__UseEmulator=false dotnet run --project PD.Mortgages.AppHost --launch-profile https
+LocalNotifications__UseEmulator=false dotnet run --project PD.AppHost --launch-profile https
 ```
 
 In PowerShell, set `$env:LocalNotifications__UseEmulator = 'false'` before
@@ -216,9 +218,9 @@ For each environment, check the following:
    dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>" --project PD.Mortgages.Staff.Web
    dotnet user-secrets set "AzureAd:ClientId" "<staff-web-client-id>" --project PD.Mortgages.Staff.Web
    dotnet user-secrets set "AzureAd:ClientSecret" "<staff-web-secret-value>" --project PD.Mortgages.Staff.Web
-   dotnet user-secrets set "MortgageApi:TenantId" "<tenant-id>" --project PD.Mortgages.AppHost
-   dotnet user-secrets set "MortgageApi:ApiClientId" "<mortgage-api-client-id>" --project PD.Mortgages.AppHost
-   dotnet user-secrets set "MortgageApi:StaffClientId" "<staff-web-client-id>" --project PD.Mortgages.AppHost
+   dotnet user-secrets set "MortgageApi:TenantId" "<tenant-id>" --project PD.AppHost
+   dotnet user-secrets set "MortgageApi:ApiClientId" "<mortgage-api-client-id>" --project PD.AppHost
+   dotnet user-secrets set "MortgageApi:StaffClientId" "<staff-web-client-id>" --project PD.AppHost
    ```
 
 Use the secret **value**, not its ID. Aspire configures the API and staff scope from these values. The staff portal fails closed without Entra configuration; the Development customer credential cannot authorize staff calls. For separate standalone processes, configure matching `MortgageApi__DevelopmentKey` values of at least 32 characters on the API and customer app, with `ASPNETCORE_ENVIRONMENT=Development`, and configure `MortgageApi__BaseUrl` and `MortgageApi__Scope` on the web app. Never use a development key in Azure.

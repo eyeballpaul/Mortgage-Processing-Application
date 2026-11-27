@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using PD.Eligibility.Contracts;
 using PD.Mortgages.Application.Services;
 using PD.Mortgages.Domain.Entities;
-using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Domain.Types.Enums;
 
 namespace PD.Mortgages.Infrastructure.Eligibility;
 

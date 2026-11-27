@@ -305,10 +305,10 @@ manage secrets. Review other infrastructure changes and deploy them separately.
    new image is recorded as successful.
 
 The customer project directory is now `PD.Mortgages.Customer.Web`, but its
-Azure app and image are still `mortgages-web`. The solution-file change is
-treated as a shared build change: a deployment comparing against a commit
-before the rename rebuilds all six app images and the bootstrap image. These
-builds can incur charges.
+Azure app and image are still `mortgages-web`. The solution-file changes for
+the project renames and grouping are treated as shared build changes: a
+deployment comparing against a commit before those changes rebuilds all six
+app images and the bootstrap image. These builds can incur charges.
 
 If the database bootstrap project or its dependencies change, the workflow
 builds and runs the existing private Container Apps job before updating apps.

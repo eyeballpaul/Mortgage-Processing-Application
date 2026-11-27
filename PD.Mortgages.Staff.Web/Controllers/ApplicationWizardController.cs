@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using PD.Mortgages.Application.Models;
 using PD.Mortgages.Application.Services;
-using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Domain.Types.Enums;
 using PD.Mortgages.Staff.Web.Models;
 
 namespace PD.Mortgages.Staff.Web.Controllers;

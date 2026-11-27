@@ -10,7 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using PD.Eligibility.Contracts;
 using PD.Mortgages.Infrastructure.Eligibility;
-using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Domain.Types.Enums;
 using PD.Mortgages.Application.Services;
 
 namespace PD.Mortgages.Tests;

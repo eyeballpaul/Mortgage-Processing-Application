@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using PD.Mortgages.Domain.Entities;
-using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Domain.Types.Enums;
 using PD.Mortgages.Domain.Repositories;
 using PD.Mortgages.Infrastructure.Persistence;
 

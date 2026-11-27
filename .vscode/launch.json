@@ -6,9 +6,9 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build solution",
-      "program": "${workspaceFolder}/PD.Mortgages.AppHost/bin/Debug/net10.0/PD.Mortgages.AppHost.dll",
+      "program": "${workspaceFolder}/PD.AppHost/bin/Debug/net10.0/PD.AppHost.dll",
       "args": [],
-      "cwd": "${workspaceFolder}/PD.Mortgages.AppHost",
+      "cwd": "${workspaceFolder}/PD.AppHost",
       "env": {
         "ASPNETCORE_ENVIRONMENT": "Development",
         "DOTNET_ENVIRONMENT": "Development",

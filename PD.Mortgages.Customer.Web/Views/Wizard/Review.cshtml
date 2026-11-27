@@ -5,9 +5,9 @@
     var application = Model.Application;
     var decisionLabel = application.DecisionInPrinciple?.Outcome switch
     {
-        PD.Mortgages.Domain.Enums.DecisionInPrincipleOutcome.CreditCheckNotSelected => "Credit check not selected",
-        PD.Mortgages.Domain.Enums.DecisionInPrincipleOutcome.WithinIndicativeRange => "Within illustrative range",
-        PD.Mortgages.Domain.Enums.DecisionInPrincipleOutcome.AboveIndicativeRange => "Above illustrative range",
+        PD.Mortgages.Domain.Types.Enums.DecisionInPrincipleOutcome.CreditCheckNotSelected => "Credit check not selected",
+        PD.Mortgages.Domain.Types.Enums.DecisionInPrincipleOutcome.WithinIndicativeRange => "Within illustrative range",
+        PD.Mortgages.Domain.Types.Enums.DecisionInPrincipleOutcome.AboveIndicativeRange => "Above illustrative range",
         _ => "Indicative result"
     };
 }

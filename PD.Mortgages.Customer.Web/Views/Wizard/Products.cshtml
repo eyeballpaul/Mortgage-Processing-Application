@@ -19,7 +19,7 @@
     <form asp-action="Products" method="post">
         @await Html.PartialAsync("_ExpectedVersion")
         <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
-        @if (Model.DipOutcome == PD.Mortgages.Domain.Enums.DecisionInPrincipleOutcome.AboveIndicativeRange)
+        @if (Model.DipOutcome == PD.Mortgages.Domain.Types.Enums.DecisionInPrincipleOutcome.AboveIndicativeRange)
         {
             <div class="notice-box mb-3">
                 <strong>Your requested loan is above the illustrative borrowing guide</strong>

@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace PD.Mortgages.Domain.Enums;
+namespace PD.Mortgages.Domain.Types.Enums;
 
 public enum DecisionInPrincipleOutcome
 {

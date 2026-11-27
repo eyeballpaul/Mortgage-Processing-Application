@@ -30,10 +30,11 @@ directories remain at the repository root.
 
 | Solution folder | What it contains |
 | --- | --- |
-| Mortgages | Customer and staff web apps, the Mortgage API, its supporting libraries and the mortgage test project |
+| Mortgages | Mortgage API, its domain, supporting libraries and the mortgage test project |
 | Products | Products API, its supporting libraries and tests |
 | Eligibility | Eligibility API and contracts |
 | Notifications | Notifications Worker |
+| User Interfaces | Customer and staff web apps, and customer-session persistence |
 | Hosting | Aspire AppHost and the database bootstrap job, which support multiple areas |
 
 The customer web project and directory are
@@ -44,6 +45,15 @@ application identity and telemetry. Its Azure app and image remain named
 `mortgages-web`. The mortgage test project also contains some eligibility and
 notification tests. [PD.Shared](../PD.Shared/) holds shared source files; it
 is not a separate project.
+
+The Aspire host was renamed from `PD.Mortgages.AppHost` to
+[PD.AppHost](../PD.AppHost/). Its existing user-secrets ID was retained.
+The former `PD.Mortgages.SharedKernel` is now
+[PD.Mortgages.Domain.Types](../PD.Mortgages.Domain.Types/), and its enum
+namespace changed from `PD.Mortgages.Domain.Enums` to
+`PD.Mortgages.Domain.Types.Enums`. Code outside this repository that references
+those project names or enum types must update its references and rebuild.
+The Mortgage API's separate wire contracts were not renamed.
 
 ## Runtime boundaries
 
@@ -150,7 +160,7 @@ The file persistence provider is for development only: unlike SQL, its audit and
 
 For both submission paths, SQL saves the status change, audit entry and one minimal outbox event in the same transaction. The API's publisher uses expiring SQL leases to claim pending events, then sends their IDs, application IDs, event type/version and timestamp to one Service Bus queue. A crash after sending but before recording publication can cause a duplicate. The separate worker atomically records one `SimulatedNotifications` row per event in its own database before completing the message; it does not send an email. Invalid messages are dead-lettered; repeated processing failures are eventually dead-lettered by Service Bus. This is at-least-once delivery, not exactly once. Existing submissions are not backfilled. File and in-memory providers do not create outbox events; notifications require SQL.
 
-Mortgage API request and response shapes and their enums live in `PD.Mortgages.Contracts`, which does not reference the domain. The API and typed client use `PD.Mortgages.Transport` to map wire contracts to the models and service interface in `PD.Mortgages.Abstractions`. The application service implements that interface; neither web app nor the client references the application or domain implementation projects. The small `PD.Mortgages.SharedKernel` contains shared mortgage value enums and their display names, but no entities, persistence or business services. Its existing `PD.Mortgages.Domain.Enums` namespace is retained for compatibility.
+Mortgage API request and response shapes and their enums live in `PD.Mortgages.Contracts`, which does not reference the domain. The API and typed client use `PD.Mortgages.Transport` to map wire contracts to the models and service interface in `PD.Mortgages.Abstractions`. The application service implements that interface; neither web app nor the client references the application or domain implementation projects. The small `PD.Mortgages.Domain.Types` contains mortgage value enums and their display names, but no entities, persistence or business services. They are shared between layers of the mortgage area, not a shared kernel between separate business contexts.
 
 Products requests have a ten-second total timeout across retries. Eligibility requests have a ten-second timeout without automatic retries. Service timeouts count towards each per-handler circuit breaker; cancellation by the caller does not.
 

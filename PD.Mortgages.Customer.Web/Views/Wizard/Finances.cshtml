@@ -24,7 +24,7 @@
         </div>
         <div class="mb-4">
             <label asp-for="EmploymentType" class="form-label"></label>
-            <select asp-for="EmploymentType" asp-items="Html.GetEnumSelectList<PD.Mortgages.Domain.Enums.EmploymentType>()" class="form-select">
+            <select asp-for="EmploymentType" asp-items="Html.GetEnumSelectList<PD.Mortgages.Domain.Types.Enums.EmploymentType>()" class="form-select">
                 <option value="">Choose an option</option>
             </select>
             <span asp-validation-for="EmploymentType" class="field-validation"></span>

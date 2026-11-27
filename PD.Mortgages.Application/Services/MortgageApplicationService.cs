@@ -1,7 +1,7 @@
 using PD.Mortgages.Application.Models;
 using PD.Mortgages.Application.Security;
 using PD.Mortgages.Domain.Entities;
-using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Domain.Types.Enums;
 using PD.Mortgages.Domain.Repositories;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;

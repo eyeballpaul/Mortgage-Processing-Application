@@ -22,7 +22,7 @@
       "args": [
         "run",
         "--project",
-        "${workspaceFolder}/PD.Mortgages.AppHost/PD.Mortgages.AppHost.csproj",
+        "${workspaceFolder}/PD.AppHost/PD.AppHost.csproj",
         "--launch-profile",
         "https"
       ],

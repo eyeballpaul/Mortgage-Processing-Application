@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using PD.Mortgages.Domain.Entities;
+using PD.Mortgages.Domain.Types.Enums;
 using PD.Mortgages.Infrastructure.Persistence;
 using PD.Mortgages.Infrastructure.Repositories;
 using PD.Mortgages.Infrastructure.Storage;
@@ -9,6 +10,35 @@ namespace PD.Mortgages.Tests;
 
 public sealed class DurableStorageTests
 {
+    [Fact]
+    public void ExistingSnapshotEnumValuesRemainReadableAfterDomainTypesRename()
+    {
+        const string json = """
+            {
+              "status": 1,
+              "employmentType": 1,
+              "decisionInPrinciple": {
+                "outcome": 2,
+                "requestedLoanAmount": 200000,
+                "assessedAtUtc": "2025-01-01T00:00:00Z"
+              },
+              "documents": [],
+              "auditTrail": []
+            }
+            """;
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var snapshot = JsonSerializer.Deserialize<MortgageApplicationSnapshot>(json, options)!;
+
+        Assert.Equal(ApplicationStatus.Submitted, snapshot.Status);
+        Assert.Equal(EmploymentType.SelfEmployed, snapshot.EmploymentType);
+        Assert.Equal(DecisionInPrincipleOutcome.AboveIndicativeRange, snapshot.DecisionInPrinciple!.Outcome);
+
+        var resaved = JsonSerializer.SerializeToNode(snapshot, options)!.AsObject();
+        Assert.Equal(1, resaved["status"]!.GetValue<int>());
+        Assert.Equal(1, resaved["employmentType"]!.GetValue<int>());
+        Assert.Equal(2, resaved["decisionInPrinciple"]!["outcome"]!.GetValue<int>());
+    }
+
     [Fact]
     public void OlderSnapshotsKeepHistoricalConsentRecordsWhenResaved()
     {

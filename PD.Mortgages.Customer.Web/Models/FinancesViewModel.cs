@@ -1,5 +1,5 @@
 using System.ComponentModel.DataAnnotations;
-using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Domain.Types.Enums;
 
 namespace PD.Mortgages.Web.Models;
 

@@ -1,5 +1,5 @@
 @model PD.Mortgages.Application.Models.MortgageApplicationDto
-@using PD.Mortgages.Domain.Enums
+@using PD.Mortgages.Domain.Types.Enums
 @{
     var decision = Model.DecisionInPrinciple ?? throw new InvalidOperationException("The application has no Decision in Principle result.");
     var currency = System.Globalization.CultureInfo.GetCultureInfo("en-GB");

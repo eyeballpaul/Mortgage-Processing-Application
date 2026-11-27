@@ -3,7 +3,7 @@ extern alias MortgageApi;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PD.Mortgages.Domain.Entities;
-using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Domain.Types.Enums;
 using PD.Mortgages.Domain.Repositories;
 using PD.Mortgages.Infrastructure.Persistence;
 using PD.Mortgages.Infrastructure.Repositories;

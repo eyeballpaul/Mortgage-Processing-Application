@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
 
-namespace PD.Mortgages.Domain.Enums;
+namespace PD.Mortgages.Domain.Types.Enums;
 
 public static partial class EnumDisplayExtensions
 {

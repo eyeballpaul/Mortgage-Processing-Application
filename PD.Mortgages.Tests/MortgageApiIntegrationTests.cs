@@ -21,7 +21,7 @@ using PD.Mortgages.Application.Models;
 using PD.Mortgages.Application.Services;
 using PD.Mortgages.Client;
 using PD.Mortgages.Contracts;
-using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Domain.Types.Enums;
 using PD.Mortgages.Infrastructure.Eligibility;
 
 namespace PD.Mortgages.Tests;

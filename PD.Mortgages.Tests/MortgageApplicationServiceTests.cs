@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PD.Mortgages.Application.Models;
 using PD.Mortgages.Application.Security;
 using PD.Mortgages.Application.Services;
-using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Domain.Types.Enums;
 using PD.Mortgages.Domain.Entities;
 using PD.Mortgages.Domain.Repositories;
 using PD.Mortgages.Infrastructure.Persistence;

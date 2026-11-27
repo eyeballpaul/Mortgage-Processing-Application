@@ -13,7 +13,7 @@ using Azure.Messaging.ServiceBus;
 using PD.Mortgages.Application.Security;
 using PD.Mortgages.Application.Services;
 using PD.Mortgages.Domain.Entities;
-using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Domain.Types.Enums;
 using PD.Mortgages.Infrastructure.Persistence;
 using PD.Mortgages.Infrastructure.Repositories;
 using PD.Mortgages.Infrastructure.Products;

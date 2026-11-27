@@ -1,5 +1,5 @@
 using PD.Mortgages.Contracts;
-using PD.Mortgages.Domain.Enums;
+using PD.Mortgages.Domain.Types.Enums;
 
 namespace PD.Mortgages.Application.Models;
 

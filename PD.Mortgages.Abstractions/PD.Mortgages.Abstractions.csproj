@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <ProjectReference Include="..\PD.Mortgages.SharedKernel\PD.Mortgages.SharedKernel.csproj" />
+    <ProjectReference Include="..\PD.Mortgages.Domain.Types\PD.Mortgages.Domain.Types.csproj" />
   </ItemGroup>
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
