@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -34,7 +35,7 @@ jobs:
       - name: Test deployment scripts
         run: |
           python3 -m unittest discover -s infra/tests -p 'test_affected.py'
-          bash infra/tests/deploy-existing-test.sh
+          bash infra/tests/release-test.sh
           bash infra/tests/quickstart-test.sh
           bash infra/tests/delete-prototype-test.sh
           bash infra/tests/remove-legacy-receiver-test.sh
@@ -66,8 +67,8 @@ jobs:
         with:
           fail-on-severity: high
 
-  deploy-existing:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  build-images:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: build-test-scan
     runs-on: ubuntu-latest
     concurrency:
@@ -90,32 +91,24 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Check whether prototype is deployed
-        id: prototype
+      - name: Build affected images
+        id: images
         env:
           AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+          BASE_SHA: ${{ github.event.before }}
+          BUILD_ALL: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+          RELEASE_MANIFEST: ${{ runner.temp }}/release-manifest.json
         run: |
-          if [[ -z "$AZURE_RESOURCE_GROUP" || -z "$AZURE_CONTAINER_REGISTRY" ]]; then
-            echo "Resource group and registry variables must be configured." >&2
-            exit 1
-          fi
-          registries="$(az resource list --resource-group "$AZURE_RESOURCE_GROUP" \
-            --resource-type Microsoft.ContainerRegistry/registries --name "$AZURE_CONTAINER_REGISTRY" --output json)"
-          if ! jq -e 'type == "array" and length <= 1' <<< "$registries" >/dev/null; then
-            echo "Invalid registry listing; refusing to skip deployment." >&2
-            exit 1
-          fi
-          if jq -e 'length == 1' <<< "$registries" >/dev/null; then
-            echo "deployed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Registry not found; skipping application deployment. Other resources may still incur charges."
-            echo "deployed=false" >> "$GITHUB_OUTPUT"
+          bash infra/deployment/build-images.sh
+          if [[ -f "$RELEASE_MANIFEST" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Deploy notifications and changed applications
-        if: steps.prototype.outputs.deployed == 'true'
-        env:
-          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
-          AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
-        run: bash infra/deployment/deploy-existing.sh
+      - name: Save built image digests
+        if: steps.images.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-manifest.json
+          if-no-files-found: error

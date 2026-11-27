@@ -93,6 +93,20 @@ within the group, not just specific role/principal pairs. Other broader role
 assignments still apply; review them separately. Contributor is also powerful.
 Protect `main` and restrict who can edit workflows.
 
+#### Check registry access for image digests
+
+The GitHub deployment identity must read registry image metadata to record and
+verify digests. Contributor alone is not registry data-plane access. In the
+prototype registry, open **Access control (IAM) → Role assignments** and
+check the GitHub deployment service principal has `AcrPull` or `AcrPush` at
+the registry scope or inherited from a suitable scope. If it has neither,
+ask an Azure role administrator to grant **AcrPull** at this registry only.
+Wait for role propagation before retrying. The automated create workflow
+grants the deployment principal `AcrPush` on the registry; the interactive
+quickstart may instead have granted `AcrPush` to the signed-in user. Do not
+assume those are the same principal. Repeat this check if the registry is
+deleted and recreated.
+
 #### Add the notification worker identities and permissions
 
 The separate worker needs two more retained identities. The worker identity
@@ -252,7 +266,8 @@ Do not share the full response or authentication details.
    Restrict who can change trusted workflows and run them. Rotate the staff
    secret before expiry and update GitHub; rotation can interrupt the app.
 
-The regular application deployment uses only the first five variables above.
+Image builds and manual release and infrastructure workflows use only the first
+five variables above.
 The on-demand create workflow also needs the other four variables and three
 secrets. All must be **repository** settings, not environment-only settings.
 

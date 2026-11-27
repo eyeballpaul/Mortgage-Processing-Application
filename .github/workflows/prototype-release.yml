@@ -1,0 +1,61 @@
+name: Deploy one prototype target
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Build, test and security checks run ID
+        required: true
+        type: string
+      target:
+        description: One existing application
+        required: true
+        type: choice
+        options:
+          - products-api
+          - eligibility-api
+          - mortgage-api
+          - mortgages-web
+          - staff-web
+          - notifications-worker
+      allow_rollback:
+        description: Approve deploying an older or divergent application commit
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: mortgage-prototype-deployment
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main history
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Sign in to Azure
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy selected target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+          RELEASE_RUN_ID: ${{ inputs.run_id }}
+          RELEASE_SERVICE: ${{ inputs.target }}
+          ALLOW_ROLLBACK: ${{ inputs.allow_rollback }}
+        run: bash infra/deployment/release-service.sh

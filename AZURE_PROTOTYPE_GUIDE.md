@@ -15,11 +15,11 @@ For detailed first-time setup, see the [setup-from-scratch guide](docs/azure-set
    explains accounts, tools, Entra registrations and the first deployment.
 2. **Already completed the first deployment?** Follow
    [one-time setup](docs/azure-on-demand-setup.md#one-time-setup) to enable the
-   two GitHub buttons.
+   GitHub workflows.
 3. **Already completed one-time setup?** Go straight to
    [run the workflows](#run-the-workflows). You do not need to recreate the
    Entra registrations or re-enter the stored GitHub secrets each time.
-4. **Deleted the entire resource group?** The buttons cannot recreate it or
+4. **Deleted the entire resource group?** The workflows cannot recreate it or
    the managed identities. Follow [resource-group recreation](#after-deleting-the-resource-group)
    and repeat the one-time setup if required.
 5. **Need the manual quickstart, notification operations or application-only
@@ -121,12 +121,143 @@ Entra registrations, GitHub configuration and group permissions remain.
    [GitHub deployment troubleshooting](docs/azure-advanced-deployment.md#github-deployment-troubleshooting)
    and [staff sign-in troubleshooting](docs/azure-advanced-deployment.md#staff-sign-in-troubleshooting).
 
-The existing application deployment and both on-demand workflows share a
+Image builds, releases, infrastructure changes and both on-demand workflows share a
 GitHub concurrency group. Do not start a manual quickstart concurrently, and
 avoid queuing multiple lifecycle runs: GitHub may replace a pending run.
-Successful pushes to `main` skip application deployment when the registry is
-absent, but a missing registry does not prove that all billable resources are
-gone. Readiness does not test sign-in, document uploads or a full submission.
+Pushes to `main` never deploy applications. Image builds are skipped when the
+registry is absent, but a missing registry does not prove that all billable
+resources are gone. Readiness does not test sign-in, uploads or a full submission.
+
+## Release changes to an existing prototype
+
+These workflows are new and **have not been validated against live Azure**.
+Use fictional data, review backups and costs, and test the complete journey
+before an interview. A push builds images but does not deploy apps, apply
+infrastructure or migrate databases. The create workflow remains a whole
+environment operation; do not use it as a routine app update.
+
+### 1. Prepare and build
+
+1. Make and test changes locally. Review dependencies between services,
+   configuration, identities and database changes. Commit and push to `main`.
+2. In GitHub open **Actions → Build, test and security checks** and select the
+   run for your commit. Wait for all jobs to succeed. Its **build-images** job
+   builds affected projects and records registry image digests in a
+   `release-manifest-<attempt>` artifact. Project references and linked files
+   are considered; a missing or non-ancestor push baseline causes all images
+   to be built. Pull requests run checks but do not publish images.
+3. If the registry or resource group is absent, the image build is skipped:
+   create the prototype first. To build **all seven** images for the current
+   `main` commit, choose **Actions → Build, test and security checks → Run
+   workflow → main → Run workflow** and wait for success. Do this after
+   recreating the registry, or when an incremental run did not build the
+   target you want. Builds and stored images incur charges.
+   If metadata access fails, check the
+   [registry permission](docs/azure-on-demand-setup.md#check-registry-access-for-image-digests).
+4. Open the successful build run and copy its numeric run ID from the URL
+   (`.../actions/runs/<run-id>`). The target must be listed in its manifest;
+   an unchanged app may require an earlier successful build run or a full build.
+   The manifest is retained according to GitHub artifact retention settings.
+   If it has expired or its digest was removed from ACR, run a new full build.
+   Selecting an older run means deploying its older code, so review
+   compatibility first. The workflow verifies the run, commit, registry,
+   target and digest; a successful test run without a manifest is not a release.
+
+### 2. Review and apply infrastructure only when required
+
+Existing infrastructure changes and new services require code changes, not
+just pressing a button. The narrowly scoped
+[`infra/changes.bicep`](infra/changes.bicep) starts empty. It is for **new
+resources**, not the full create template. Reference existing resources using
+`existing`; do not redeclare existing apps, databases or networks. Nested
+deployments/modules are rejected. The workflow supplies `releaseCommit` as
+the current commit; a new Container App can reference an image tag built for
+that commit, but that initial tag is mutable and must be reviewed. Creation
+of a new app starts its initial image; later releases use immutable digests.
+Never put secrets in the template or preview output.
+
+1. Add and review the new resource definition in `infra/changes.bicep`. Also
+   update `infra/main.bicep` or its modules and quickstart for full
+   recreation, the explicit deletion allowlist and tests. For a new app,
+   add its project/image mapping in `infra/deployment/services.sh`, its
+   release choice in `.github/workflows/prototype-release.yml`, image-build
+   selection and any permissions, networking and configuration. The existing
+   deployment identity may not be authorized to create new role assignments:
+   ask an administrator to review the least-privilege setup, not broaden it
+   automatically.
+2. Commit to `main`, wait for the full build described above if an initial
+   image is needed, then select **Actions → Preview or apply prototype
+   infrastructure → Run workflow → main**. Choose **preview** and run it.
+3. Open the run and review the listed resource IDs and change types, the
+   committed Bicep and its compiled properties against your intended change.
+   To inspect the compiled template locally, run
+   `az bicep build --file infra/changes.bicep --stdout` from the repository root.
+   The log lists IDs and types, not full property values. Independently review
+   costs, identities, access, networking and effects on existing resources.
+   Azure what-if is a prediction, not a guarantee: a new role assignment or
+   resource can affect an existing service even when existing resources are
+   not redeployed.
+4. Only after review, copy the preview's run ID. Run **Preview or apply
+   prototype infrastructure** again on `main`, choose **apply**, enter that
+   preview run ID and start it. The workflow repeats what-if and requires the
+   same commit, subscription, resource group, compiled template and preview
+   result. A changed result requires a new preview and review. Apply is
+   incremental and rejects predicted modifications, redeployments and
+   unsupported or indeterminate changes. `Ignore` entries are allowed for
+   unrelated resources, but what-if can also mark resources `Ignore` when
+   expansion limits are reached; review for incomplete previews. Rerunning
+   after creation may be rejected as `NoChange`.
+5. Inspect the Azure resources and logs. A failed or partial apply is not
+   automatically rolled back; inspect before retrying. Changing an **existing**
+   resource is deliberately outside this workflow: plan and review a
+   separate, resource-specific change and backup rather than applying the
+   full create template as an isolated update.
+
+### 3. Run migrations deliberately when required
+
+1. Review all four database migrations and historical notification-copy
+   behaviour in the selected bootstrap commit. Back up data you need.
+   Use expand-and-contract: the new schema must support both currently running
+   and planned app versions. Neither tests nor the workflow prove this.
+2. In **Actions → Run prototype database bootstrap → Run workflow**, choose
+   `main`, enter the successful build run ID containing `database-bootstrap`,
+   and run it. The workflow updates the existing private job to the verified
+   digest, starts it and waits for success.
+3. Wait for green before releasing any dependent app. On failure or timeout,
+   inspect the named Azure job execution and its logs. A timed-out execution
+   may still be running; do not start another until its state is understood.
+   Migrations may have partially applied and are not automatically reversed.
+   Fix or recover before proceeding. The bootstrap is not run automatically
+   for app deployments.
+
+### 4. Deploy and verify one app at a time
+
+1. Check that the selected target already exists and is compatible with its
+   dependencies, configuration and current database. For older API-hosted
+   notifications, use the [legacy cutover](docs/azure-advanced-deployment.md#enable-on-an-existing-quickstart-deployment).
+2. Select **Actions → Deploy one prototype target → Run workflow → main**.
+   Enter the build run ID and select one of `products-api`, `eligibility-api`,
+   `mortgage-api`, `mortgages-web`, `staff-web` or `notifications-worker`.
+   Leave **allow rollback** off for a normal forward release. Start the run.
+3. Wait for success, then inspect the selected Container App's revision and
+   logs. Public web apps receive a readiness check; internal APIs and the
+   worker require manual verification. Exercise dependencies, staff sign-in,
+   a fictional customer and staff submission, upload and notifications as
+   appropriate. Repeat for each other changed app, in a dependency-compatible
+   order. No other app, notification infrastructure or migration is updated by
+   this release action.
+4. To roll back, first confirm the old image still exists and is compatible
+   with the **current** schema and other services. Select its successful build
+   run, target, and explicitly enable **allow rollback**. A failed readiness
+   check can happen *after* Azure accepted an update; it does not roll back
+   automatically and its commit tag may still show the previous release.
+   Inspect the actual revision and image before deciding what to do. Database
+   migrations are never reversed by an image rollback.
+
+GitHub prevents overlapping running workflows in the shared concurrency
+group, but a newer queued run can replace an older pending one. Check every
+run's status. An independently started interactive quickstart is not covered
+by that lock; never run it concurrently with these workflows.
 
 ### After deleting the resource group
 
@@ -156,10 +287,11 @@ remain. To recreate the prototype:
    GitHub setup was skipped, restore its Contributor permission and variables
    manually. Recheck Graph consent, ownership and the existing OIDC
    credential; they are outside the group but should not be assumed correct.
-5. Test customer access and staff sign-in. The new resources lack successful
-   Git commit markers, so the first regular workflow deployment builds all
-   images and runs the bootstrap job. If using that workflow, push or merge a
-   change to `main` or rerun an appropriate current-commit run.
+5. Test customer access and staff sign-in. Create already ran bootstrap and
+   deployed images from its source revision. To prepare immutable images for
+   later individual releases, run the full build described in the
+   [release guide](#release-changes-to-an-existing-prototype). Old build
+   artifacts may refer to images deleted with the previous registry.
 
 GitHub serializes workflow deployments, but cannot serialize a manual
 quickstart run. Avoid running them against the same group simultaneously.

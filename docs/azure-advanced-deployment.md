@@ -81,7 +81,7 @@ worker has not been validated there. Health checks do not test the flow.
 ### Enable on an existing quickstart deployment
 
 An older deployment can still have the consumer running inside `mortgage-api`.
-The create and regular deployment scripts stop before upgrading such an app:
+The create and individual Mortgage API release scripts stop before upgrading such an app:
 two consumers writing to different databases could record a duplicate.
 
 1. Check whether the existing prototype contains data or queued messages you
@@ -92,8 +92,7 @@ two consumers writing to different databases could record a duplicate.
    [Delete when finished](../AZURE_PROTOTYPE_GUIDE.md#delete-when-finished).
    Confirm deletion succeeded and inspect costs. Make sure the updated
    deletion workflow and scripts are committed and pushed to `main` first.
-   The push may trigger a regular deployment that fails while the legacy
-   consumer is present; that failure does not perform the cutover.
+   The push does not deploy applications or perform the cutover.
 3. Complete the updated [one-time setup](azure-on-demand-setup.md#one-time-setup),
    including the two new retained identities and the restricted role condition.
    Then run [Create when needed](../AZURE_PROTOTYPE_GUIDE.md#create-when-needed).
@@ -105,10 +104,10 @@ two consumers writing to different databases could record a duplicate.
    again for another message. Check Container Apps system logs for scaler
    authentication errors if it does not.
 
-On subsequent pushes, the application workflow reconciles the queue and
-permissions, runs bootstrap if its dependencies changed, and updates affected
-images. It cannot create a missing worker or other core infrastructure; use
-the create workflow. A successful submission can precede publishing, because
+Subsequent pushes build affected images but do not change the queue,
+permissions, database or running apps. Use the
+[release guide](../AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype)
+for deliberate updates. A successful submission can precede publishing, because
 the outbox retries later. File and in-memory providers do not create outbox
 events. Aspire enables the publisher and worker with its
 [local emulator](../README.md#local-notification-processing) by default in
@@ -257,14 +256,12 @@ Redact personal data, tokens, authorization codes and secrets before sharing log
 
 ## Deploy application changes with GitHub Actions
 
-The existing GitHub Actions workflow builds and tests pull requests. After a
-successful build on a push to `main`, it deploys changed application images to
-an **existing compatible** quickstart deployment and applies the notification
-Bicep and settings. It cannot create a missing worker or upgrade an older
-API-hosted consumer; follow the
-[legacy cutover](#enable-on-an-existing-quickstart-deployment). It does not
-create the resource group, core infrastructure or Entra registrations, or
-manage secrets. Review other infrastructure changes and deploy them separately.
+GitHub Actions builds and tests pull requests. A successful push to `main`
+also builds affected images when the registry exists, but does **not** deploy
+apps, apply infrastructure or run migrations. The manual release and
+infrastructure workflows are untested against live Azure. For the complete
+release procedure, see the
+[step-by-step guide](../AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype).
 
 1. In Entra, create a **separate** single-tenant app registration for deployment,
    with no redirect URI required. On the registration, open **Certificates &
@@ -296,30 +293,19 @@ manage secrets. Review other infrastructure changes and deploy them separately.
    app client ID. Use the registry name without `.azurecr.io`. Do not put secret
    values in these variables; this workflow does not use environment variables
    from a GitHub environment.
-3. Commit and push the workflow and deployment scripts to `main`. The first run
-   builds all seven images because quickstart images do not contain a Git commit
-   baseline. Later runs compare each service's last successful deployed commit
-   against the new commit, including transitive project references and linked
-   files. If a baseline is unavailable, the service is rebuilt rather than
-   silently skipped. A failed deployment must pass on a later retry before its
-   new image is recorded as successful.
+3. Commit and push to `main`, then follow the
+   [release steps](../AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype).
+   Push builds compare the previous push commit with the new commit, including
+   project references and linked files; a manual full build publishes all
+   seven images. The release workflow checks a successful run's recorded digest
+   and updates one selected target. The operator must explicitly run bootstrap
+   before dependent apps when needed, and verify compatibility.
 
-The customer project directory is now `PD.Mortgages.Customer.Web`, but its
-Azure app and image are still `mortgages-web`. The solution-file changes for
-the project renames and grouping are treated as shared build changes: a
-deployment comparing against a commit before those changes rebuilds all six
-app images and the bootstrap image. These builds can incur charges.
-
-If the database bootstrap project or its dependencies change, the workflow
-builds and runs the existing private Container Apps job before updating apps.
-Migrations must remain compatible with the currently running revisions; use
-expand-and-contract migrations. After an app update or bootstrap run, the pipeline checks public readiness and
-API dependencies, not a full sign-in, upload or submission. A run with neither
-an app update nor a bootstrap run exits without those checks. It stores successful
-commit markers in resource tags and uses commit-tagged images. Azure Registry
-builds, stored images, running apps and databases may incur charges. GitHub
-Actions usage may also be billed by GitHub depending on repository visibility,
-plan and usage; that billing is separate from an Azure budget.
+The customer project directory is `PD.Mortgages.Customer.Web`, while its Azure
+app and image are `mortgages-web`. Registry builds, stored images, running apps
+and databases may incur charges. GitHub Actions usage may also be billed by
+GitHub depending on repository visibility, plan and usage; that billing is
+separate from an Azure budget.
 
 ### GitHub deployment troubleshooting
 
@@ -333,7 +319,7 @@ plan and usage; that billing is separate from an Azure budget.
 - If deployment reports a legacy consumer or a missing `notifications-worker`,
   follow the [legacy cutover](#enable-on-an-existing-quickstart-deployment).
   Do not delete data you need; a data-preserving cutover is not automated.
-- After correcting the configuration, select **Re-run jobs → Re-run failed
-  jobs** on the GitHub Actions run. Readiness checks do not replace testing
-  staff sign-in and a full journey with fictional data.
+- After correcting the configuration, inspect any partial update before retrying.
+  Run a fresh preview if infrastructure changed since review. Readiness checks
+  do not replace testing staff sign-in and a full journey with fictional data.
 

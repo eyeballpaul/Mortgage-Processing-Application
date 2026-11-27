@@ -64,7 +64,8 @@ GitHub deployment script currently expects those names.
 2. Select **New repository variable**, add each name and value below, then
    select **Add variable**. Update existing entries rather than duplicating
    them. They are identifiers, not credentials.
-3. The first five are also used by the regular application deployment.
+3. The first five are also used by image builds and the manual release and
+   infrastructure workflows.
    The on-demand workflows require the remaining values as well.
 
 | Variable | Where to find its value |
@@ -87,7 +88,7 @@ GitHub deployment script currently expects those names.
 
 The workflow uses an Entra federated credential for this repository's immutable
 GitHub OIDC subject instead of a deployment client secret. The regular
-application deployment does not consume or update the staff secret or service
+release workflows do not consume or update the staff secret or service
 keys; the on-demand create workflow does consume them. Environment-scoped
 GitHub variables and secrets are not available because these jobs do not
 select an environment.
@@ -115,9 +116,8 @@ identity receives queue-scoped receiver access. A separate scaler-only identity
 receives namespace-scoped Service Bus Data Owner; it is unavailable to the
 containers. `Notifications__Enabled`, `Notifications__ServiceBusNamespace` and
 `Notifications__QueueName` are set by the template; no Service Bus key is used.
-The regular workflow applies this notification module and Mortgage API settings
-to an existing compatible deployment. It cannot create a missing worker or
-upgrade an API-hosted consumer; see the
+Push builds and individual releases do not reapply the notification module or
+Mortgage API settings. They cannot upgrade an API-hosted consumer; see the
 [legacy cutover](../docs/azure-advanced-deployment.md#enable-on-an-existing-quickstart-deployment).
 It requires the constrained group-scoped role-assignment permissions described
 in the [deployment guide](../docs/azure-advanced-deployment.md#one-time-github-deployment-permission).

@@ -288,7 +288,7 @@ Otherwise follow these manual steps.
    [one-time setup](azure-on-demand-setup.md#2-allow-the-deployment-identity-to-manage-azure-resources)
    for the initial five-role, five-principal **group-scoped** condition and
    its notification extension. This is the documented setup for both the
-   on-demand workflows and the regular application deployment. The
+   on-demand workflows. The
    quickstart's optional queue-scoped condition alone is insufficient for
    the separate worker and scaler.
 
@@ -314,25 +314,20 @@ Otherwise follow these manual steps.
    [one-time setup](azure-on-demand-setup.md#one-time-setup), including the
    additional repository variables, secrets, Graph consent and Staff Web
    ownership. Return here when those checks are complete.
-4. Push or merge an application change to `main`. After build and tests pass,
-   the workflow deploys to the **existing compatible** resources. It cannot
-   create a missing worker or upgrade a legacy API-hosted consumer. If an
-   older prototype is still running, follow the
-   [legacy cutover](azure-advanced-deployment.md#enable-on-an-existing-quickstart-deployment)
-   before expecting the deployment to succeed. On the first deployment
-   after quickstart, no commit baselines exist, so it builds all seven images and
-   runs bootstrap. Later runs select affected projects; this selective path still
-   needs a live test. The workflow applies the Service Bus notification Bicep and
-   settings, but does not create the core infrastructure or update secrets.
-   Do not run it at the same time as the manual quickstart.
-5. Watch **Actions → Build, test and security checks → deploy-existing**.
-   Verify readiness, staff sign-in and the application journey separately.
-   Builds and Azure resources can incur charges.
+4. Push or merge your changes to `main` and watch **Actions → Build, test and
+   security checks**. After tests succeed, it builds affected images if the
+   registry exists. It does not update Azure applications, infrastructure or
+   the database. Pull requests never publish images.
+5. To release, follow every step in the
+   [release guide](../AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype):
+   deliberately review infrastructure and migrations, then select and deploy
+   one target at a time. Verify sign-in and the application journey separately.
+   The release workflows have not been tested live. Builds and resources cost money.
 6. If login reports a missing client or tenant ID, check the exact repository
    variable names and values. For `AADSTS700213`, compare the login log's
    issuer, audience and subject with the federated credential on the app whose
    client ID is in `AZURE_CLIENT_ID`. After correcting settings, use **Re-run
-   jobs → Re-run failed jobs** on the appropriate current-commit run.
+   jobs → Re-run failed jobs** on the appropriate run and check its outcome.
 
 ## 8. When finished
 
