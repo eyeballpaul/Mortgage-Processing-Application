@@ -43,8 +43,11 @@ variables → Actions. They are identifiers, not credentials:
 | `AZURE_RESOURCE_GROUP` | Existing prototype resource group |
 | `AZURE_CONTAINER_REGISTRY` | Existing registry **name**, not its login server URL |
 
-The workflow uses an Entra federated credential instead of a client secret; it
-does not consume the staff secret or service keys and does not update them.
+The workflow uses an Entra federated credential for this repository's immutable
+GitHub OIDC subject instead of a client secret; it does not consume the staff
+secret or service keys and does not update them. Environment-scoped GitHub
+variables are not available to this workflow because its job does not select
+an environment.
 See the [GitHub Actions setup](../AZURE_DEPLOYMENT.md#deploy-application-changes-with-github-actions)
 for permissions and recreation guidance.
 

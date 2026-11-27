@@ -2,9 +2,10 @@
 
 The quickstart deploys two public web apps, three internal APIs, three SQL databases,
 and private SQL and Blob endpoints in one VNet. This is a prototype: use fictional
-data only. The quickstart has deployed and staff sign-in has been exercised in
-one Azure environment; a complete customer-to-staff journey and the GitHub
-Actions deployment workflow have not been validated end-to-end.
+data only. The quickstart, staff sign-in and an initial GitHub Actions deployment
+have succeeded in one Azure environment. The workflow's readiness and dependency
+checks passed, but a subsequent selective incremental deployment and a complete
+customer-to-staff journey have not yet been validated.
 
 ## Before deploying
 
@@ -30,6 +31,10 @@ on the subscription and its existing free databases. Running replicas and health
 checks can consume the allowance even when nobody is using the apps. The registry,
 private endpoints, logging, storage and other resources may still incur charges.
 There is no verified pause/resume feature and no guaranteed £20 monthly cost.
+In Azure Cost Management, filter Cost analysis to the resource group and group
+by resource to identify actual charges; check the subscription scope for costs
+outside the group. Five continuously running apps, two private endpoints and the
+Basic registry are important costs to monitor.
 
 ## Deploy
 
@@ -95,21 +100,34 @@ the **existing** quickstart deployment. It does not create a resource group,
 apply Bicep, change app configuration or manage secrets. Deploy infrastructure
 changes separately and review them before applying them.
 
-1. In Entra, create a **separate** app registration for deployment. On it, open
-   **Certificates & secrets → Federated credentials**, add a GitHub Actions
-   credential for organisation `eyeballpaul`, repository
-   `Mortgage-Processing-Application`, entity type **Branch**, and branch
-   `main`. The expected subject is
-   `repo:eyeballpaul/Mortgage-Processing-Application:ref:refs/heads/main`.
-   Grant its service principal **Contributor** on the existing resource group.
-   The workflow uses OIDC and does not need a client secret. Protect `main` and
-   restrict who can change the workflow: the federated identity can update the
-   resources in that group.
+1. In Entra, create a **separate** single-tenant app registration for deployment,
+   with no redirect URI required. On the registration, open **Certificates &
+   secrets → Federated credentials → Add credential**, and select **Other
+   issuer**. Create a credential with:
+
+   | Field | Value |
+   | --- | --- |
+   | Issuer | `https://token.actions.githubusercontent.com` |
+   | Subject identifier | `repo:eyeballpaul@3922189/Mortgage-Processing-Application@1437634495:ref:refs/heads/main` |
+   | Name | `github-main-immutable` |
+   | Audience | `api://AzureADTokenExchange` |
+
+   The subject above is the immutable subject emitted by this repository's
+   `main` workflow. A fork, renamed or transferred repository, or customized
+   GitHub OIDC subject may need a different value. Match the exact subject in
+   the GitHub login log; see [GitHub's Azure OIDC guidance](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-azure).
+   Grant the deployment app's service principal **Contributor** on the existing
+   resource group. The workflow uses OIDC and does not need a client secret.
+   Protect `main` and restrict who can change the workflow: the federated
+   identity can update the resources in that group.
 2. In GitHub, under **Settings → Secrets and variables → Actions → Variables**,
-   add `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
-   `AZURE_RESOURCE_GROUP` and `AZURE_CONTAINER_REGISTRY`. Use the deployment
-   service principal's client ID and the existing resource names, not the staff
-   app client ID. Do not put secret values in these variables.
+   add **repository variables** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+   `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP` and
+   `AZURE_CONTAINER_REGISTRY`. Use the deployment app's application (client)
+   ID, its directory (tenant) ID and the existing resource names, not the staff
+   app client ID. Use the registry name without `.azurecr.io`. Do not put secret
+   values in these variables; this workflow does not use environment variables
+   from a GitHub environment.
 3. Commit and push the workflow and deployment scripts to `main`. The first run
    builds all six images because quickstart images do not contain a Git commit
    baseline. Later runs compare each service's last successful deployed commit
@@ -127,6 +145,19 @@ commit markers in resource tags and uses commit-tagged images. Azure Registry
 builds, stored images, running apps and databases may incur charges. GitHub
 Actions usage may also be billed by GitHub depending on repository visibility,
 plan and usage; that billing is separate from an Azure budget.
+
+### GitHub deployment troubleshooting
+
+- If Azure login reports that `client-id` or `tenant-id` is missing, verify
+  `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` are populated as repository variables
+  with those exact names. Also check `AZURE_SUBSCRIPTION_ID`.
+- `AADSTS700213` means Azure found no matching federated credential. Check the
+  issuer, audience and exact subject shown by the login step against the
+  credential on the app identified by `AZURE_CLIENT_ID`. This repository uses
+  the immutable subject above, not the older name-only subject.
+- After correcting the configuration, select **Re-run jobs → Re-run failed
+  jobs** on the GitHub Actions run. Readiness checks do not replace testing
+  staff sign-in and a full journey with fictional data.
 
 ### After deleting the resource group
 
@@ -155,6 +186,18 @@ Portal. This permanently deletes its databases, blobs, identities and other
 resources; ensure nothing else in the group needs to be retained. Verify deletion
 has finished and check for resources or charges outside that group. Entra app
 registrations and subscription-level budgets are not deleted with the group.
+
+Alternatively, after checking the selected subscription and group, use Azure CLI:
+
+```bash
+az account show --output table
+az group show --name "<resource-group>" --output table
+az group delete --name "<resource-group>"
+az group exists --name "<resource-group>"
+```
+
+Confirm the deletion prompt only after verifying the group. The final command
+should return `false` once deletion has completed.
 
 The older scripts in [infra/scripts](infra/scripts/README.md) are not verified
 pause/resume or cost-estimation tools; do not use them to control costs.
