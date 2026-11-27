@@ -1,13 +1,35 @@
 # Architecture
 
+This page explains **what runs where and why**. It is a reference, not a
+deployment procedure. For the actual clicks and commands, follow the
+[setup-from-scratch guide](azure-setup-from-scratch.md).
+
+## How to read this page
+
+1. Start with **Runtime boundaries** to see how a browser request travels
+   through the web apps and APIs.
+2. Read **Persistence** to see where data is stored locally and in Azure.
+3. Read **Azure deployment** for network boundaries and the create/delete
+   lifecycle.
+4. Read **Operations and observability** before troubleshooting or enabling
+   optional monitoring, which can add costs.
+
+An **API** is a service called by another app. A **managed identity** is an
+Azure-provided identity used instead of an application password. A **private
+endpoint** gives a service a private network address. An **outbox** is a
+database record that lets the API publish a notification later; a **queue**
+holds messages until a consumer processes them.
+
 ## Runtime boundaries
+
+### Azure runtime
 
 ```mermaid
 flowchart LR
     Browser[Customer browser] --> Customer[Customer web]
     StaffBrowser[Staff browser] --> Staff[Staff web]
     Staff <-->|OIDC sign-in| Entra[Microsoft Entra ID]
-    Customer -->|Application token + server session| API[Internal Mortgage API]
+    Customer -->|Managed identity token + server session| API[Internal Mortgage API]
     Staff -->|Delegated staff token| API
     Customer --> Sessions[(customer-sessions SQL)]
     API --> Mortgage[(mortgages SQL)]
@@ -18,9 +40,41 @@ flowchart LR
     Products --> ProductDb[(products SQL)]
 ```
 
+The diagram shows the deployed Azure configuration, not the default local
+configuration. Service Bus is publicly reachable, but authenticated using the
+Mortgage API managed identity; it is not a private endpoint.
+
 The Mortgage API is the only runtime owner of mortgage applications, audit history and documents. It hosts `PD.Mortgages.Application` and `PD.Mortgages.Infrastructure`; the web apps use `PD.Mortgages.Client` and shared contracts instead. The customer app owns its separate session database; staff has no database because no staff-owned data requires one. Customer and staff Data Protection keys are stored in separate private Blob containers in Azure and accessed by their respective identities.
 
-The API checks the customer application's Entra application role and client ID before accepting a server-generated session actor. It validates a staff token's issuer, audience, calling client ID, delegated `Mortgage.Staff` scope, `MortgageStaff` API role and tenant/object IDs. Its application service enforces session ownership, blocks customer access to submitted applications, attributes audit entries, validates document uploads and retains optimistic concurrency and transactional SQL audit writes. Customer submission is idempotent for the same owner, attempt key and expected version. A session-bound receipt exposes only the reference and submission time for 24 hours; other mortgage operations are not automatically retried.
+In Azure, the API checks the customer application's Entra application role and client ID before accepting a server-generated session actor. It validates a staff token's issuer, audience, calling client ID, delegated `Mortgage.Staff` scope, `MortgageStaff` API role and tenant/object IDs. Its application service enforces session ownership, blocks customer access to submitted applications, attributes audit entries, validates document uploads and retains optimistic concurrency and transactional SQL audit writes. Customer submission is idempotent for the same owner, attempt key and expected version. A session-bound receipt exposes only the reference and submission time for 24 hours; other mortgage operations are not automatically retried.
+
+### Local Aspire runtime
+
+```mermaid
+flowchart LR
+    subgraph Docker["One local SQL Server container"]
+        Sessions[(customer-sessions SQL)]
+        Mortgage[(mortgages SQL)]
+        ProductDb[(products SQL)]
+    end
+    Browser[Customer browser] --> Customer[Customer web]
+    StaffBrowser[Staff browser] --> Staff[Staff web]
+    Staff <-->|Staff sign-in| Entra[Microsoft Entra ID]
+    Customer -->|Development-only credential + server session| API[Mortgage API]
+    Staff -->|Delegated staff token| API
+    Customer --> Sessions
+    API --> Mortgage
+    API --> Documents[(Local document files)]
+    API --> Products[Products API]
+    API --> Eligibility[Eligibility API]
+    Products --> ProductDb
+```
+
+Aspire runs the .NET apps locally and creates a process-scoped development
+credential for customer-to-API calls. That credential is accepted only in
+Development; staff still use Entra sign-in. The local SQL container holds
+three separate databases. SQL-backed submissions create outbox records, but
+Aspire does not configure or enable the Service Bus workers by default.
 
 The stateless Eligibility API owns the fictional indicative decision rules; product eligibility remains with Products. Only property value, deposit, income and credit-check consent state are sent, using a distinct shared service key. Mortgage owns the saved decision, rule version and audit event, rechecks application version after the call and rejects stale results. A service failure returns an unavailable response, not a declined decision. Existing decisions without a rule version remain readable. No credit bureau is contacted.
 
@@ -55,41 +109,112 @@ In Aspire, the Mortgage API, Products API and customer web app apply their own d
 
 ## Azure deployment
 
+### Network and hosting
+
 ```mermaid
 flowchart LR
-    Quickstart[Manual quickstart] --> Registry[Container Registry]
-    Pipeline[GitHub Actions] -->|Affected images| Registry
-    Registry --> Customer[Customer Container App]
-    Registry --> Staff[Staff Container App]
-    Registry --> API[Internal Mortgage API Container App]
-    Registry --> Products[Internal Products API Container App]
-    Registry --> Eligibility[Internal Eligibility API Container App]
-    Customer --> Sessions[(Customer sessions SQL)]
+    CustomerBrowser[Customer browser] -->|Public HTTPS| Customer
+    StaffBrowser[Staff browser] -->|Public HTTPS| Staff
+    Staff <-->|Staff sign-in| Entra[Microsoft Entra ID]
+
+    subgraph Group["Dedicated prototype resource group"]
+        subgraph VNet["VNet 10.42.0.0/16"]
+            subgraph AppSubnet["Container Apps subnet 10.42.0.0/24"]
+                subgraph Environment["Container Apps environment"]
+                    Customer[Customer web]
+                    Staff[Staff web]
+                    API[Mortgage API]
+                    Products[Products API]
+                    Eligibility[Eligibility API]
+                    Bootstrap[Database bootstrap job]
+                end
+            end
+            subgraph EndpointSubnet["Private-endpoint subnet 10.42.1.0/24"]
+                SqlEndpoint[SQL private endpoint]
+                BlobEndpoint[Blob private endpoint]
+            end
+        end
+        Dns[Private DNS zones linked to VNet]
+        Sql[(Azure SQL server: three databases)]
+        Blob[(Storage account: three Blob containers)]
+        Registry[Container Registry: public endpoint]
+        Bus[Service Bus Basic: public endpoint]
+        Logs[Log Analytics workspace]
+    end
+
     Customer --> API
     Staff --> API
-    API --> Mortgage[(Mortgage SQL)]
-    API -->|Managed identity| Bus[Public Service Bus Basic queue]
-    Pipeline -->|Queue and roles| Bus
-    Pipeline -->|Notification settings| API
-    API --> Documents[(Mortgage documents Blob)]
     API --> Products
     API --> Eligibility
-    Products --> ProductDb[(Products SQL)]
-    Customer --> CustomerKeys[(Customer key Blob)]
-    Staff --> StaffKeys[(Staff key Blob)]
-    Registry --> Bootstrap[Private database bootstrap job]
-    Quickstart -->|Run bootstrap| Bootstrap
-    Pipeline -->|Run when affected| Bootstrap
-    Bootstrap -->|Users and migrations| Mortgage
-    Bootstrap -->|Users and migrations| Sessions
-    Bootstrap -->|Users and migrations| ProductDb
+    Customer -->|Sessions| SqlEndpoint
+    API -->|Mortgage data| SqlEndpoint
+    Products -->|Product data| SqlEndpoint
+    Bootstrap -->|Users and migrations| SqlEndpoint
+    SqlEndpoint --> Sql
+    API -->|Documents| BlobEndpoint
+    Customer -->|Data Protection keys| BlobEndpoint
+    Staff -->|Data Protection keys| BlobEndpoint
+    BlobEndpoint --> Blob
+    Dns -.->|Private name resolution| SqlEndpoint
+    Dns -.->|Private name resolution| BlobEndpoint
+    API <-->|Managed identity| Bus
+    Registry -.->|Images pulled with identity| Environment
+    Environment -.->|Console logs| Logs
 ```
+
+The arrows show logical connections, not every DNS query or network hop. The
+customer and staff web apps have public ingress; the three API ingress
+endpoints are internal. SQL and Blob are Azure services outside the VNet,
+accessed through the private endpoints inside it; their public network access
+is disabled. The registry and Service Bus namespace are public endpoints,
+with identity-based access. The queue is part of the Service Bus namespace.
 
 The customer and staff web apps have public HTTPS ingress. All three APIs have internal ingress. The Eligibility API has no database and shares a separate secret with Mortgage API. The customer managed identity can access only its session database and customer key container, and is assigned the API application role. The Mortgage API identity can access the mortgage database and document container; the Products API identity has read access to its catalog database. The staff identity accesses its own key container and has no SQL or document access. Staff API authorization uses delegated tokens, not the staff app's managed identity. The quickstart assigns the customer API role; the bootstrap job's managed identity provisions SQL users and applies migrations.
 
 One VNet (`10.42.0.0/16`) contains a delegated Container Apps subnet (`10.42.0.0/24`) and a private-endpoint subnet (`10.42.1.0/24`). SQL and Blob private endpoints use linked private DNS zones; public network access is disabled for both services. The registry and Service Bus Basic namespace remain publicly reachable with identity-based access. The API identity has sender and receiver permissions scoped to the queue; local Service Bus authentication is disabled. Hosting both workers in the API avoids another always-on Container App but sacrifices independent scaling and identity isolation. The Container Apps environment has public ingress enabled, but only the two web apps expose external ingress.
 
-This is not a production security boundary: staff ingress is public, and the prototype needs further security, privacy, backup and retention review before handling real data. The in-memory staff token cache is lost on restart; staff may be prompted to sign in again. The manual quickstart provisions the core infrastructure; GitHub Actions deploys the notification queue and settings and updates changed images on existing resources. An initial app-only GitHub deployment succeeded with readiness and dependency checks; the notification pipeline and complete customer-to-staff journey remain unvalidated. See the [Azure deployment guide](../AZURE_DEPLOYMENT.md) for identity setup, migration implications and cost notes.
+This is not a production security boundary: staff ingress is public, and the prototype needs further security, privacy, backup and retention review before handling real data. The in-memory staff token cache is lost on restart; staff may be prompted to sign in again. A customer-to-staff journey and simulated notification have been observed in Azure; this does not validate every journey or future deployment. See the [prototype lifecycle guide](../AZURE_PROTOTYPE_GUIDE.md) for create/delete and identity setup, and the [advanced deployment guide](azure-advanced-deployment.md) for cost notes and operational details.
+
+### Creation, updates and deletion
+
+```mermaid
+flowchart TD
+    Manual[Interactive quickstart] --> Script[Quickstart script]
+    Create[GitHub: Create prototype] -->|OIDC; retained group and identities required| Script
+    Script --> Foundation[Bicep: foundation, network, SQL, Blob and queue]
+    Foundation --> Images[Build six images in Container Registry]
+    Images --> Bootstrap[Run private database bootstrap job]
+    Bootstrap --> Apps[Deploy five Container Apps]
+    Apps --> Callbacks[Update Staff Web callbacks in Entra]
+    Callbacks --> Ready[Check public readiness]
+
+    Push[Push to main] --> CI[Build, test and security checks]
+    CI -->|Registry exists| Update[Deploy existing application]
+    Update -->|Affected images and bootstrap| Registry[Container Registry and bootstrap job]
+    Update -->|Reconcile queue and settings| Notifications[Service Bus and Mortgage API]
+    CI -->|Registry absent| Skip[Skip application deployment]
+
+    Delete[GitHub: Delete prototype resources] --> Review[Check known resources and staff callbacks]
+    Review -->|Recognized| Remove[Delete prototype resources and data]
+    Review -->|Unknown resources or unexpected DNS links| Stop[Stop; inspect remaining costs]
+    Remove --> Retain[Keep group, six identities and group permissions]
+```
+
+The on-demand create workflow uses the same quickstart script as an
+interactive deployment, but does not create a missing group, identities or
+customer app-role assignment. Entra registrations and GitHub configuration
+are outside the group and remain after normal deletion. The delete workflow
+removes the current staff callback URIs before deleting recognized resources;
+an error after deletion starts can leave a partially deleted, billable
+environment. It permanently deletes databases, blobs, queue data, images and
+logs. There is no verified whole-environment pause.
+
+The regular push-to-main deployment updates **existing** resources. It
+reconciles the queue and notification settings and builds affected images; it
+does not recreate core infrastructure if the registry is absent. All three
+GitHub lifecycle deployments share a concurrency group, but manual quickstart
+runs do not. For the required setup and step-by-step operation, see the
+[prototype lifecycle guide](../AZURE_PROTOTYPE_GUIDE.md).
 
 ## Operations and observability
 
@@ -97,4 +222,13 @@ All five apps log request route, status, duration and W3C trace/span IDs; HTTP c
 
 An optional `otlpEndpoint` enables OpenTelemetry HTTP server and client span export to a trusted, separately provisioned OTLP collector; it is off by default. The endpoint must use HTTPS outside Development and cannot contain credentials. Set `otlpProtocol` to `grpc` (the default) or `http/protobuf` to match the collector. Root traces are sampled at 10%, with downstream services honoring the parent decision. URL path and query tags are removed before export, but telemetry can still contain operational metadata: assess the destination, security and retention before enabling it. An Azure Monitor connection string is not an OTLP collector endpoint. Collector and ingestion costs are additional; test connectivity and data handling before relying on traces.
 
-Liveness checks only the process; readiness checks required dependencies. Health probes are exempt from the Products API rate limiter. Customer web readiness includes the Mortgage API and its configured distributed session store. Separately, the rate-limited `/health/dependencies` customer endpoint checks Products and Eligibility through the Mortgage API using their configured service credentials; the GitHub workflow runs this on demand after deployment, not on every probe. It does not exercise staff sign-in or complete business flows. Regular SQL readiness probes and maintenance may keep databases active; the template requests the SQL free offer with auto-pause on allowance exhaustion, which makes the database unavailable until the next month. Setting `alertEmail` provisions an optional paid five-minute Azure Monitor log alert for repeated 5xx responses and an email action group; it is disabled by default. The alert depends on console-log ingestion and does not detect a complete logging outage. Verify delivery in Azure and add an independent availability/replica alert before relying on the demo. Review ingestion, alert frequency and retention costs. Follow the [restore exercise](../README.md#restore-exercise) and migration guidance before deploying future schema changes.
+Liveness checks only the process; readiness checks required dependencies. Health probes are exempt from the Products API rate limiter. Customer web readiness includes the Mortgage API and its configured distributed session store. Separately, the rate-limited `/health/dependencies` customer endpoint checks Products and Eligibility through the Mortgage API using their configured service credentials.
+
+The regular GitHub application deployment checks public readiness and calls
+`/health/dependencies` after an app update or bootstrap run. If neither
+occurs, it exits after reconciling notification resources without running
+those checks. The interactive quickstart and on-demand creation check public
+readiness, but do not call `/health/dependencies`. None of these checks
+exercise staff sign-in or complete business flows.
+
+Regular SQL readiness probes and maintenance may keep databases active; the template requests the SQL free offer with auto-pause on allowance exhaustion, which makes the database unavailable until the next month. Setting `alertEmail` provisions an optional paid five-minute Azure Monitor log alert for repeated 5xx responses and an email action group; it is disabled by default. The alert depends on console-log ingestion and does not detect a complete logging outage. Verify delivery in Azure and add an independent availability/replica alert before relying on the demo. Review ingestion, alert frequency and retention costs. Follow the [restore exercise](../README.md#restore-exercise) and migration guidance before deploying future schema changes.

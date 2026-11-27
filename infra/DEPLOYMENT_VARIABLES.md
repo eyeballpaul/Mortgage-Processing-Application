@@ -1,29 +1,41 @@
 # Azure deployment configuration
 
-The [Azure deployment guide](../AZURE_DEPLOYMENT.md) is the authoritative
-procedure. This page summarizes the values used by the quickstart and the
-GitHub Actions workflow.
+The [prototype lifecycle guide](../AZURE_PROTOTYPE_GUIDE.md) covers routine
+use; the [advanced deployment guide](../docs/azure-advanced-deployment.md)
+covers the quickstart. This page summarizes their configuration values.
+
+## How to use this page
+
+1. Follow the [first-time setup guide](../docs/azure-setup-from-scratch.md) if
+   you have not deployed before.
+2. Before running the quickstart, use the first table below to gather its
+   inputs. Keep secrets in a password manager, not in this file.
+3. Before running an on-demand workflow, add the GitHub values in the second
+   table and complete the linked permission checks. A variable is an
+   identifier; a secret is a credential whose value must not be shared.
+4. On retries, use the same resource names and matching secret values unless
+   you have deliberately planned a change.
 
 For the on-demand GitHub create and delete workflows, including the additional
 repository variables, secrets, retained identities and required permissions,
-see [on-demand workflows](../AZURE_DEPLOYMENT.md#on-demand-github-workflows).
+see [on-demand setup](../docs/azure-on-demand-setup.md).
 
 ## Interactive quickstart
 
 The quickstart reads the current subscription and signed-in Entra user, and
 creates a missing resource group after confirmation. It prompts for:
 
-| Value | Meaning |
+| Value | What to enter and where to find it |
 | --- | --- |
-| Resource group and region | Existing or new group; a region is requested only for a new group |
-| Container registry | Globally unique registry name; reuse it when retrying |
-| SQL server | Globally unique logical server name; reuse it when retrying |
-| Storage account | Globally unique lowercase storage account name; reuse it when retrying |
-| Mortgage API client ID | Application/client ID of the API app registration |
-| Staff web client ID | Application/client ID of the staff app registration |
-| Staff web client secret | Secret **value** belonging to that staff registration |
-| Products and Eligibility keys | Two different 32–128 character keys using letters, digits, underscores or hyphens |
-| GitHub setup and repository | Optional automatic setup for an existing deployment app and `owner/name` repository |
+| Resource group and region | Existing or new group name; the script asks for a region only for a new group |
+| Container registry | Globally unique registry name; find an existing name in the resource group and reuse it when retrying |
+| SQL server | Globally unique logical server name; find an existing name in the resource group and reuse it when retrying |
+| Storage account | Globally unique lowercase storage account name; find an existing name in the resource group and reuse it when retrying |
+| Mortgage API client ID | Entra → App registrations → Mortgage API → Overview → Application (client) ID |
+| Staff web client ID | Entra → App registrations → Staff Web → Overview → Application (client) ID |
+| Staff web client secret | Secret **value** saved when created under Staff Web → Certificates & secrets; not its secret ID |
+| Products and Eligibility keys | Two different 32–128 character keys using letters, digits, underscores or hyphens; retain existing keys for retries |
+| GitHub setup and repository | Optional automatic setup for an existing deployment app and `owner/name` repository; answer `n` if prerequisites are missing |
 
 Generate each API key with `openssl rand -hex 32` and retain it securely for
 retries. Do not commit credentials or paste them into logs or chat. The
@@ -43,23 +55,39 @@ GitHub deployment script currently expects those names.
 
 ## GitHub Actions variables
 
-Configure these as repository **variables** under GitHub Settings → Secrets and
-variables → Actions. They are identifiers, not credentials:
+1. In GitHub, open the repository → **Settings → Secrets and variables →
+   Actions → Variables**.
+2. Select **New repository variable**, add each name and value below, then
+   select **Add variable**. Update existing entries rather than duplicating
+   them. They are identifiers, not credentials.
+3. The first five are also used by the regular application deployment.
+   The on-demand workflows require the remaining values as well.
 
-| Variable | Meaning |
+| Variable | Where to find its value |
 | --- | --- |
-| `AZURE_CLIENT_ID` | Client ID of the GitHub deployment identity |
-| `AZURE_TENANT_ID` | Tenant containing the deployment identity |
-| `AZURE_SUBSCRIPTION_ID` | Subscription containing the prototype |
-| `AZURE_RESOURCE_GROUP` | Existing prototype resource group |
-| `AZURE_CONTAINER_REGISTRY` | Existing registry **name**, not its login server URL |
+| `AZURE_CLIENT_ID` | GitHub deployment app registration → Application (client) ID |
+| `AZURE_TENANT_ID` | That registration → Directory (tenant) ID |
+| `AZURE_SUBSCRIPTION_ID` | Azure Portal → Subscriptions → selected subscription → Subscription ID |
+| `AZURE_RESOURCE_GROUP` | Dedicated prototype resource group name |
+| `AZURE_CONTAINER_REGISTRY` | Registry **name**, not its login server URL |
+| `AZURE_SQL_SERVER` | Prototype SQL server name |
+| `AZURE_STORAGE_ACCOUNT` | Prototype storage account name |
+| `MORTGAGE_API_CLIENT_ID` | Mortgage API app registration → Application (client) ID |
+| `STAFF_CLIENT_ID` | Staff Web app registration → Application (client) ID |
+
+4. Select **Secrets → New repository secret** and add `STAFF_CLIENT_SECRET`,
+   `PRODUCTS_API_KEY` and `ELIGIBILITY_API_KEY` for the create workflow. Use
+   the same staff secret value and matching service keys as the deployment.
+   GitHub will not show their values after saving them. Never put them in
+   variables, Git or chat.
 
 The workflow uses an Entra federated credential for this repository's immutable
-GitHub OIDC subject instead of a client secret; it does not consume the staff
-secret or service keys and does not update them. Environment-scoped GitHub
-variables are not available to this workflow because its job does not select
-an environment.
-See the [GitHub Actions setup](../AZURE_DEPLOYMENT.md#deploy-application-changes-with-github-actions)
+GitHub OIDC subject instead of a deployment client secret. The regular
+application deployment does not consume or update the staff secret or service
+keys; the on-demand create workflow does consume them. Environment-scoped
+GitHub variables and secrets are not available because these jobs do not
+select an environment.
+See the [GitHub Actions setup](../docs/azure-advanced-deployment.md#deploy-application-changes-with-github-actions)
 for permissions and recreation guidance.
 
 ## Bicep settings
@@ -83,7 +111,7 @@ roles. `Notifications__Enabled`, `Notifications__ServiceBusNamespace` and
 `Notifications__QueueName` are set by the template; no Service Bus key is used.
 The workflow applies this notification module and settings to the existing app.
 It requires the additional constrained role-assignment permission described in
-the [deployment guide](../AZURE_DEPLOYMENT.md#one-time-github-deployment-permission).
+the [deployment guide](../docs/azure-advanced-deployment.md#one-time-github-deployment-permission).
 
 The example parameters file is illustrative; it does not run the required
 bootstrap or configure Entra role assignments by itself. Never put real
