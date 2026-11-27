@@ -6,6 +6,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Azure.Messaging.ServiceBus;
 using PD.Mortgages.Application.Security;
@@ -19,6 +21,7 @@ using PD.Mortgages.Infrastructure.Storage;
 using PD.Mortgages.DatabaseBootstrap;
 using SubmissionMessage = MortgageApi::PD.Mortgages.Events.SubmissionMessage;
 using SubmissionOutboxPublisher = MortgageApi::PD.Mortgages.Api.Services.SubmissionOutboxPublisher;
+using NotificationServiceBus = MortgageApi::PD.Mortgages.Events.NotificationServiceBus;
 using NotificationsDbContext = NotificationWorker::PD.Notifications.Worker.NotificationsDbContext;
 using WorkerMessage = NotificationWorker::PD.Mortgages.Events.SubmissionMessage;
 using WorkerStore = NotificationWorker::PD.Notifications.Worker.SimulatedNotificationStore;
@@ -35,8 +38,51 @@ public sealed class SqlServerFactAttribute : FactAttribute
     }
 }
 
+public sealed class ServiceBusEmulatorFactAttribute : FactAttribute
+{
+    public ServiceBusEmulatorFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MORTGAGE_TEST_SQL_CONNECTION")) ||
+            string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MORTGAGE_TEST_SERVICEBUS_CONNECTION")))
+            Skip = "Set disposable SQL and local Service Bus emulator connections to run this integration test.";
+    }
+}
+
 public sealed class SubmissionNotificationTests
 {
+    [Fact]
+    public async Task LocalEmulatorRequiresDevelopmentAndLoopback()
+    {
+        const string localConnection = "Endpoint=sb://localhost:5672;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=a2V5;UseDevelopmentEmulator=true;";
+        static IConfiguration Settings(string connection) => new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["Notifications:UseLocalEmulator"] = "true",
+                ["Notifications:QueueName"] = "test-submission-notifications",
+                ["ConnectionStrings:notification-bus"] = connection
+            }).Build();
+
+        await using var client = NotificationServiceBus.Create(Settings(localConnection), new TestEnvironment("Development"));
+        Assert.Equal("localhost", client.FullyQualifiedNamespace);
+        Assert.Throws<InvalidOperationException>(() => NotificationServiceBus.Create(Settings(localConnection), new TestEnvironment("Production")));
+        Assert.Throws<InvalidOperationException>(() => NotificationServiceBus.Create(
+            Settings(localConnection.Replace("localhost", "example.com")), new TestEnvironment("Development")));
+        Assert.Throws<InvalidOperationException>(() => NotificationServiceBus.Create(
+            Settings(localConnection.Replace("UseDevelopmentEmulator=true;", "")), new TestEnvironment("Development")));
+    }
+
+    [Fact]
+    public async Task AzureNotificationsUseTheConfiguredNamespace()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Notifications:ServiceBusNamespace"] = "example.servicebus.windows.net",
+            ["Notifications:QueueName"] = "submission-notifications"
+        }).Build();
+        await using var client = NotificationServiceBus.Create(config, new TestEnvironment("Production"));
+        Assert.Equal("example.servicebus.windows.net", client.FullyQualifiedNamespace);
+    }
+
     [Fact]
     public void EventEnvelopeAcceptsOnlyMatchingSupportedMessages()
     {
@@ -289,6 +335,72 @@ public sealed class SubmissionNotificationTests
         Assert.NotNull((await check.SubmissionOutbox.AsNoTracking().SingleAsync()).PublishedAtUtc);
     }
 
+    [ServiceBusEmulatorFact]
+    public async Task PublisherAndWorkerProcessAnEventThroughTheLocalEmulator()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var targetBuilder = new SqlConnectionStringBuilder(database.ConnectionString)
+        {
+            InitialCatalog = $"notifications_emulator_test_{Guid.NewGuid():N}"
+        };
+        var targetOptions = new DbContextOptionsBuilder<NotificationsDbContext>()
+            .UseSqlServer(targetBuilder.ConnectionString).Options;
+        await using var target = new NotificationsDbContext(targetOptions);
+        try
+        {
+            await target.Database.MigrateAsync();
+            var eventId = Guid.NewGuid();
+            var applicationId = Guid.NewGuid();
+            await using (var seed = database.Open())
+            {
+                seed.SubmissionOutbox.Add(new SubmissionOutboxRecord
+                {
+                    Id = eventId, ApplicationId = applicationId, OccurredAtUtc = DateTime.UtcNow
+                });
+                await seed.SaveChangesAsync();
+            }
+
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Notifications:UseLocalEmulator"] = "true",
+                ["Notifications:QueueName"] = "test-submission-notifications",
+                ["ConnectionStrings:notification-bus"] = Environment.GetEnvironmentVariable("MORTGAGE_TEST_SERVICEBUS_CONNECTION")
+            }).Build();
+            await using var client = NotificationServiceBus.Create(config, new TestEnvironment("Development"));
+            await using var services = new ServiceCollection()
+                .AddDbContext<MortgageDbContext>(options => options.UseSqlServer(database.ConnectionString))
+                .AddDbContext<NotificationsDbContext>(options => options.UseSqlServer(targetBuilder.ConnectionString))
+                .AddScoped<WorkerStore>()
+                .BuildServiceProvider();
+            var worker = new Worker(services.GetRequiredService<IServiceScopeFactory>(), client, config, NullLogger<Worker>.Instance);
+            await worker.StartAsync(CancellationToken.None);
+            try
+            {
+                var publisher = new SubmissionOutboxPublisher(services.GetRequiredService<IServiceScopeFactory>(),
+                    client, config, NullLogger<SubmissionOutboxPublisher>.Instance);
+                await using var sender = client.CreateSender("test-submission-notifications");
+                await publisher.PublishBatchAsync(sender, CancellationToken.None);
+
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+                while (!await target.SimulatedNotifications.AsNoTracking().AnyAsync(row =>
+                    row.EventId == eventId && row.ApplicationId == applicationId, timeout.Token))
+                    await Task.Delay(500, timeout.Token);
+
+                await using var check = database.Open();
+                Assert.NotNull((await check.SubmissionOutbox.AsNoTracking().SingleAsync()).PublishedAtUtc);
+            }
+            finally
+            {
+                await worker.StopAsync(CancellationToken.None);
+                worker.Dispose();
+            }
+        }
+        finally
+        {
+            await target.Database.EnsureDeletedAsync();
+        }
+    }
+
     private static MortgageApplication Submitted(MortgageApplication application) =>
         (MortgageApplicationSnapshot.FromDomain(application) with
         {
@@ -337,6 +449,14 @@ public sealed class SubmissionNotificationTests
     }
 
     private sealed class TestReceiver : ServiceBusReceiver;
+
+    private sealed class TestEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "Tests";
+        public string ContentRootPath { get; set; } = ".";
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
 
     private sealed class TestActor(bool isStaff) : IApplicationActor
     {

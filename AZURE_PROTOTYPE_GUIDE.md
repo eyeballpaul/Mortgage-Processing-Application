@@ -76,10 +76,10 @@ reviewed separately.
    page loads. Open **Staff app**, sign in as an assigned staff user, and
    confirm it loads.
 5. Submit an application with **fictional data only** and check it appears in
-   Staff Web. For notifications, open Azure Portal → resource group →
-   `notifications-worker` → **Log stream**, then submit another fictional application.
-   Look for `Simulated notification recorded`. It may take time; **no email is
-   sent**. Also test a staff submission and document upload if needed.
+   Staff Web. For notifications, follow the
+   [worker verification steps](docs/azure-advanced-deployment.md#check-a-submission-notification).
+   Processing may take time; **no email is sent**. Also test a staff
+   submission and document upload if needed.
 
 #### Delete when finished
 

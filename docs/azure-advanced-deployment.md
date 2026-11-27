@@ -61,6 +61,23 @@ yet been tested in Azure**.
 An earlier API-hosted consumer was observed in Azure; this new separate
 worker has not been validated there. Health checks do not test the flow.
 
+### Check a submission notification
+
+1. With the prototype running, submit a fictional application. The Mortgage
+   API saves the submission first; its publisher checks for pending events
+   roughly every 30 seconds. A cold start or SQL resume can take longer.
+2. In Azure Portal, open **Resource groups → your group →
+   notifications-worker → Log stream**. Choose a running replica if
+   prompted and look for `Simulated notification recorded`. No email is sent.
+   The worker is configured to scale to zero, so a replica or its live log
+   stream may not be available after it becomes idle. If needed, submit
+   another fictional application and check while it is running.
+3. If there is no record, inspect Mortgage API and worker logs and the queue's
+   active and dead-letter counts as described under
+   [monitoring](#monitoring-retries-and-cost). Check Container Apps system
+   logs for scaler authentication errors. Do not treat an empty live stream
+   by itself as proof that processing failed or succeeded.
+
 ### Enable on an existing quickstart deployment
 
 An older deployment can still have the consumer running inside `mortgage-api`.
@@ -81,10 +98,9 @@ two consumers writing to different databases could record a duplicate.
    including the two new retained identities and the restricted role condition.
    Then run [Create when needed](../AZURE_PROTOTYPE_GUIDE.md#create-when-needed).
    If resources were already deleted, begin with step 3.
-4. Submit fictional customer and staff applications. Inspect the
-   `notifications-worker` console logs for `Simulated notification recorded`.
+4. Submit fictional customer and staff applications and follow
+   [Check a submission notification](#check-a-submission-notification).
    Check Service Bus active/dead-letter counts and the notification database.
-   The publisher may take 30 seconds; cold starts and SQL resume can add delay.
    Confirm the worker scales back to zero in Azure after its cooldown and starts
    again for another message. Check Container Apps system logs for scaler
    authentication errors if it does not.
@@ -94,7 +110,9 @@ permissions, runs bootstrap if its dependencies changed, and updates affected
 images. It cannot create a missing worker or other core infrastructure; use
 the create workflow. A successful submission can precede publishing, because
 the outbox retries later. File and in-memory providers do not create outbox
-events. Aspire leaves both publisher and worker disabled by default.
+events. Aspire enables the publisher and worker with its
+[local emulator](../README.md#local-notification-processing) by default in
+Development; it does not connect to the Azure queue.
 
 ### One-time GitHub deployment permission
 

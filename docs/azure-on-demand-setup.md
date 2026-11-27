@@ -64,9 +64,13 @@ permission to create the role assignments used by the prototype.
    select **User, group, or service principal**, choose the deployment app,
    then **Review + assign**.
 2. Find its group-scoped **Role Based Access Control Administrator**
-   assignment. If it already exists, edit its condition rather than adding a
-   duplicate. Otherwise an Azure role administrator must add the role to this
-   same service principal at the resource-group scope.
+   assignment. If it already exists, inspect its condition and preserve the
+   intended permissions rather than adding a duplicate or replacing an
+   extended condition. If the five-role, five-principal condition below is
+   already present, skip to the notification identity section. Otherwise,
+   an Azure role administrator must add or update the conditioned assignment
+   for this same service principal at the resource-group scope. Review any
+   existing conditions with the administrator before changing them.
 3. In the condition editor choose the option for **selected roles and selected
    principals**, then **Constrain roles and principals**. Select exactly these
    five roles:
@@ -99,10 +103,19 @@ scaler identity. This follows Microsoft's
 [KEDA managed-identity example](https://learn.microsoft.com/azure/aks/keda-workload-identity#create-role-assignments);
 the new setup still needs live Azure validation.
 
-1. Sign in to Azure CLI as an Azure role administrator and select the correct
-   subscription. Open a terminal at the root of this checked-out repository.
+1. Open a Bash or zsh terminal at the root of this checked-out repository.
    You need Azure CLI and `jq`; do not use the GitHub service principal for
-   this administrator step.
+   this administrator step. Sign in as an Azure role administrator, replace
+   the placeholder with your subscription ID, and check the result:
+
+   ```bash
+   az login
+   az account set --subscription "<subscription-id>"
+   az account show --output table
+   jq --version
+   ```
+
+   Confirm the displayed subscription and tenant are correct before continuing.
 2. Find the deployment application's **client ID** in its Entra app registration,
    or in GitHub → **Settings → Secrets and variables → Actions → Variables →
    AZURE_CLIENT_ID** if already configured. It is not a secret or the staff
@@ -122,7 +135,8 @@ the new setup still needs live Azure validation.
    preserves the existing condition. It refuses an unconditioned or ambiguous
    existing assignment. If it fails, read the error and review Azure before
    retrying.
-4. In Azure Portal → resource group → **Resources**, confirm
+4. The script reports when the extension is already present or when the
+   restricted permissions are ready. In Azure Portal → resource group → **Resources**, confirm
    `mortgage-demo-env-notifications` and `mortgage-demo-env-notifications-scaler`
    now exist along with the original six. In **Access control (IAM) → Role
    assignments**, inspect the updated condition and check for other broader

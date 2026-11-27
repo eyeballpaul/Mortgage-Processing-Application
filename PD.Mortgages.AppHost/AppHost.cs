@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -18,9 +20,8 @@ var apiClientId = builder.Configuration["MortgageApi:ApiClientId"] ?? Guid.Empty
 var tenantId = builder.Configuration["MortgageApi:TenantId"] ?? Guid.Empty.ToString();
 var staffClientId = builder.Configuration["MortgageApi:StaffClientId"] ?? Guid.Empty.ToString();
 
-builder.AddDotnetProject("notifications-worker", "../PD.Notifications.Worker/PD.Notifications.Worker.csproj")
+var notificationsWorker = builder.AddDotnetProject("notifications-worker", "../PD.Notifications.Worker/PD.Notifications.Worker.csproj")
     .WithReference(notificationsDatabase)
-    .WithEnvironment("Notifications__Enabled", "false")
     .WaitFor(notificationsDatabase);
 
 var productsApi = builder.AddDotnetProject("products-api", "../PD.Products.Api/PD.Products.Api.csproj")
@@ -51,6 +52,38 @@ var mortgageApi = builder.AddDotnetProject("mortgages-api", "../PD.Mortgages.Api
     .WaitFor(mortgagesDatabase)
     .WaitFor(productsApi)
     .WaitFor(eligibilityApi);
+
+var useNotificationEmulator = builder.Configuration.GetValue<bool?>("LocalNotifications:UseEmulator")
+    ?? builder.Environment.IsDevelopment();
+if (useNotificationEmulator)
+{
+    if (!builder.Environment.IsDevelopment())
+        throw new InvalidOperationException("The local Service Bus emulator is only available in Development.");
+    if (!builder.Configuration.GetValue<bool>("LocalNotifications:AcceptEmulatorLicense"))
+        throw new InvalidOperationException("Review the Service Bus emulator and SQL Server licenses, then set LocalNotifications:AcceptEmulatorLicense to true, or set LocalNotifications:UseEmulator to false.");
+
+    Console.WriteLine("Local notifications are enabled; pending local outbox events will be processed by the emulator.");
+    var serviceBus = builder.AddAzureServiceBus("notification-bus").RunAsEmulator();
+    serviceBus.AddServiceBusQueue("submission-notifications");
+
+    notificationsWorker
+        .WithReference(serviceBus)
+        .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
+        .WithEnvironment("Notifications__Enabled", "true")
+        .WithEnvironment("Notifications__UseLocalEmulator", "true")
+        .WithEnvironment("Notifications__QueueName", "submission-notifications")
+        .WaitFor(serviceBus);
+    mortgageApi
+        .WithReference(serviceBus)
+        .WithEnvironment("Notifications__Enabled", "true")
+        .WithEnvironment("Notifications__UseLocalEmulator", "true")
+        .WithEnvironment("Notifications__QueueName", "submission-notifications")
+        .WaitFor(serviceBus);
+}
+else
+{
+    notificationsWorker.WithEnvironment("Notifications__Enabled", "false");
+}
 
 builder.AddDotnetProject("mortgages-web", "../PD.Mortgages.Web/PD.Mortgages.Web.csproj")
     .WithHttpHealthCheck("/health/ready")

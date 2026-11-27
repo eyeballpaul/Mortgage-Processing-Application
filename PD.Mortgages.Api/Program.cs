@@ -1,6 +1,4 @@
 using System.Text.Json.Serialization;
-using Azure.Identity;
-using Azure.Messaging.ServiceBus;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -14,6 +12,7 @@ using PD.Mortgages.Application.Services;
 using PD.Mortgages.Infrastructure.Persistence;
 using PD.Mortgages.Infrastructure.Products;
 using PD.Mortgages.Infrastructure.Eligibility;
+using PD.Mortgages.Events;
 using PD.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -59,14 +58,11 @@ builder.Services.AddMortgagePersistence(builder.Configuration);
 builder.Services.AddHostedService<DraftMaintenanceService>();
 if (builder.Configuration.GetValue<bool>("Notifications:Enabled"))
 {
-    var serviceBusNamespace = builder.Configuration["Notifications:ServiceBusNamespace"];
-    var queueName = builder.Configuration["Notifications:QueueName"];
-    if (!string.Equals(builder.Configuration["Persistence:Provider"], "SqlServer", StringComparison.OrdinalIgnoreCase) ||
-        string.IsNullOrWhiteSpace(serviceBusNamespace) || string.IsNullOrWhiteSpace(queueName))
+    if (!string.Equals(builder.Configuration["Persistence:Provider"], "SqlServer", StringComparison.OrdinalIgnoreCase))
     {
-        throw new InvalidOperationException("Notifications require SQL Server, Notifications:ServiceBusNamespace and Notifications:QueueName.");
+        throw new InvalidOperationException("Notifications require SQL Server.");
     }
-    builder.Services.AddSingleton(new ServiceBusClient(serviceBusNamespace, new DefaultAzureCredential()));
+    builder.Services.AddSingleton(NotificationServiceBus.Create(builder.Configuration, builder.Environment));
     builder.Services.AddHostedService<SubmissionOutboxPublisher>();
 }
 builder.Services.AddOptions<MortgageWorkflowOptions>().BindConfiguration(MortgageWorkflowOptions.SectionName)

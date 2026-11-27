@@ -38,9 +38,9 @@ Staff browser -> Staff web -------------> Mortgage API
                      -> Microsoft Entra ID
 ```
 
-Aspire uses a development-only customer credential and local document files;
-it does not enable Service Bus workers by default. See the separate local and
-Azure diagrams in the [architecture guide](docs/architecture.md).
+Aspire uses a development-only customer credential, local document files and,
+by default, a local Service Bus emulator. See the separate local and Azure
+diagrams in the [architecture guide](docs/architecture.md).
 
 For SQL-backed submissions, the Mortgage API commits an `ApplicationSubmitted` outbox entry with the application and audit entry. Its publisher sends the event to an Azure Service Bus Basic queue. A separate Notifications Worker records a simulation in its own database. **No email is sent.** Delivery is at least once; duplicate messages are deduplicated when recording the simulation. See [architecture.md](docs/architecture.md) and the [Azure deployment guide](docs/azure-advanced-deployment.md#submission-notifications) for limitations and operation.
 
@@ -71,6 +71,20 @@ See [architecture.md](docs/architecture.md) for boundaries, local and Azure host
    ```
 
    Follow the operating system's trust prompt. This allows local HTTPS.
+5. Local notification processing starts an emulator and a separate SQL Server
+   container. Read the [Service Bus emulator license](https://github.com/Azure/azure-service-bus-emulator-installer/blob/main/EMULATOR_EULA.txt)
+   and [SQL Server license](https://go.microsoft.com/fwlink/?LinkId=746388).
+   If you accept both, record your acknowledgement on this computer:
+
+   ```bash
+   dotnet user-secrets set LocalNotifications:AcceptEmulatorLicense true --project PD.Mortgages.AppHost
+   ```
+
+   Run this from the repository root. You should see `Successfully saved`.
+   It saves the acknowledgement in your local .NET user-secrets store, not
+   in the repository. You do not need to repeat it for each run on this
+   computer under the same user account. If you do not accept both licenses, use the
+   [opt-out instructions](#local-notification-processing) instead.
 
 ### 2. Configure sign-in
 
@@ -80,24 +94,86 @@ Without that setup, staff sign-in will not work.
 
 ### 3. Start and check the apps
 
-1. In the terminal, ensure the current folder contains
+1. The local SQL volume persists between runs. Starting the default emulator
+   processes **all pending local outbox events**, including older submissions.
+   Use fictional data; if you do not want those events processed, use the
+   [opt-out instructions](#local-notification-processing).
+2. In the terminal, ensure the current folder contains
    `PD.Mortgages.slnx`. Then run:
 
    ```bash
    dotnet run --project PD.Mortgages.AppHost --launch-profile https
    ```
 
-2. Open the Aspire dashboard URL printed in the terminal. Use its links to open
-   the customer and staff apps. Sign in to Staff Web with an assigned account.
-3. Try a customer-to-staff journey using **fictional data only**. To stop the
+3. Open the Aspire dashboard URL printed in the terminal. It is a local page
+   showing the apps, their status and logs. Wait for the resources to start;
+   the first run may download images and take longer. Use the dashboard links
+   to open the customer and staff apps. Sign in to Staff Web with an assigned account.
+4. Try a customer-to-staff journey using **fictional data only**. To stop the
    local apps, return to the terminal and press **Ctrl+C**. Local SQL data is
    kept in a Docker volume, so stopping the apps does not erase it.
 
-Aspire starts both web apps, the internal Mortgage, Products and Eligibility APIs, the disabled Notifications Worker, and one SQL Server container with separate `mortgages`, `products`, `customer-sessions` and `notifications` database resources. The notification database is not migrated or used while notifications are disabled. It generates separate, process-scoped keys for Mortgage's calls to Products and Eligibility; no local service key needs to be configured manually.
+Aspire starts both web apps, the internal Mortgage, Products and Eligibility APIs, the Notifications Worker, and a local Service Bus emulator. One SQL Server container has separate `mortgages`, `products`, `customer-sessions` and `notifications` database resources; a second SQL Server container supports the emulator. Aspire generates separate, process-scoped keys for Mortgage's calls to Products and Eligibility; no local service key needs to be configured manually.
 
-Aspire runs the .NET apps locally; its Docker container is for SQL Server. For a container image, build from the repository root using the relevant service Dockerfile, for example `docker build -f PD.Mortgages.Web/Dockerfile .`. Azure deployment uses six service images and a separate database-bootstrap image.
+Aspire runs the .NET apps locally and the SQL servers and emulator in Docker. For a container image, build from the repository root using the relevant service Dockerfile, for example `docker build -f PD.Mortgages.Web/Dockerfile .`. Azure deployment uses six service images and a separate database-bootstrap image.
 
 The Mortgage API stores documents under `LocalApplicationData/PD.Mortgages`; the SQL Docker volume persists data across restarts. The APIs migrate the mortgage and product databases locally at startup, and the customer web app migrates the customer-session database. Aspire creates a fresh, process-scoped development credential for customer-to-API calls; it is accepted **only** by an API running in Development. Staff still need real Entra sign-in and a delegated API token.
+
+### Local notification processing
+
+By default, Aspire starts the emulator and enables the Mortgage API publisher
+and Notifications Worker in Development. The worker migrates its local
+notifications database before starting. The emulator and its SQL dependency
+need extra memory and disk space and may need to download container images.
+To check the flow:
+
+1. In the Aspire dashboard, wait for the local SQL servers, emulator, API and
+   worker to start. Open the customer app from its dashboard link.
+2. Complete and submit an application using fictional data. A successful
+   submission can appear before its notification is processed.
+3. Return to the dashboard, find `notifications-worker` in the resources
+   list and open its console logs. Look for `Simulated notification recorded`.
+   The publisher polls roughly every 30 seconds; **no email is sent**.
+4. Stop the local apps with **Ctrl+C** in the terminal running Aspire when
+   finished.
+
+To start without the emulator for one run, use this Bash or zsh command:
+
+```bash
+LocalNotifications__UseEmulator=false dotnet run --project PD.Mortgages.AppHost --launch-profile https
+```
+
+In PowerShell, set `$env:LocalNotifications__UseEmulator = 'false'` before
+running the normal command, then run `Remove-Item Env:LocalNotifications__UseEmulator`
+after stopping. While disabled, SQL-backed submissions still create pending
+outbox events; these will be processed when the emulator is enabled again.
+
+The emulator uses a local connection string and is restricted by the apps to
+Development and a loopback address. It does not connect to the Azure queue or
+verify Azure Entra permissions, networking or scale-to-zero. The emulator
+does not retain queued messages across container restarts: a message already
+marked published in SQL can be lost if the emulator stops before processing.
+It is a development aid, not a durable queue or production-equivalent test.
+The emulator's default message lifetime and retry count also differ from the
+Azure queue, so test expiry, retries and dead-letter handling in Azure separately.
+
+#### If local notifications do not start
+
+1. If the terminal asks for license acknowledgement, review both licenses
+   and follow [Prepare your computer](#1-prepare-your-computer), or use the
+   opt-out command above. Do not set the acknowledgement for someone else.
+2. If a container fails to start, check Docker Desktop is running. In the
+   Aspire dashboard, open the failed resource's logs and check for the first
+   error. The emulator and its additional SQL container may need extra memory,
+   disk space and time to start.
+3. If an application submits but no notification appears, wait at least
+   30 seconds, then check both `mortgages-api` and `notifications-worker`
+   logs in the Aspire dashboard. Verify the emulator is running and that the
+   opt-out setting is not active. A failed publisher or worker logs an error;
+   correct it before retrying with a fictional application.
+4. Do not delete the SQL volume to troubleshoot: it contains local application
+   and audit data. If asking for help, share only the relevant error message
+   after removing secrets and personal data.
 
 ### Configure Entra for staff and the API
 
@@ -152,6 +228,31 @@ Tests include API authorization, cross-session isolation, submission, staff audi
 
 SQL notification integration tests are skipped unless `MORTGAGE_TEST_SQL_CONNECTION` points to a **disposable** SQL Server whose login can create and delete databases. They create and delete uniquely named test databases; do not point them at Azure or a server with important data. Never commit the connection string.
 
+The additional emulator integration test is optional and is skipped unless
+both connection variables are set:
+
+1. Set up a **separate, disposable** SQL Server as described above and a
+   **dedicated local emulator** with a `test-submission-notifications` queue.
+   The queue is not part of the normal Aspire setup. See Microsoft's
+   [emulator setup instructions](https://learn.microsoft.com/azure/service-bus-messaging/test-locally-with-service-bus-emulator)
+   for creating a configured queue. Do not use the Azure namespace, normal
+   local queue or a queue shared with another consumer: the test receives and
+   completes messages.
+2. In a secure terminal, set `MORTGAGE_TEST_SQL_CONNECTION` to the disposable
+   SQL connection string and `MORTGAGE_TEST_SERVICEBUS_CONNECTION` to the
+   dedicated emulator's local connection string. Do not commit or share either
+   value. The test requires an emulator connection using a loopback address
+   and `UseDevelopmentEmulator=true`.
+3. From the repository root, run:
+
+   ```bash
+   dotnet test PD.Mortgages.Tests/PD.Mortgages.Tests.csproj --filter "FullyQualifiedName~SubmissionNotificationTests"
+   ```
+
+4. Check the test summary, stop the dedicated test resources, and remove the
+   connection variables from your terminal session. The tests create and delete
+   their own temporary databases; they do not clean up your emulator.
+
 ## Azure prototype deployment
 
 The [setup-from-scratch guide](docs/azure-setup-from-scratch.md) gives step-by-step Azure, Entra and GitHub setup without secret values. The [prototype lifecycle guide](AZURE_PROTOTYPE_GUIDE.md) covers routine creation, deletion and recreation after resource-group deletion; the [advanced deployment guide](docs/azure-advanced-deployment.md) covers the interactive quickstart, costs and troubleshooting. The quickstart provisions one VNet with Container Apps and private-endpoint subnets, six Container Apps, four SQL databases, private SQL and Blob endpoints, a private database-bootstrap job and a public Service Bus Basic namespace. Both web apps have public HTTPS ingress; the three APIs have internal ingress and the worker has no ingress. SQL and Blob public network access is disabled. Staff access still requires Entra authentication and the staff app is not private-network-only. Use fictional data only; this is not a production security boundary.
@@ -175,7 +276,7 @@ Each database has a separate EF Core migration history:
 | `mortgages` | [PD.Mortgages.Infrastructure](PD.Mortgages.Infrastructure/Persistence/Migrations) | Applications, tombstones, audit, outbox and historical simulations | Mortgage API |
 | `products` | [PD.Products.Infrastructure](PD.Products.Infrastructure/Persistence/Migrations) | Product catalog and seed data | Products API |
 | `customer-sessions` | [PD.Mortgages.CustomerSessions](PD.Mortgages.CustomerSessions/Migrations) | Distributed customer session cache | Customer web app |
-| `notifications` | [PD.Notifications.Worker](PD.Notifications.Worker/Migrations) | Simulated notification deduplication | Azure bootstrap; disabled locally by default |
+| `notifications` | [PD.Notifications.Worker](PD.Notifications.Worker/Migrations) | Simulated notification deduplication | Worker when the local emulator is enabled |
 
 The session cache does not exist in the mortgage database. The Azure bootstrap job applies all four migrations with its admin identity before new app revisions start; runtime identities have only the required data roles. It also copies historical simulation records from the mortgage database idempotently, failing on conflicting event IDs. Migration histories remain independent and are not copied.
 

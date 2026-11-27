@@ -18,7 +18,9 @@ An **API** is a service called by another app. A **managed identity** is an
 Azure-provided identity used instead of an application password. A **private
 endpoint** gives a service a private network address. An **outbox** is a
 database record that lets the API publish a notification later; a **queue**
-holds messages until a consumer processes them.
+holds messages until a consumer processes them. A **worker** is a background
+program rather than a web page. A **migration** is a versioned database
+change. A **replica** is a running copy of an app.
 
 ## Runtime boundaries
 
@@ -60,6 +62,9 @@ flowchart LR
         ProductDb[(products SQL)]
         Notifications[(notifications SQL resource)]
     end
+    subgraph Emulator["Local Docker emulator and its separate SQL Server"]
+        Bus[Service Bus emulator]
+    end
     Browser[Customer browser] --> Customer[Customer web]
     StaffBrowser[Staff browser] --> Staff[Staff web]
     Staff <-->|Staff sign-in| Entra[Microsoft Entra ID]
@@ -71,15 +76,41 @@ flowchart LR
     API --> Products[Products API]
     API --> Eligibility[Eligibility API]
     Products --> ProductDb
-    Worker[Notifications Worker: disabled] -.-> Notifications
+    API -->|Publish outbox| Bus
+    Bus -->|Receive| Worker[Notifications Worker]
+    Worker --> Notifications
 ```
 
 Aspire runs the .NET apps locally and creates a process-scoped development
 credential for customer-to-API calls. That credential is accepted only in
 Development; staff still use Entra sign-in. The local SQL container holds
 four logically separate database resources. SQL-backed submissions create
-outbox records, but Aspire does not enable the publisher or worker by default
-and does not migrate the unused notification database.
+outbox records. By default in Development, Aspire starts a Service Bus emulator,
+publisher and worker after license acknowledgement; the worker migrates its
+notification database. They can be disabled for a run; see
+[local notification processing](../README.md#local-notification-processing).
+The emulator uses a separate SQL container and does not test Azure identity or
+scaling. Its messages are not retained across container restarts.
+
+#### Follow a local submission
+
+1. A customer or staff member submits an application. The Mortgage API saves
+   the submission, audit entry and an outbox record together in `mortgages` SQL.
+2. The API checks the outbox roughly every 30 seconds and sends pending events
+   to the local emulator. This includes older pending events.
+3. The worker receives each event and records a simulated notification in
+   `notifications` SQL. It then completes the queue message; **no email is
+   sent**. A repeated event does not create another record.
+4. To see the result, open the Aspire dashboard and inspect the
+   `notifications-worker` logs for `Simulated notification recorded`.
+   If the emulator is disabled, events remain pending in SQL instead.
+
+The emulator is a local test tool, not a durable queue. It can lose a message
+already marked published in SQL if its container stops before processing it.
+See the [local guide](../README.md#local-notification-processing) for setup,
+opt-out and troubleshooting.
+
+### Application behaviour
 
 The stateless Eligibility API owns the fictional indicative decision rules; product eligibility remains with Products. Only property value, deposit, income and credit-check consent state are sent, using a distinct shared service key. Mortgage owns the saved decision, rule version and audit event, rechecks application version after the call and rejects stale results. A service failure returns an unavailable response, not a declined decision. Existing decisions without a rule version remain readable. No credit bureau is contacted.
 
@@ -94,7 +125,7 @@ Staff can look up retained audit history, including deleted drafts, using the fu
 
 The file persistence provider is for development only: unlike SQL, its audit and tombstone writes are not transactional across files.
 
-For both submission paths, SQL saves the status change, audit entry and one minimal outbox event in the same transaction. The API's publisher uses expiring SQL leases to claim pending events, then sends their IDs, application IDs, event type/version and timestamp to one Service Bus queue. A crash after sending but before recording publication can cause a duplicate. The separate worker atomically records one `SimulatedNotifications` row per event in its own database before completing the message; it does not send an email. Invalid messages are dead-lettered; repeated processing failures are eventually dead-lettered by Service Bus. This is at-least-once delivery, not exactly once. Existing submissions are not backfilled. File and in-memory providers do not create outbox events; notifications are disabled by default locally and require SQL.
+For both submission paths, SQL saves the status change, audit entry and one minimal outbox event in the same transaction. The API's publisher uses expiring SQL leases to claim pending events, then sends their IDs, application IDs, event type/version and timestamp to one Service Bus queue. A crash after sending but before recording publication can cause a duplicate. The separate worker atomically records one `SimulatedNotifications` row per event in its own database before completing the message; it does not send an email. Invalid messages are dead-lettered; repeated processing failures are eventually dead-lettered by Service Bus. This is at-least-once delivery, not exactly once. Existing submissions are not backfilled. File and in-memory providers do not create outbox events; notifications require SQL.
 
 Mortgage API request and response shapes and their enums live in `PD.Mortgages.Contracts`, which does not reference the domain. The API and typed client use `PD.Mortgages.Transport` to map wire contracts to the models and service interface in `PD.Mortgages.Abstractions`. The application service implements that interface; neither web app nor the client references the application or domain implementation projects. The small `PD.Mortgages.SharedKernel` contains shared mortgage value enums and their display names, but no entities, persistence or business services. Its existing `PD.Mortgages.Domain.Enums` namespace is retained for compatibility.
 
@@ -104,13 +135,13 @@ Products requests have a ten-second total timeout across retries. Eligibility re
 
 | Runtime | Mortgage and audit | Documents | Product catalog | Customer sessions | Notifications |
 | --- | --- | --- | --- | --- | --- |
-| Aspire | `mortgages` SQL | Local files under `LocalApplicationData/PD.Mortgages` | `products` SQL | `customer-sessions` SQL | Disabled; separate database resource |
+| Aspire | `mortgages` SQL | Local files under `LocalApplicationData/PD.Mortgages` | `products` SQL | `customer-sessions` SQL | Separate `notifications` SQL; processed by default in Development |
 | Standalone API | In-memory by default in Development | In memory with in-memory persistence | Mock catalog by default | Owned by customer app | Disabled by default |
 | Azure | `mortgages` Azure SQL | Private Blob container | `products` Azure SQL | `customer-sessions` Azure SQL | Separate `notifications` Azure SQL |
 
-Aspire uses one local SQL Server container and volume for the database resources; they are logically separate. Azure uses four separate serverless databases on one logical SQL server. Each database has its own migration history, and the session cache is created only in the customer-session database. Existing databases with previous migration histories require the data-safe or disposable-local reset procedure in the [migration guidance](../README.md#database-migrations).
+Aspire uses one local SQL Server container and volume for the application databases; they are logically separate. The emulator has a second SQL Server container for its own use. Azure uses four separate serverless databases on one logical SQL server. Each database has its own migration history, and the session cache is created only in the customer-session database. Existing databases with previous migration histories require the data-safe or disposable-local reset procedure in the [migration guidance](../README.md#database-migrations).
 
-In Aspire, the Mortgage API, Products API and customer web app apply their own databases' migrations at startup. The Azure bootstrap applies all four before app deployment and copies historical mortgage simulation records idempotently; it does not grant schema-migration permissions to the runtime identities.
+In Aspire, the Mortgage API, Products API and customer web app apply their own databases' migrations at startup. The worker applies the notifications database migrations when the local emulator is enabled. The Azure bootstrap applies all four before app deployment and copies historical mortgage simulation records idempotently; it does not grant schema-migration permissions to the runtime identities.
 
 ## Azure deployment
 

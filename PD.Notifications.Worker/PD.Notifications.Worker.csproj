@@ -17,5 +17,6 @@
     </PackageReference>
     <InternalsVisibleTo Include="PD.Mortgages.Tests" />
     <Compile Include="..\PD.Shared\SubmissionMessage.cs" Link="SubmissionMessage.cs" />
+    <Compile Include="..\PD.Shared\NotificationServiceBus.cs" Link="NotificationServiceBus.cs" />
   </ItemGroup>
 </Project>

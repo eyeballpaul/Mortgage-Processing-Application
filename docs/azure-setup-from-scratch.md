@@ -13,8 +13,9 @@ independently validated. Use fictional data only.
 For the separate one-click create and delete workflows, complete
 the [on-demand workflow setup](azure-on-demand-setup.md)
 after the initial interactive deployment and GitHub identity setup below.
-Both have been exercised in Azure; deletion needed a retry. The subsequent
-DNS-link ordering fix has mock tests but has not yet been tested live.
+Earlier versions were exercised in Azure; deletion needed a retry. The updated
+workflows, separate worker, scale rule and DNS-link ordering fix have not yet
+been tested live.
 
 ## What you are going to do
 
@@ -219,9 +220,9 @@ If you create new registrations, use their new IDs rather than old ones.
 2. Open the customer URL in a browser and confirm the page loads. Open the
    staff URL and sign in with the assigned staff account.
 3. Submit an application using fictional data and check that it appears in
-   Staff Web. For a notification check, open Azure Portal → your resource
-   group → `notifications-worker` → **Log stream**, then submit another fictional
-   application. Look for `Simulated notification recorded`; no email is sent.
+   Staff Web. For the notification check, follow the
+   [worker verification steps](azure-advanced-deployment.md#check-a-submission-notification);
+   no email is sent. The worker and its scale rule still need live validation.
    Readiness checks alone do not verify sign-in, document upload or submission.
    If access is denied, check the tenant, consent, exact role values and both
    enterprise-app assignments.
