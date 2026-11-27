@@ -104,7 +104,7 @@ two consumers writing to different databases could record a duplicate.
    again for another message. Check Container Apps system logs for scaler
    authentication errors if it does not.
 
-Subsequent pushes build affected images but do not change the queue,
+Subsequent pushes run checks but do not build images or change the queue,
 permissions, database or running apps. Use the
 [release guide](../AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype)
 for deliberate updates. A successful submission can precede publishing, because
@@ -256,9 +256,10 @@ Redact personal data, tokens, authorization codes and secrets before sharing log
 
 ## Deploy application changes with GitHub Actions
 
-GitHub Actions builds and tests pull requests. A successful push to `main`
-also builds affected images when the registry exists, but does **not** deploy
-apps, apply infrastructure or run migrations. The manual release and
+GitHub Actions builds and tests pull requests and pushes to `main`; pushes do
+**not** build images, deploy apps, apply infrastructure or run migrations.
+The manually triggered reconciliation builds images and applies owned changes.
+The manual release and
 infrastructure workflows are untested against live Azure. For the complete
 release procedure, see the
 [step-by-step guide](../AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype).
@@ -295,11 +296,13 @@ release procedure, see the
    from a GitHub environment.
 3. Commit and push to `main`, then follow the
    [release steps](../AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype).
-   Push builds compare the previous push commit with the new commit, including
-   project references and linked files; a manual full build publishes all
-   seven images. The release workflow checks a successful run's recorded digest
-   and updates one selected target. The operator must explicitly run bootstrap
-   before dependent apps when needed, and verify compatibility.
+   The plan compares each app's recorded commit, digest and active revision
+   with the target commit, including project references and linked files.
+   Unknown baselines are selected conservatively. **Deploy prototype changes**
+   reconciles the shared stack, builds needed images and runs bootstrap when
+   needed before updating apps. The older reviewed-plan and individual release
+   workflows remain optional; their artifacts come from a manually started
+   full build. The operator must review schema compatibility.
 
 The customer project directory is `PD.Mortgages.Customer.Web`, while its Azure
 app and image are `mortgages-web`. Registry builds, stored images, running apps

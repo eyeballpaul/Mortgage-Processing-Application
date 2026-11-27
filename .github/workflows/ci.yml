@@ -36,6 +36,11 @@ jobs:
         run: |
           python3 -m unittest discover -s infra/tests -p 'test_affected.py'
           bash infra/tests/release-test.sh
+          bash infra/tests/app-stack-test.sh
+          bash infra/tests/foundation-stack-test.sh
+          bash infra/tests/stack-parameters-test.sh
+          bash infra/tests/reconcile-prototype-test.sh
+          bash infra/tests/sync-staff-callbacks-test.sh
           bash infra/tests/quickstart-test.sh
           bash infra/tests/delete-prototype-test.sh
           bash infra/tests/remove-legacy-receiver-test.sh
@@ -68,7 +73,7 @@ jobs:
           fail-on-severity: high
 
   build-images:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     needs: build-test-scan
     runs-on: ubuntu-latest
     concurrency:
@@ -91,6 +96,19 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Plan application changes
+        id: plan
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+          APP_PLAN: ${{ runner.temp }}/app-plan.json
+        run: |
+          bash infra/deployment/plan-apps.sh
+          if [[ -f "$APP_PLAN" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build affected images
         id: images
         env:
@@ -99,11 +117,37 @@ jobs:
           BASE_SHA: ${{ github.event.before }}
           BUILD_ALL: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
           RELEASE_MANIFEST: ${{ runner.temp }}/release-manifest.json
+          APP_PLAN: ${{ runner.temp }}/app-plan.json
         run: |
           bash infra/deployment/build-images.sh
           if [[ -f "$RELEASE_MANIFEST" ]]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Show deployment plan
+        if: steps.plan.outputs.available == 'true'
+        env:
+          APP_PLAN: ${{ runner.temp }}/app-plan.json
+          RELEASE_MANIFEST: ${{ runner.temp }}/release-manifest.json
+        run: |
+          jq -e --slurpfile manifest "$RELEASE_MANIFEST" '
+            .commit == $manifest[0].commit and .registry == $manifest[0].registry and
+            all(.targets[] | select(.status == "deploy" or .status == "missing"); .service as $s |
+              ($manifest[0].images[$s].digest | type == "string" and test("^sha256:[0-9a-f]{64}$"))) and
+            (if .bootstrapBuild then
+              $manifest[0].images["database-bootstrap"].repository == "database-bootstrap" and
+              ($manifest[0].images["database-bootstrap"].digest | type == "string" and test("^sha256:[0-9a-f]{64}$"))
+             else true end)
+          ' "$APP_PLAN" >/dev/null
+          {
+            echo '## Application deployment plan'
+            echo 'Review migrations, infrastructure, configuration and compatibility before applying. A changed or unverified bootstrap will run before app updates.'
+            echo '| App | Decision | Reason |'
+            echo '| --- | --- | --- |'
+            jq -r '.targets[] | "| \(.service) | \(.status) | \(.reason) |"' "$APP_PLAN"
+            echo
+            jq -r '"Database: \(.bootstrapReason). Infrastructure: manual review required."' "$APP_PLAN"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Save built image digests
         if: steps.images.outputs.available == 'true'
@@ -111,4 +155,12 @@ jobs:
         with:
           name: release-manifest-${{ github.run_attempt }}
           path: ${{ runner.temp }}/release-manifest.json
+          if-no-files-found: error
+
+      - name: Save deployment plan
+        if: steps.plan.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-plan-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/app-plan.json
           if-no-files-found: error

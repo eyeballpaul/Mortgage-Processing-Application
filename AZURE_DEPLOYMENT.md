@@ -5,6 +5,7 @@ This page remains for existing links. Choose the guide for your task:
 - [Set up Azure from scratch](docs/azure-setup-from-scratch.md).
 - [Set up the on-demand workflows](docs/azure-on-demand-setup.md).
 - [Create, delete and recreate the prototype](AZURE_PROTOTYPE_GUIDE.md).
+- [Deploy app, database and infrastructure changes](AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype).
 - [Advanced deployment and operations](docs/azure-advanced-deployment.md).
 
 ## Choose where to start

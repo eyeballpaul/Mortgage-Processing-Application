@@ -315,13 +315,12 @@ Otherwise follow these manual steps.
    additional repository variables, secrets, Graph consent and Staff Web
    ownership. Return here when those checks are complete.
 4. Push or merge your changes to `main` and watch **Actions → Build, test and
-   security checks**. After tests succeed, it builds affected images if the
-   registry exists. It does not update Azure applications, infrastructure or
-   the database. Pull requests never publish images.
+   security checks**. Pushes run checks but do not build images or update Azure
+   applications, infrastructure or the database. Pull requests never publish images.
 5. To release, follow every step in the
    [release guide](../AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype):
-   deliberately review infrastructure and migrations, then select and deploy
-   one target at a time. Verify sign-in and the application journey separately.
+   review infrastructure and migrations, complete the one-time recreation, then
+   run **Deploy prototype changes**. Verify sign-in and the application journey separately.
    The release workflows have not been tested live. Builds and resources cost money.
 6. If login reports a missing client or tenant ID, check the exact repository
    variable names and values. For `AADSTS700213`, compare the login log's

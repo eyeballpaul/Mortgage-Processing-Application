@@ -79,17 +79,23 @@ GitHub deployment script currently expects those names.
 | `AZURE_STORAGE_ACCOUNT` | Prototype storage account name |
 | `MORTGAGE_API_CLIENT_ID` | Mortgage API app registration → Application (client) ID |
 | `STAFF_CLIENT_ID` | Staff Web app registration → Application (client) ID |
+| `AZURE_ALERT_EMAIL` | Optional alert recipient; enables a paid Azure Monitor alert |
+| `OTLP_ENDPOINT` | Optional trusted OTLP collector endpoint |
+| `OTLP_PROTOCOL` | Optional `grpc` (default) or `http/protobuf` |
 
 4. Select **Secrets → New repository secret** and add `STAFF_CLIENT_SECRET`,
-   `PRODUCTS_API_KEY` and `ELIGIBILITY_API_KEY` for the create workflow. Use
+   `PRODUCTS_API_KEY`, `ELIGIBILITY_API_KEY` and `DEPLOYMENT_FINGERPRINT_KEY`.
+   Generate the last with `openssl rand -hex 32` and keep it stable. Use
    the same staff secret value and matching service keys as the deployment.
    GitHub will not show their values after saving them. Never put them in
    variables, Git or chat.
 
 The workflow uses an Entra federated credential for this repository's immutable
 GitHub OIDC subject instead of a deployment client secret. The regular
-release workflows do not consume or update the staff secret or service
-keys; the on-demand create workflow does consume them. Environment-scoped
+individual release workflows do not consume or update the staff secret or service
+keys; the create and reconciliation workflows consume them. The fingerprint key
+is used for keyed hashes of secure template inputs, not stored in stack tags.
+Environment-scoped
 GitHub variables and secrets are not available because these jobs do not
 select an environment.
 See the [GitHub Actions setup](../docs/azure-advanced-deployment.md#deploy-application-changes-with-github-actions)
@@ -97,7 +103,13 @@ for permissions and recreation guidance.
 
 ## Bicep settings
 
-[main.bicep](main.bicep) defines the infrastructure parameters. `createSqlServer`
+[main.bicep](main.bicep) defines the infrastructure parameters and calls the
+individual app and bootstrap templates in [apps/](apps/). The create workflow
+initializes separate deployment stacks for the shared foundation and each app.
+The manual reconciliation workflow updates changed stacks and deletes resources
+removed from their templates, including data and child resources. The foundation
+stack applies shared resources together; it does not reapply app stacks.
+`createSqlServer`
 is `true` when creating a SQL server and `false` when updating an existing one;
 the quickstart selects this automatically. `deployApps` and `deployBootstrap`
 control the corresponding resources. `alertEmail` and `otlpEndpoint` are
@@ -116,7 +128,7 @@ identity receives queue-scoped receiver access. A separate scaler-only identity
 receives namespace-scoped Service Bus Data Owner; it is unavailable to the
 containers. `Notifications__Enabled`, `Notifications__ServiceBusNamespace` and
 `Notifications__QueueName` are set by the template; no Service Bus key is used.
-Push builds and individual releases do not reapply the notification module or
+Push checks and individual releases do not reapply the notification module or
 Mortgage API settings. They cannot upgrade an API-hosted consumer; see the
 [legacy cutover](../docs/azure-advanced-deployment.md#enable-on-an-existing-quickstart-deployment).
 It requires the constrained group-scoped role-assignment permissions described

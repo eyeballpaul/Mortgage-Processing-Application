@@ -36,6 +36,10 @@ fi
 classify() {
   jq -ce --arg group "$group_id" --arg registry "$AZURE_CONTAINER_REGISTRY" \
     --arg sql "$AZURE_SQL_SERVER" --arg storage "$AZURE_STORAGE_ACCOUNT" '
+    [ .[] | select((.type | ascii_downcase) == "microsoft.resources/deploymentstacks" and
+      .tags["pd-owner"] == "mortgage-prototype" and
+      (.name | startswith("pd-app-")) and
+      .tags["pd-target"] == (.name | ltrimstr("pd-app-"))) | .tags["pd-target"] | ascii_downcase ] as $owned_apps |
     def tagged: (.tags.application == "pd-mortgages-demo" and .tags.managedBy == "bicep");
     def oneof($values): . as $v | any($values[]; ascii_downcase == ($v | ascii_downcase));
     def classify:
@@ -45,10 +49,15 @@ classify() {
         ($name | oneof(["mortgage-demo-env-pull", "mortgage-demo-env-mortgages", "mortgage-demo-env-products",
           "mortgage-demo-env-customer-sessions", "mortgage-demo-env-bootstrap", "mortgage-demo-env-staff",
           "mortgage-demo-env-notifications", "mortgage-demo-env-notifications-scaler"])) then "retain"
+      elif $type == "microsoft.resources/deploymentstacks" and
+        .tags["pd-owner"] == "mortgage-prototype" and
+        (($name == "pd-foundation" and .tags["pd-target"] == "foundation") or
+         ($name | startswith("pd-app-")) and .tags["pd-target"] == ($name | ltrimstr("pd-app-"))) then "stacks"
       elif $type == "microsoft.insights/scheduledqueryrules" and $name == "mortgage-demo-env-server-errors" and tagged then "alert-rules"
       elif $type == "microsoft.insights/actiongroups" and $name == "mortgage-demo-env-alerts" and tagged then "alert-groups"
       elif $type == "microsoft.app/containerapps" and
-        ($name | oneof(["products-api", "eligibility-api", "mortgage-api", "staff-web", "mortgages-web", "notifications-worker"])) and tagged then "apps"
+        (($name | oneof(["products-api", "eligibility-api", "mortgage-api", "staff-web", "mortgages-web", "notifications-worker"])) or
+         ($owned_apps | index($name) != null)) and tagged then "apps"
       elif $type == "microsoft.app/jobs" and $name == "mortgage-demo-env-bootstrap" and tagged then "apps"
       elif $type == "microsoft.app/managedenvironments" and $name == "mortgage-demo-env" and tagged then "environment"
       elif $type == "microsoft.network/privateendpoints" and
@@ -84,7 +93,17 @@ classify() {
           if .category != "child" and .category != "unknown" and
             ((.id | ascii_downcase) != (($group + "/providers/" + .type + "/" + .name) | ascii_downcase))
           then error("Resource ID does not match its type and name") else . end
-        end)
+        end) as $classified |
+      $classified | map(
+        if .category == "unknown" then
+          (.id | ascii_downcase) as $id |
+          if any($classified[];
+            (.id | ascii_downcase) as $parent |
+            (.category == "apps" or .category == "environment" or .category == "endpoints" or
+             .category == "data" or .category == "network" or .category == "dns" or .category == "logs") and
+            ($id | startswith($parent + "/")))
+          then .category = "child" else . end
+        else . end)
     end'
 }
 
@@ -94,6 +113,28 @@ if jq -e 'any(.[]; .category == "unknown")' <<< "$resources" >/dev/null; then
   jq -r '.[] | select(.category == "unknown") | .id' <<< "$resources" >&2
   exit 1
 fi
+
+while IFS= read -r stack_name; do
+  stack="$(az stack group show --resource-group "$AZURE_RESOURCE_GROUP" --name "$stack_name" --output json)"
+  if ! jq -e --arg name "$stack_name" --arg group "$group_id" '
+    (.id | type == "string" and ascii_downcase == (($group + "/providers/Microsoft.Resources/deploymentStacks/" + $name) | ascii_downcase)) and
+    .tags["pd-owner"] == "mortgage-prototype" and
+    (.resources | type == "array" and all(.[];
+      (.id | type == "string" and (ascii_downcase | startswith(($group | ascii_downcase) + "/providers/"))))) and
+    (if $name == "pd-foundation" then .tags["pd-target"] == "foundation" else
+      ($name | ltrimstr("pd-app-")) as $target |
+      .tags["pd-target"] == $target and
+      (.resources | length == 1 and
+        (.[0].id | ascii_downcase) ==
+          (if $target == "database-bootstrap" then
+            ($group + "/providers/Microsoft.App/jobs/mortgage-demo-env-bootstrap" | ascii_downcase)
+           else ($group + "/providers/Microsoft.App/containerApps/" + $target | ascii_downcase) end))
+     end)
+  ' <<< "$stack" >/dev/null; then
+    echo "Stack $stack_name has invalid ownership or resource scope; nothing has been deleted." >&2
+    exit 1
+  fi
+done < <(jq -r '.[] | select(.category == "stacks") | .name' <<< "$resources")
 
 # Private endpoints create untagged network interfaces, which Azure deletes with their endpoints.
 while IFS= read -r nic_id; do
@@ -113,13 +154,11 @@ dns_links='[]'
 while IFS= read -r zone_name; do
   links="$(az network private-dns link vnet list --resource-group "$AZURE_RESOURCE_GROUP" \
     --zone-name "$zone_name" --output json)"
-  if ! jq -e --arg zone "$group_id/providers/Microsoft.Network/privateDnsZones/$zone_name" \
-    --arg vnet "$group_id/providers/Microsoft.Network/virtualNetworks/mortgage-demo-env-vnet" '
+  if ! jq -e --arg zone "$group_id/providers/Microsoft.Network/privateDnsZones/$zone_name" '
       type == "array" and all(.[];
-        (.id | type == "string" and ascii_downcase == (($zone + "/virtualNetworkLinks/demo-vnet") | ascii_downcase)) and
-        (.name | type == "string" and ascii_downcase == "demo-vnet") and
-        (.virtualNetwork.id | type == "string" and ascii_downcase == ($vnet | ascii_downcase)) and
-        .registrationEnabled == false)
+        (.name | type == "string" and length > 0) and
+        (.name as $name | .id | type == "string" and
+          ascii_downcase == (($zone + "/virtualNetworkLinks/" + $name) | ascii_downcase)))
     ' <<< "$links" >/dev/null; then
     echo "Unrecognized or invalid virtual network link in DNS zone $zone_name; nothing has been deleted." >&2
     exit 1
@@ -178,6 +217,11 @@ if jq -e 'any(.[]; .category == "apps" and (.type | ascii_downcase) == "microsof
 fi
 
 echo "Deleting recognized prototype resources from $group_id. Databases, blobs and queue data will be lost."
+while IFS= read -r stack_name; do
+  echo "Detaching deployment stack $stack_name."
+  az stack group delete --resource-group "$AZURE_RESOURCE_GROUP" --name "$stack_name" \
+    --action-on-unmanage detachAll --yes --output none
+done < <(jq -r '.[] | select(.category == "stacks") | .name' <<< "$resources")
 for category in alert-rules alert-groups apps environment endpoints data dns-links network dns logs; do
   if [[ "$category" == dns-links ]]; then
     while IFS= read -r id; do

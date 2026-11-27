@@ -174,7 +174,7 @@ Products requests have a ten-second total timeout across retries. Eligibility re
 
 Aspire uses one local SQL Server container and volume for the application databases; they are logically separate. The emulator has a second SQL Server container for its own use. Azure uses four separate serverless databases on one logical SQL server. Each database has its own migration history, and the session cache is created only in the customer-session database. Existing databases with previous migration histories require the data-safe or disposable-local reset procedure in the [migration guidance](../README.md#database-migrations).
 
-In Aspire, the Mortgage API, Products API and customer web app apply their own databases' migrations at startup. The worker applies the notifications database migrations when the local emulator is enabled. The Azure bootstrap applies all four during creation or when explicitly run before dependent releases and copies historical mortgage simulation records idempotently; it does not grant schema-migration permissions to the runtime identities.
+In Aspire, the Mortgage API, Products API and customer web app apply their own databases' migrations at startup. The worker applies the notifications database migrations when the local emulator is enabled. The Azure bootstrap applies all four during creation, when planned before app releases, or when explicitly run, and copies historical mortgage simulation records idempotently; it does not grant schema-migration permissions to the runtime identities.
 
 ## Azure deployment
 
@@ -259,18 +259,20 @@ flowchart TD
     Bootstrap --> Apps[Deploy six Container Apps]
     Apps --> Callbacks[Update Staff Web callbacks in Entra]
     Callbacks --> Ready[Check public readiness]
+    Ready --> Owners[Initialize foundation and per-app deployment stacks]
 
     Push[Push to main] --> CI[Build, test and security checks]
-    CI -->|Registry exists| Images2[Build affected images and save digests]
-    CI -->|Registry absent| Skip[Skip image builds]
-    Preview[Manual infrastructure preview] --> ReviewInfra[Review then apply new resources]
-    Images2 --> Release[Manual release of one selected target]
-    Release --> AppUpdate[Update one existing app]
-    Images2 --> Migration[Manual database bootstrap]
+    CI --> Deploy[Manual: Deploy prototype changes]
+    Owners --> Deploy
+    Deploy --> Shared[Reconcile foundation stack]
+    Shared --> Builds[Plan and build affected images]
+    Builds --> Migrate[Run bootstrap if required]
+    Migrate --> Update[Reconcile app stacks and release changed images]
+    Update --> Removed[Delete removed managed app stacks]
 
     Delete[GitHub: Delete prototype resources] --> Review[Check known resources and staff callbacks]
     Review -->|Recognized| Remove[Delete prototype resources and data]
-    Review -->|Unknown resources or unexpected DNS links| Stop[Stop; inspect remaining costs]
+    Review -->|Unknown top-level resources or invalid DNS links| Stop[Stop; inspect remaining costs]
     Remove --> Retain[Keep group, eight identities and group permissions]
 ```
 
@@ -283,10 +285,14 @@ an error after deletion starts can leave a partially deleted, billable
 environment. It permanently deletes databases, blobs, queue data, images and
 logs. There is no verified whole-environment pause.
 
-Push-to-main builds do not deploy. Separate manual workflows verify a
-successful build's digest and update one existing app or explicitly run the
-bootstrap job. A separate reviewed preview/apply path is limited to creating
-new resources, not updates to existing definitions; what-if is not a guarantee.
+Push checks do not build images or deploy. The manual workflow verifies a
+successful current-main push build, reconciles the shared stack, builds needed
+images, runs the bootstrap when needed, and reconciles app stacks in dependency
+order. It compares deployed commit and digest markers; unknown baselines are
+rebuilt. Removed stack-managed resources and their child resources and data can
+be deleted. Shared foundation resources are deployed as a group when the
+foundation changes. Separate older workflows remain available for individual
+releases, bootstrap and create-only infrastructure previews.
 Image builds and GitHub lifecycle, release and infrastructure workflows share a
 concurrency group, but manual quickstart runs do not. For the required setup
 and step-by-step operation, see the
@@ -300,8 +306,9 @@ An optional `otlpEndpoint` enables OpenTelemetry HTTP server and client span exp
 
 Liveness checks only the process; readiness checks required dependencies. Health probes are exempt from the Products API rate limiter. Customer web readiness includes the Mortgage API and its configured distributed session store. Separately, the rate-limited `/health/dependencies` customer endpoint checks Products and Eligibility through the Mortgage API using their configured service credentials.
 
-The manual single-app release checks public readiness for the selected web
-app only. It does not test internal APIs, the worker, or `/health/dependencies`.
+Both app release paths wait for the intended sole active revision and check
+public readiness for selected web apps. They do not test internal APIs, the
+worker, or `/health/dependencies`.
 The interactive quickstart and on-demand creation check public readiness.
 None of these checks exercise staff sign-in or complete business flows.
 

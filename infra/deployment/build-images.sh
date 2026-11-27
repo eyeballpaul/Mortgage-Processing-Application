@@ -29,11 +29,18 @@ if jq -e 'length == 0' <<< "$registries" >/dev/null; then
 fi
 
 images='{}'
-for service in products-api eligibility-api mortgage-api mortgages-web staff-web notifications-worker database-bootstrap; do
+for service in "${app_services[@]}" database-bootstrap; do
   project="$(service_project "$service")"
   image="$(service_image "$service")"
   build=true
-  if [[ "${BUILD_ALL:-false}" != true && "${BASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] &&
+  if [[ "${BUILD_ALL:-false}" != true && -n "${APP_PLAN:-}" && -f "$APP_PLAN" ]]; then
+    if [[ "$service" == database-bootstrap ]]; then
+      build="$(jq -er '.bootstrapBuild | tostring' "$APP_PLAN")"
+    else
+      build="$(jq -r --arg service "$service" \
+        '[.targets[] | select(.service == $service) | .status] | if length == 1 and (.[0] == "deploy" or .[0] == "missing" or .[0] == "unchanged") then .[0] != "unchanged" else error("Invalid plan target") end' "$APP_PLAN")"
+    fi
+  elif [[ "${BUILD_ALL:-false}" != true && "${BASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] &&
      git merge-base --is-ancestor "$BASE_SHA" "$GITHUB_SHA"; then
     build="$(python3 infra/deployment/affected.py \
       --project "$project/$project.csproj" --base "$BASE_SHA" --head "$GITHUB_SHA")"

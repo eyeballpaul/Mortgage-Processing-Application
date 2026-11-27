@@ -4,6 +4,9 @@ Follow this guide after the [first interactive deployment](azure-setup-from-scra
 It configures the GitHub identity, permissions and secrets required for
 repeated create/delete runs. When finished, use the
 [prototype lifecycle guide](../AZURE_PROTOTYPE_GUIDE.md#run-the-workflows).
+For day-to-day code changes, use the
+[beginner's release guide](../AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype);
+pushes run checks but do not build images or deploy.
 
 ## One-time setup
 
@@ -249,10 +252,13 @@ Do not share the full response or authentication details.
    | `AZURE_STORAGE_ACCOUNT` | Resource group → storage account → name |
    | `MORTGAGE_API_CLIENT_ID` | Mortgage API app registration → Application (client) ID |
    | `STAFF_CLIENT_ID` | Staff Web app registration → Application (client) ID |
+   | `AZURE_ALERT_EMAIL` | Optional alert recipient; enabling the alert can add cost |
+   | `OTLP_ENDPOINT` | Optional trusted OTLP collector endpoint |
+   | `OTLP_PROTOCOL` | Optional `grpc` (default) or `http/protobuf` |
 
 2. On the same GitHub Actions settings page, select **Secrets → New repository
-   secret** and add `STAFF_CLIENT_SECRET`, `PRODUCTS_API_KEY` and
-   `ELIGIBILITY_API_KEY`. These are **secrets**, not variables. Use the Staff
+   secret** and add `STAFF_CLIENT_SECRET`, `PRODUCTS_API_KEY`,
+   `ELIGIBILITY_API_KEY` and `DEPLOYMENT_FINGERPRINT_KEY`. These are **secrets**, not variables. Use the Staff
    Web secret **value** and the two different service keys used by the
    quickstart. Keep them in a password manager; GitHub does not display saved
    secret values.
@@ -260,7 +266,10 @@ Do not share the full response or authentication details.
    `openssl rand -hex 32` twice in a secure terminal and save the two
    different outputs separately. Each key must be 32–128 letters, digits, underscores or
    hyphens. For an existing deployment, reuse its matching keys: changing
-   only one side can break service calls.
+   only one side can break service calls. Run `openssl rand -hex 32` once
+   more for `DEPLOYMENT_FINGERPRINT_KEY`, save the output securely, and add
+   it as that repository secret. This separate key protects fingerprints used
+   to detect secret changes; keep it stable between runs.
 4. Verify that the deployment app's federated credential matches the repository
    and `main` branch; see [create the GitHub deployment identity](azure-setup-from-scratch.md#6-create-the-github-deployment-identity).
    Restrict who can change trusted workflows and run them. Rotate the staff
@@ -268,6 +277,7 @@ Do not share the full response or authentication details.
 
 Image builds and manual release and infrastructure workflows use only the first
 five variables above.
-The on-demand create workflow also needs the other four variables and three
-secrets. All must be **repository** settings, not environment-only settings.
+The create and reconcile workflows also need the other four required variables
+and four secrets. The final three variables are optional. All must be
+**repository** settings, not environment-only settings.
 

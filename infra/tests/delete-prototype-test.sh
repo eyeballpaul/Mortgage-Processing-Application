@@ -14,6 +14,19 @@ case "$*" in
   "group exists --name test-rg --output tsv") echo true ;;
   "group show --name test-rg --query id --output tsv") echo /subscriptions/subscription-id/resourceGroups/test-rg ;;
   "resource list --resource-group test-rg --output json") cat "$TEST_STATE/resources" ;;
+  "stack group show --resource-group test-rg --name "*" --output json")
+    name="$7"
+    jq -cn --arg name "$name" '{
+      id:("/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.Resources/deploymentStacks/" + $name),
+      tags:{"pd-owner":"mortgage-prototype","pd-target":(if $name == "pd-foundation" then "foundation" else ($name | ltrimstr("pd-app-")) end)},
+      resources:[{id:(if $name == "pd-foundation" then
+        "/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/mortgage-demo-env-vnet"
+        else "/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.App/containerApps/" + ($name | ltrimstr("pd-app-")) end)}]
+    }' ;;
+  "stack group delete --resource-group test-rg --name "*" --action-on-unmanage detachAll --yes --output none")
+    name="$7"
+    jq --arg name "$name" 'map(select(.name != $name))' "$TEST_STATE/resources" > "$TEST_STATE/resources.new"
+    mv "$TEST_STATE/resources.new" "$TEST_STATE/resources" ;;
   "containerapp show --name staff-web --resource-group test-rg --output json")
     echo '{"properties":{"configuration":{"ingress":{"fqdn":"staff.example"}},"template":{"containers":[{"env":[{"name":"AzureAd__ClientId","value":"staff-client"}]}]}}}' ;;
   "ad app show --id staff-client --output json") cat "$TEST_STATE/staff" ;;
@@ -45,7 +58,7 @@ case "$*" in
       'any(.[]; .id | startswith($zone + "/"))' "$TEST_STATE/links" >/dev/null; then
       echo "DNS zone still has a virtual network link." >&2; exit 1
     fi
-    jq --arg id "$id" 'map(select(.id != $id and
+    jq --arg id "$id" 'map(select(.id != $id and (.id | startswith($id + "/") | not) and
       (if ($id | endswith("/privateEndpoints/sql-server-private")) then .type != "Microsoft.Network/networkInterfaces" else true end)))' \
       "$TEST_STATE/resources" > "$TEST_STATE/resources.new"
     mv "$TEST_STATE/resources.new" "$TEST_STATE/resources" ;;
@@ -119,6 +132,35 @@ if grep -q 'resource delete .*userAssignedIdentities' "$TEST_LOG"; then
   echo "Deleted a retained identity." >&2; exit 1
 fi
 
+reset_state
+jq '. + [{id:"/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.Resources/deploymentStacks/pd-foundation",
+  type:"Microsoft.Resources/deploymentStacks",name:"pd-foundation",
+  tags:{"pd-owner":"mortgage-prototype","pd-target":"foundation"}}]' "$TEST_STATE/resources" > "$TEST_STATE/resources.new"
+mv "$TEST_STATE/resources.new" "$TEST_STATE/resources"
+bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
+detach_line="$(grep -n '^stack group delete ' "$TEST_LOG" | cut -d: -f1)"
+delete_line="$(grep -n '^resource delete ' "$TEST_LOG" | head -n 1 | cut -d: -f1)"
+[[ "$detach_line" -lt "$delete_line" ]]
+jq -e 'length == 3 and all(.[]; .type == "Microsoft.ManagedIdentity/userAssignedIdentities")' "$TEST_STATE/resources" >/dev/null
+
+reset_state
+jq '. + [{id:"/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.Sql/servers/sql-server/databases/extra",
+  type:"Microsoft.Sql/servers/databases",name:"sql-server/extra"}]' "$TEST_STATE/resources" > "$TEST_STATE/resources.new"
+mv "$TEST_STATE/resources.new" "$TEST_STATE/resources"
+bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
+jq -e 'length == 3' "$TEST_STATE/resources" >/dev/null
+
+reset_state
+jq '. + [
+  {id:"/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.Resources/deploymentStacks/pd-app-retired",
+   type:"Microsoft.Resources/deploymentStacks",name:"pd-app-retired",tags:{"pd-owner":"mortgage-prototype","pd-target":"retired"}},
+  {id:"/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.App/containerApps/retired",
+   type:"Microsoft.App/containerApps",name:"retired",tags:{application:"pd-mortgages-demo",managedBy:"bicep"}}
+]' "$TEST_STATE/resources" > "$TEST_STATE/resources.new"
+mv "$TEST_STATE/resources.new" "$TEST_STATE/resources"
+bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
+jq -e 'length == 3' "$TEST_STATE/resources" >/dev/null
+
 : > "$TEST_LOG"
 bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
 if grep -q 'resource delete' "$TEST_LOG"; then echo "Repeated cleanup deleted resources." >&2; exit 1; fi
@@ -134,22 +176,27 @@ if grep -q 'link vnet delete .*privatelink.blob.core.windows.net' "$TEST_LOG"; t
 fi
 grep -q 'link vnet delete .*privatelink.database.windows.net' "$TEST_LOG"
 
-for bad_link in extra wrong-vnet registration; do
+for extra_link in extra wrong-vnet registration; do
   reset_state
-  case "$bad_link" in
-    extra) jq '. + [.[0] | .name = "other" | .id += "-other"]' "$TEST_STATE/links" > "$TEST_STATE/links.new" ;;
+  case "$extra_link" in
+    extra) jq '. + [.[0] | .name = "other" | .id |= sub("demo-vnet$"; "other")]' "$TEST_STATE/links" > "$TEST_STATE/links.new" ;;
     wrong-vnet) jq '.[0].virtualNetwork.id = "/subscriptions/elsewhere"' "$TEST_STATE/links" > "$TEST_STATE/links.new" ;;
     registration) jq '.[0].registrationEnabled = true' "$TEST_STATE/links" > "$TEST_STATE/links.new" ;;
   esac
   mv "$TEST_STATE/links.new" "$TEST_STATE/links"
-  if bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output" 2>&1; then
-    echo "Expected $bad_link DNS link to block cleanup." >&2; exit 1
-  fi
-  grep -q 'Unrecognized or invalid virtual network link' "$test_dir/output"
-  if grep -Eq 'resource delete|link vnet delete|rest --method patch' "$TEST_LOG"; then
-    echo "Changed resources or callbacks despite $bad_link DNS link." >&2; exit 1
-  fi
+  bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
+  [[ "$(jq length "$TEST_STATE/links")" == 0 ]]
 done
+
+reset_state
+jq '.[0].id = "/subscriptions/elsewhere"' "$TEST_STATE/links" > "$TEST_STATE/links.new"
+mv "$TEST_STATE/links.new" "$TEST_STATE/links"
+if bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output" 2>&1; then
+  echo "Expected an out-of-scope DNS link to block cleanup." >&2; exit 1
+fi
+if grep -Eq 'resource delete|link vnet delete|rest --method patch' "$TEST_LOG"; then
+  echo "Changed resources or callbacks despite an out-of-scope DNS link." >&2; exit 1
+fi
 
 reset_state
 jq '. + [{id:"/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.Compute/virtualMachines/other",type:"Microsoft.Compute/virtualMachines",name:"other"}]' \

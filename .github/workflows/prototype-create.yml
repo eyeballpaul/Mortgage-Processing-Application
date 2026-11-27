@@ -39,9 +39,19 @@ jobs:
           AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
           AZURE_SQL_SERVER: ${{ vars.AZURE_SQL_SERVER }}
           AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+          AZURE_ALERT_EMAIL: ${{ vars.AZURE_ALERT_EMAIL }}
+          OTLP_ENDPOINT: ${{ vars.OTLP_ENDPOINT }}
+          OTLP_PROTOCOL: ${{ vars.OTLP_PROTOCOL }}
           MORTGAGE_API_CLIENT_ID: ${{ vars.MORTGAGE_API_CLIENT_ID }}
           STAFF_CLIENT_ID: ${{ vars.STAFF_CLIENT_ID }}
           STAFF_CLIENT_SECRET: ${{ secrets.STAFF_CLIENT_SECRET }}
           PRODUCTS_API_KEY: ${{ secrets.PRODUCTS_API_KEY }}
           ELIGIBILITY_API_KEY: ${{ secrets.ELIGIBILITY_API_KEY }}
-        run: bash infra/quickstart-deploy.sh
+          DEPLOYMENT_FINGERPRINT_KEY: ${{ secrets.DEPLOYMENT_FINGERPRINT_KEY }}
+        run: |
+          if [[ ! "$DEPLOYMENT_FINGERPRINT_KEY" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "Set DEPLOYMENT_FINGERPRINT_KEY to 32 random bytes encoded as hexadecimal before creating." >&2
+            exit 1
+          fi
+          bash infra/quickstart-deploy.sh
+          bash infra/deployment/initialize-stacks.sh
