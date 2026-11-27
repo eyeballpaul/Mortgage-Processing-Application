@@ -3,7 +3,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 test_dir="$(mktemp -d "${TMPDIR:-/tmp}/mortgage-delete-test.XXXXXXXX")"
-trap 'rm -f -- "$test_dir/az" "$test_dir/sleep" "$test_dir/resources" "$test_dir/resources.new" "$test_dir/staff" "$test_dir/staff.new" "$test_dir/log" "$test_dir/output"; rmdir "$test_dir"' EXIT
+trap 'rm -f -- "$test_dir/az" "$test_dir/sleep" "$test_dir/resources" "$test_dir/resources.new" "$test_dir/links" "$test_dir/links.new" "$test_dir/staff" "$test_dir/staff.new" "$test_dir/log" "$test_dir/output"; rmdir "$test_dir"' EXIT
 
 cat > "$test_dir/az" <<'MOCK'
 #!/usr/bin/env bash
@@ -30,10 +30,21 @@ case "$*" in
     if [[ "${TEST_FOREIGN_NIC:-false}" == true ]]; then echo /subscriptions/elsewhere; else
       echo /subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.Network/privateEndpoints/sql-server-private
     fi ;;
+  "network private-dns link vnet list --resource-group test-rg --zone-name "*" --output json")
+    if [[ "${TEST_FAIL_LINK_LIST:-false}" == true ]]; then exit 1; fi
+    jq --arg zone "$9" '[.[] | select(.zone == $zone) | del(.zone)]' "$TEST_STATE/links" ;;
+  "network private-dns link vnet delete --ids "*" --yes")
+    if [[ "${TEST_FAIL_LINK_DELETE:-false}" == true ]]; then exit 1; fi
+    jq --arg id "$7" 'map(select(.id != $id))' "$TEST_STATE/links" > "$TEST_STATE/links.new"
+    mv "$TEST_STATE/links.new" "$TEST_STATE/links" ;;
   "resource delete --ids "*)
     if [[ "${TEST_FAIL_DELETE:-false}" == true ]]; then exit 1; fi
     if [[ "${TEST_LEAVE_RESOURCE:-false}" == true ]]; then exit 0; fi
     id="$4"
+    if [[ "$id" == *"/privateDnsZones/"* ]] && jq -e --arg zone "$id" \
+      'any(.[]; .id | startswith($zone + "/"))' "$TEST_STATE/links" >/dev/null; then
+      echo "DNS zone still has a virtual network link." >&2; exit 1
+    fi
     jq --arg id "$id" 'map(select(.id != $id and
       (if ($id | endswith("/privateEndpoints/sql-server-private")) then .type != "Microsoft.Network/networkInterfaces" else true end)))' \
       "$TEST_STATE/resources" > "$TEST_STATE/resources.new"
@@ -74,8 +85,15 @@ reset_state() {
       {id:($prefix + "Microsoft.ContainerRegistry/registries/registryname"),type:"Microsoft.ContainerRegistry/registries",name:"registryname",tags:$tags},
       {id:($prefix + "Microsoft.Network/virtualNetworks/mortgage-demo-env-vnet"),type:"Microsoft.Network/virtualNetworks",name:"mortgage-demo-env-vnet",tags:$tags},
       {id:($prefix + "Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net"),type:"Microsoft.Network/privateDnsZones",name:"privatelink.blob.core.windows.net",tags:$tags},
+      {id:($prefix + "Microsoft.Network/privateDnsZones/privatelink.database.windows.net"),type:"Microsoft.Network/privateDnsZones",name:"privatelink.database.windows.net",tags:$tags},
       {id:($prefix + "Microsoft.OperationalInsights/workspaces/mortgage-demo-env-logs"),type:"Microsoft.OperationalInsights/workspaces",name:"mortgage-demo-env-logs",tags:$tags}
     ]' > "$TEST_STATE/resources"
+  jq -n '
+    "/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.Network/" as $prefix |
+    ["privatelink.blob.core.windows.net", "privatelink.database.windows.net"] |
+    map({zone: ., name: "demo-vnet", id: ($prefix + "privateDnsZones/" + . + "/virtualNetworkLinks/demo-vnet"),
+      virtualNetwork: {id: ($prefix + "virtualNetworks/mortgage-demo-env-vnet")}, registrationEnabled: false})
+  ' > "$TEST_STATE/links"
 }
 
 reset_state
@@ -86,7 +104,13 @@ app_line="$(grep -n 'resource delete .*containerApps/mortgage-api' "$TEST_LOG" |
 environment_line="$(grep -n 'resource delete .*managedEnvironments' "$TEST_LOG" | cut -d: -f1)"
 endpoint_line="$(grep -n 'resource delete .*privateEndpoints' "$TEST_LOG" | cut -d: -f1)"
 network_line="$(grep -n 'resource delete .*virtualNetworks' "$TEST_LOG" | cut -d: -f1)"
-[[ "$app_line" -lt "$environment_line" && "$environment_line" -lt "$endpoint_line" && "$endpoint_line" -lt "$network_line" ]]
+link_line="$(grep -n 'network private-dns link vnet delete .*privatelink.blob.core.windows.net' "$TEST_LOG" | cut -d: -f1)"
+sql_link_line="$(grep -n 'network private-dns link vnet delete .*privatelink.database.windows.net' "$TEST_LOG" | cut -d: -f1)"
+dns_line="$(grep -n 'resource delete .*privateDnsZones/privatelink.blob.core.windows.net' "$TEST_LOG" | cut -d: -f1)"
+[[ "$app_line" -lt "$environment_line" && "$environment_line" -lt "$endpoint_line" &&
+   "$endpoint_line" -lt "$link_line" && "$link_line" -lt "$network_line" &&
+   "$sql_link_line" -lt "$network_line" && "$network_line" -lt "$dns_line" ]]
+[[ "$(jq length "$TEST_STATE/links")" == 0 ]]
 grep -q 'monitor log-analytics workspace delete .* --force --yes' "$TEST_LOG"
 if grep -q 'resource delete .*userAssignedIdentities' "$TEST_LOG"; then
   echo "Deleted a retained identity." >&2; exit 1
@@ -95,6 +119,34 @@ fi
 : > "$TEST_LOG"
 bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
 if grep -q 'resource delete' "$TEST_LOG"; then echo "Repeated cleanup deleted resources." >&2; exit 1; fi
+
+reset_state
+jq 'map(select(.name != "mortgage-demo-env-vnet"))' "$TEST_STATE/resources" > "$TEST_STATE/resources.new"
+mv "$TEST_STATE/resources.new" "$TEST_STATE/resources"
+jq 'map(select(.zone != "privatelink.blob.core.windows.net"))' "$TEST_STATE/links" > "$TEST_STATE/links.new"
+mv "$TEST_STATE/links.new" "$TEST_STATE/links"
+bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
+if grep -q 'link vnet delete .*privatelink.blob.core.windows.net' "$TEST_LOG"; then
+  echo "Attempted to delete an already removed DNS link." >&2; exit 1
+fi
+grep -q 'link vnet delete .*privatelink.database.windows.net' "$TEST_LOG"
+
+for bad_link in extra wrong-vnet registration; do
+  reset_state
+  case "$bad_link" in
+    extra) jq '. + [.[0] | .name = "other" | .id += "-other"]' "$TEST_STATE/links" > "$TEST_STATE/links.new" ;;
+    wrong-vnet) jq '.[0].virtualNetwork.id = "/subscriptions/elsewhere"' "$TEST_STATE/links" > "$TEST_STATE/links.new" ;;
+    registration) jq '.[0].registrationEnabled = true' "$TEST_STATE/links" > "$TEST_STATE/links.new" ;;
+  esac
+  mv "$TEST_STATE/links.new" "$TEST_STATE/links"
+  if bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output" 2>&1; then
+    echo "Expected $bad_link DNS link to block cleanup." >&2; exit 1
+  fi
+  grep -q 'Unrecognized or invalid virtual network link' "$test_dir/output"
+  if grep -Eq 'resource delete|link vnet delete|rest --method patch' "$TEST_LOG"; then
+    echo "Changed resources or callbacks despite $bad_link DNS link." >&2; exit 1
+  fi
+done
 
 reset_state
 jq '. + [{id:"/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.Compute/virtualMachines/other",type:"Microsoft.Compute/virtualMachines",name:"other"}]' \
@@ -140,7 +192,7 @@ if grep -Eq 'resource delete|rest --method patch' "$TEST_LOG"; then
   echo "Changed resources or callbacks despite indexed redirect settings." >&2; exit 1
 fi
 
-for failure in TEST_FOREIGN_NIC TEST_FAIL_GRAPH TEST_FAIL_DELETE TEST_LEAVE_RESOURCE TEST_SUBSCRIPTION; do
+for failure in TEST_FOREIGN_NIC TEST_FAIL_GRAPH TEST_FAIL_DELETE TEST_FAIL_LINK_LIST TEST_FAIL_LINK_DELETE TEST_LEAVE_RESOURCE TEST_SUBSCRIPTION; do
   reset_state
   if [[ "$failure" == TEST_SUBSCRIPTION ]]; then
     value=other-subscription
@@ -153,8 +205,11 @@ for failure in TEST_FOREIGN_NIC TEST_FAIL_GRAPH TEST_FAIL_DELETE TEST_LEAVE_RESO
   if grep -q 'Recognized resources deleted' "$test_dir/output"; then
     echo "Reported success after $failure." >&2; exit 1
   fi
-  if [[ "$failure" == TEST_FOREIGN_NIC || "$failure" == TEST_FAIL_GRAPH || "$failure" == TEST_SUBSCRIPTION ]] && grep -q 'resource delete' "$TEST_LOG"; then
+  if [[ "$failure" == TEST_FOREIGN_NIC || "$failure" == TEST_FAIL_GRAPH || "$failure" == TEST_FAIL_LINK_LIST || "$failure" == TEST_SUBSCRIPTION ]] && grep -q 'resource delete' "$TEST_LOG"; then
     echo "Deleted resources after $failure." >&2; exit 1
+  fi
+  if [[ "$failure" == TEST_FAIL_LINK_DELETE ]] && grep -Eq 'resource delete .*virtualNetworks|resource delete .*privateDnsZones' "$TEST_LOG"; then
+    echo "Deleted network or DNS zone after DNS link deletion failed." >&2; exit 1
   fi
 done
 echo "Prototype deletion mock tests passed."

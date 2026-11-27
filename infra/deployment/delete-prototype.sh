@@ -108,6 +108,24 @@ while IFS= read -r nic_id; do
   fi
 done < <(jq -r '.[] | select(.category == "nic") | .id' <<< "$resources")
 
+dns_links='[]'
+while IFS= read -r zone_name; do
+  links="$(az network private-dns link vnet list --resource-group "$AZURE_RESOURCE_GROUP" \
+    --zone-name "$zone_name" --output json)"
+  if ! jq -e --arg zone "$group_id/providers/Microsoft.Network/privateDnsZones/$zone_name" \
+    --arg vnet "$group_id/providers/Microsoft.Network/virtualNetworks/mortgage-demo-env-vnet" '
+      type == "array" and all(.[];
+        (.id | type == "string" and ascii_downcase == (($zone + "/virtualNetworkLinks/demo-vnet") | ascii_downcase)) and
+        (.name | type == "string" and ascii_downcase == "demo-vnet") and
+        (.virtualNetwork.id | type == "string" and ascii_downcase == ($vnet | ascii_downcase)) and
+        .registrationEnabled == false)
+    ' <<< "$links" >/dev/null; then
+    echo "Unrecognized or invalid virtual network link in DNS zone $zone_name; nothing has been deleted." >&2
+    exit 1
+  fi
+  dns_links="$(jq -cn --argjson existing "$dns_links" --argjson links "$links" '$existing + $links')"
+done < <(jq -r '.[] | select(.category == "dns") | .name' <<< "$resources")
+
 if jq -e 'any(.[]; .category == "apps" and (.type | ascii_downcase) == "microsoft.app/containerapps" and (.name | ascii_downcase) == "staff-web")' <<< "$resources" >/dev/null; then
   staff_container="$(az containerapp show --name staff-web --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
   if ! jq -e --arg client "$STAFF_CLIENT_ID" '
@@ -159,7 +177,14 @@ if jq -e 'any(.[]; .category == "apps" and (.type | ascii_downcase) == "microsof
 fi
 
 echo "Deleting recognized prototype resources from $group_id. Databases, blobs and queue data will be lost."
-for category in alert-rules alert-groups apps environment endpoints data network dns logs; do
+for category in alert-rules alert-groups apps environment endpoints data dns-links network dns logs; do
+  if [[ "$category" == dns-links ]]; then
+    while IFS= read -r id; do
+      echo "Deleting $id"
+      az network private-dns link vnet delete --ids "$id" --yes
+    done < <(jq -r '.[].id' <<< "$dns_links")
+    continue
+  fi
   while IFS= read -r id; do
     echo "Deleting $id"
     if [[ "$category" == logs ]]; then

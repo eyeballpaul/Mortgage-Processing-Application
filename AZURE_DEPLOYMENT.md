@@ -4,8 +4,8 @@ The quickstart deploys two public web apps, three internal APIs, three SQL datab
 and private SQL and Blob endpoints in one VNet. This is a prototype: use fictional
 data only. The quickstart, staff sign-in and an initial GitHub Actions deployment
 have succeeded in one Azure environment. The workflow's readiness and dependency
-checks passed, but a subsequent selective incremental deployment and a complete
-customer-to-staff journey have not yet been validated.
+checks passed, as did a customer-to-staff journey using fictional data; a
+subsequent selective incremental deployment has not been independently validated.
 
 For detailed first-time setup, see the [setup-from-scratch guide](docs/azure-setup-from-scratch.md).
 
@@ -13,7 +13,9 @@ For detailed first-time setup, see the [setup-from-scratch guide](docs/azure-set
 
 The **Create prototype** and **Delete prototype resources** workflows are an
 alternative to running the interactive quickstart. They require the one-time
-setup below. They have not yet been tested against live Azure or GitHub.
+setup below. Creation and deletion have been tested against live Azure; deletion
+required a retry because a DNS link was still being removed. The updated link
+deletion ordering has mock tests but has not yet been tested live.
 
 The delete workflow removes recognized prototype resources and their data,
 including SQL databases, blobs, the Service Bus queue, images, and the Log
@@ -22,6 +24,8 @@ name can be reused. It retains the resource group, six managed identities and
 group-scoped permissions. If it finds an unrecognized resource or a resource
 without the expected prototype tags, it stops **before deleting resources** and
 lists the resource for review; a billable resource may remain. It removes the
+recognized private DNS virtual network links before deleting the VNet and DNS
+zones, and refuses unexpected links before deleting resources. It removes the
 current deployed staff app's two callback URIs while preserving other staff
 registration settings. Older callbacks from previous deployments must be
 reviewed separately.
