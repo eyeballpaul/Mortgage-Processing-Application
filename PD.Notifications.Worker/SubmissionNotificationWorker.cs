@@ -1,6 +1,11 @@
 using Azure.Messaging.ServiceBus;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using PD.Mortgages.Events;
 
-namespace PD.Mortgages.Api.Services;
+namespace PD.Notifications.Worker;
 
 internal sealed class SubmissionNotificationWorker(
     IServiceScopeFactory scopes,
@@ -46,7 +51,7 @@ internal sealed class SubmissionNotificationWorker(
         await processor.StopProcessingAsync(CancellationToken.None);
     }
 
-    private async Task ProcessMessageAsync(ProcessMessageEventArgs args)
+    internal async Task ProcessMessageAsync(ProcessMessageEventArgs args)
     {
         if (!SubmissionMessage.TryRead(args.Message.Body, args.Message.MessageId, out var message))
         {
@@ -69,10 +74,7 @@ internal sealed class SubmissionNotificationWorker(
             return;
         }
         if (inserted)
-        {
             logger.LogInformation("Simulated notification recorded for submission event {EventId}; no email was sent.", message!.EventId);
-        }
-
         await args.CompleteMessageAsync(args.Message, args.CancellationToken);
     }
 }

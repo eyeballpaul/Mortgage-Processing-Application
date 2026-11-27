@@ -1,9 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <InternalsVisibleTo Include="PD.Mortgages.Tests" />
     <ProjectReference Include="..\PD.Mortgages.Infrastructure\PD.Mortgages.Infrastructure.csproj" />
     <ProjectReference Include="..\PD.Mortgages.CustomerSessions\PD.Mortgages.CustomerSessions.csproj" />
     <ProjectReference Include="..\PD.Products.Infrastructure\PD.Products.Infrastructure.csproj" />
+    <ProjectReference Include="..\PD.Notifications.Worker\PD.Notifications.Worker.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -40,81 +40,68 @@ Basic registry are important costs to monitor.
 
 ## Submission notifications
 
-The quickstart now provisions a **public** Service Bus Basic namespace and one
-`submission-notifications` queue. Basic does not offer a private endpoint. The
-Mortgage API managed identity has queue-scoped sender and receiver roles; SAS
-authentication is disabled. The API hosts both workers, avoiding another
-always-running Container App but sharing its identity and compute. Queue
-messages contain only an event ID, application ID, type/version and timestamp.
-The consumer writes a simulated notification to SQL: **no email is sent**.
+The quickstart provisions a **public** Service Bus Basic namespace and one
+`submission-notifications` queue. Basic does not offer a private endpoint.
+SAS authentication is disabled. The API publishes with its sender identity;
+the separate Notifications Worker receives with its own receiver identity and
+records a simulation in its own SQL database. **No email is sent.** Messages
+contain an event ID, application ID, type/version and timestamp.
 
-A customer submission has produced a simulated notification in Azure. Health
-checks do not test the notification flow. Use fictional data and also verify
-staff submissions.
+The worker has no ingress and is configured to scale from zero to one replica.
+Its separate scaler identity has **Azure Service Bus Data Owner** on the
+namespace, following [Microsoft's KEDA example](https://learn.microsoft.com/azure/aks/keda-workload-identity#create-role-assignments).
+That role can manage the namespace's entities and send and receive messages:
+it is broader than receiver access. Container Apps sets that identity's
+lifecycle to `None`, so application containers cannot use it. See
+[managed identity lifecycle](https://learn.microsoft.com/azure/container-apps/managed-identity#configure-managed-identity-lifecycle).
+The worker identity itself has only queue-scoped receive access. The exact
+scale-to-zero behavior, including the permissions and isolation, has **not
+yet been tested in Azure**.
+
+An earlier API-hosted consumer was observed in Azure; this new separate
+worker has not been validated there. Health checks do not test the flow.
 
 ### Enable on an existing quickstart deployment
 
-The quickstart can grant the existing GitHub deployment identity the additional,
-constrained role-assignment permission described below, or it can be granted
-manually.
-No new Entra app registration, client secret or Service Bus key is needed.
-Also check **Subscriptions → your subscription → Resource providers** for
-`Microsoft.ServiceBus`. If it is not registered, a subscription administrator
-with resource-provider registration permission must register it.
+An older deployment can still have the consumer running inside `mortgage-api`.
+The create and regular deployment scripts stop before upgrading such an app:
+two consumers writing to different databases could record a duplicate.
 
-On each successful push to `main`, the deployment workflow runs the database
-bootstrap if needed, applies [notifications.bicep](../infra/notifications.bicep),
-then updates the Mortgage API image and notification settings. It creates or
-reconciles the namespace, queue and queue-scoped roles, even when no images
-have changed. It expects the quickstart identity `mortgage-demo-env-mortgages`
-to be attached to `mortgage-api` and selected by `AZURE_CLIENT_ID`. The
-workflow fails rather than enabling notifications with a different identity.
-It preserves unrelated app settings and secrets, and skips the app update if
-the image and notification settings already match.
+1. Check whether the existing prototype contains data or queued messages you
+   need. Do not delete it if you need that data. Arrange and test a separate
+   backup and migration/cutover first; an in-place legacy cutover is not
+   automated.
+2. If the prototype is disposable and you accept permanent data loss, use
+   [Delete when finished](../AZURE_PROTOTYPE_GUIDE.md#delete-when-finished).
+   Confirm deletion succeeded and inspect costs.
+3. Complete the updated [one-time setup](azure-on-demand-setup.md#one-time-setup),
+   including the two new retained identities and the restricted role condition.
+   Then run [Create when needed](../AZURE_PROTOTYPE_GUIDE.md#create-when-needed).
+   If resources were already deleted, begin with step 3.
+4. Submit fictional customer and staff applications. Inspect the
+   `notifications-worker` console logs for `Simulated notification recorded`.
+   Check Service Bus active/dead-letter counts and the notification database.
+   The publisher may take 30 seconds; cold starts and SQL resume can add delay.
+   Confirm the worker scales back to zero in Azure after its cooldown and starts
+   again for another message. Check Container Apps system logs for scaler
+   authentication errors if it does not.
 
-After deployment, submit fictional customer and staff applications. Check the
-Mortgage API console logs for `Simulated notification recorded` and inspect the
-queue and SQL records. A successful submission is independent of Service Bus
-availability; the outbox publishes later. Submissions made before the new
-SQL-backed code was deployed are not backfilled.
-
-The pipeline restores `Notifications__Enabled=true` on each deployment; a
-manual disable is therefore temporary. New SQL submissions accumulate outbox
-rows while disabled and will be published after re-enabling. Local file and
-in-memory providers do not create outbox events; the workers require SQL Server.
+On subsequent pushes, the application workflow reconciles the queue and
+permissions, runs bootstrap if its dependencies changed, and updates affected
+images. It cannot create a missing worker or other core infrastructure; use
+the create workflow. A successful submission can precede publishing, because
+the outbox retries later. File and in-memory providers do not create outbox
+events. Aspire leaves both publisher and worker disabled by default.
 
 ### One-time GitHub deployment permission
 
-The existing GitHub deployment app already needs **Contributor** on the
-resource group. If automatic GitHub setup is selected, the quickstart grants
-Contributor at that scope and **Role Based Access Control Administrator** at
-the notification queue, restricted to the two Service Bus data roles and the
-current Mortgage API managed identity. It reuses the app specified by the
-repository's existing `AZURE_CLIENT_ID`. It does not remove other assignments;
-broader permissions elsewhere still apply. Contributor alone cannot create
-the queue-scoped role assignments.
-
-For manual setup, an Azure administrator may instead grant the constrained
-administrator role at the resource group scope as follows:
-
-In Azure Portal, open the resource group's **Access control (IAM) → Add role
-assignment**. Select **Role Based Access Control Administrator**, select the
-existing GitHub deployment service principal, and on the **Conditions** tab
-select **Allow user to only assign selected roles to selected principals** →
-**Select roles and principals** → **Constrain roles and principals**. Allow
-only **Azure Service Bus Data Sender** and **Azure Service Bus Data Receiver**, and only the
-`mortgage-demo-env-mortgages` managed identity (use its principal/object ID,
-not its client ID). Review the scope and condition before assigning. See
-[Microsoft's delegation examples](https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-examples#example-constrain-roles-and-specific-groups).
-Check for other unconditioned role-assignment permissions on the same identity:
-an additional broad assignment can override this restriction.
-
-The deployment identity's Contributor access remains powerful, and the manual
-group-scoped condition permits these two data roles for this identity anywhere
-within the resource group. Protect `main` and restrict workflow edits. Role propagation
-can take several minutes; if the workflow fails due to permissions, correct
-them and rerun the failed job. After deleting and recreating the group, rerun
-the quickstart's automatic GitHub setup or grant the permissions again manually.
+Follow [one-time setup](azure-on-demand-setup.md#2-allow-the-deployment-identity-to-manage-azure-resources).
+It preserves the existing group-scoped condition and adds only two
+role/principal pairs: receiver for the worker and Data Owner for the scaler.
+Contributor and any other role assignments remain powerful; inspect them
+separately. No new Entra app registration, client secret or Service Bus key
+is needed. Register `Microsoft.ServiceBus` if required by the subscription.
+Role propagation can take several minutes.
 
 ### Monitoring, retries and cost
 
@@ -127,9 +114,9 @@ dead-lettered; invalid events are dead-lettered immediately. Active messages
 expire after 14 days and are moved to the dead-letter queue. Dead-lettered
 messages are not automatically deleted.
 
-Inspect Mortgage API error logs, unpublished `SubmissionOutbox` rows, the queue's
-active/dead-letter counts, and `SimulatedNotifications` in the private mortgage
-database. In the Azure portal, use Service Bus Explorer with suitable Entra
+Inspect Mortgage API and worker error logs, unpublished `SubmissionOutbox` rows,
+the queue's active/dead-letter counts, and `SimulatedNotifications` in the
+private `notifications` database. In the Azure portal, use Service Bus Explorer with suitable Entra
 data-plane permissions to peek at dead-lettered messages and their reasons.
 After fixing the cause, resend a valid message with its original message ID;
 resending leaves the original in the dead-letter queue, so explicitly remove it
@@ -188,7 +175,7 @@ entire group. For the normal one-click cycle, use
 Confirm the subscription, resource group, resource names, staff registration
 and GitHub repository carefully. If the group is missing, choose its region and
 the script creates it only after confirmation. It deploys the foundation,
-assigns the customer managed identity its API role, builds six images, runs the
+assigns the customer managed identity its API role, builds seven images, runs the
 private database bootstrap, deploys the apps, adds the staff URL's `/signin-oidc`
 and `/signout-callback-oidc` paths without removing existing redirect URIs, and
 checks public readiness. Avoid changing the registration concurrently.
@@ -283,7 +270,7 @@ them separately.
    values in these variables; this workflow does not use environment variables
    from a GitHub environment.
 3. Commit and push the workflow and deployment scripts to `main`. The first run
-   builds all six images because quickstart images do not contain a Git commit
+   builds all seven images because quickstart images do not contain a Git commit
    baseline. Later runs compare each service's last successful deployed commit
    against the new commit, including transitive project references and linked
    files. If a baseline is unavailable, the service is rebuilt rather than

@@ -1,4 +1,5 @@
 extern alias MortgageApi;
+extern alias NotificationWorker;
 
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -15,9 +16,13 @@ using PD.Mortgages.Infrastructure.Persistence;
 using PD.Mortgages.Infrastructure.Repositories;
 using PD.Mortgages.Infrastructure.Products;
 using PD.Mortgages.Infrastructure.Storage;
-using SimulatedNotificationStore = MortgageApi::PD.Mortgages.Api.Services.SimulatedNotificationStore;
-using SubmissionMessage = MortgageApi::PD.Mortgages.Api.Services.SubmissionMessage;
+using PD.Mortgages.DatabaseBootstrap;
+using SubmissionMessage = MortgageApi::PD.Mortgages.Events.SubmissionMessage;
 using SubmissionOutboxPublisher = MortgageApi::PD.Mortgages.Api.Services.SubmissionOutboxPublisher;
+using NotificationsDbContext = NotificationWorker::PD.Notifications.Worker.NotificationsDbContext;
+using WorkerMessage = NotificationWorker::PD.Mortgages.Events.SubmissionMessage;
+using WorkerStore = NotificationWorker::PD.Notifications.Worker.SimulatedNotificationStore;
+using Worker = NotificationWorker::PD.Notifications.Worker.SubmissionNotificationWorker;
 
 namespace PD.Mortgages.Tests;
 
@@ -45,6 +50,34 @@ public sealed class SubmissionNotificationTests
         Assert.False(SubmissionMessage.TryRead(BinaryData.FromString(
             (message with { OccurredAtUtc = DateTime.SpecifyKind(message.OccurredAtUtc, DateTimeKind.Unspecified) }).Serialize()),
             message.EventId.ToString("D"), out _));
+    }
+
+    [Fact]
+    public async Task WorkerDeadLettersInvalidMessagesWithoutCompletingThem()
+    {
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var worker = new Worker(services.GetRequiredService<IServiceScopeFactory>(),
+            null!, new ConfigurationBuilder().Build(), NullLogger<Worker>.Instance);
+        var args = new TestMessageArgs(BinaryData.FromString("{"), Guid.NewGuid().ToString("D"));
+
+        await worker.ProcessMessageAsync(args);
+
+        Assert.Equal("InvalidSubmissionEvent", args.DeadLetterReason);
+        Assert.False(args.Completed);
+    }
+
+    [Fact]
+    public async Task WorkerDoesNotCompleteWhenProcessingFails()
+    {
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var worker = new Worker(services.GetRequiredService<IServiceScopeFactory>(),
+            null!, new ConfigurationBuilder().Build(), NullLogger<Worker>.Instance);
+        var message = new WorkerMessage(Guid.NewGuid(), Guid.NewGuid(), WorkerMessage.Type, 1, DateTime.UtcNow);
+        var args = new TestMessageArgs(BinaryData.FromString(message.Serialize()), message.EventId.ToString("D"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => worker.ProcessMessageAsync(args));
+        Assert.False(args.Completed);
+        Assert.Null(args.DeadLetterReason);
     }
 
     [SqlServerFact]
@@ -123,23 +156,102 @@ public sealed class SubmissionNotificationTests
     }
 
     [SqlServerFact]
-    public async Task ConcurrentDuplicateDeliveriesRecordOnlyOneSimulatedNotification()
+    public async Task SeparateNotificationDatabaseDeduplicatesAndRejectsConflictingEvents()
     {
-        await using var database = await TestDatabase.CreateAsync();
-        await using var first = database.Open();
-        await using var second = database.Open();
-        var message = new SubmissionMessage(Guid.NewGuid(), Guid.NewGuid(), SubmissionMessage.Type, 1, DateTime.UtcNow);
-        var results = await Task.WhenAll(
-            new SimulatedNotificationStore(first).RecordAsync(message, CancellationToken.None),
-            new SimulatedNotificationStore(second).RecordAsync(message, CancellationToken.None));
+        var builder = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable("MORTGAGE_TEST_SQL_CONNECTION"))
+        {
+            InitialCatalog = $"notifications_worker_test_{Guid.NewGuid():N}"
+        };
+        var options = new DbContextOptionsBuilder<NotificationsDbContext>().UseSqlServer(builder.ConnectionString).Options;
+        await using var first = new NotificationsDbContext(options);
+        try
+        {
+            await first.Database.MigrateAsync();
+            await using var second = new NotificationsDbContext(options);
+            var message = new WorkerMessage(Guid.NewGuid(), Guid.NewGuid(), WorkerMessage.Type, 1, DateTime.UtcNow);
+            var results = await Task.WhenAll(
+                new WorkerStore(first).RecordAsync(message, CancellationToken.None),
+                new WorkerStore(second).RecordAsync(message, CancellationToken.None));
 
-        Assert.Single(results, recorded => recorded);
-        await using var verify = database.Open();
-        Assert.Equal(message.ApplicationId, (await verify.SimulatedNotifications.SingleAsync()).ApplicationId);
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
-            new SimulatedNotificationStore(verify).RecordAsync(message with { ApplicationId = Guid.NewGuid() }, CancellationToken.None));
+            Assert.Single(results, recorded => recorded);
+            await using var verify = new NotificationsDbContext(options);
+            Assert.Equal(message.ApplicationId, (await verify.SimulatedNotifications.SingleAsync()).ApplicationId);
+            await Assert.ThrowsAsync<InvalidDataException>(() =>
+                new WorkerStore(verify).RecordAsync(message with { ApplicationId = Guid.NewGuid() }, CancellationToken.None));
+
+            await using var services = new ServiceCollection()
+                .AddDbContext<NotificationsDbContext>(db => db.UseSqlServer(builder.ConnectionString))
+                .AddScoped<WorkerStore>()
+                .BuildServiceProvider();
+            var worker = new Worker(services.GetRequiredService<IServiceScopeFactory>(),
+                null!, new ConfigurationBuilder().Build(), NullLogger<Worker>.Instance);
+            var duplicate = new TestMessageArgs(BinaryData.FromString(message.Serialize()), message.EventId.ToString("D"));
+            await worker.ProcessMessageAsync(duplicate);
+            Assert.True(duplicate.Completed);
+            Assert.Null(duplicate.DeadLetterReason);
+            var conflicting = message with { ApplicationId = Guid.NewGuid() };
+            var conflictArgs = new TestMessageArgs(BinaryData.FromString(conflicting.Serialize()), message.EventId.ToString("D"));
+            await worker.ProcessMessageAsync(conflictArgs);
+            Assert.Equal("ConflictingSubmissionEvent", conflictArgs.DeadLetterReason);
+            Assert.False(conflictArgs.Completed);
+        }
+        finally
+        {
+            await first.Database.EnsureDeletedAsync();
+        }
     }
 
+    [SqlServerFact]
+    public async Task HistoricalNotificationsAreCopiedIdempotentlyAndConflictsStopBootstrap()
+    {
+        await using var source = await TestDatabase.CreateAsync();
+        var targetBuilder = new SqlConnectionStringBuilder(source.ConnectionString)
+        {
+            InitialCatalog = $"notifications_history_test_{Guid.NewGuid():N}"
+        };
+        var targetOptions = new DbContextOptionsBuilder<NotificationsDbContext>()
+            .UseSqlServer(targetBuilder.ConnectionString).Options;
+        await using var target = new NotificationsDbContext(targetOptions);
+        try
+        {
+            await target.Database.MigrateAsync();
+            var eventId = Guid.NewGuid();
+            var applicationId = Guid.NewGuid();
+            var recordedAt = DateTime.UtcNow;
+            await using (var old = source.Open())
+            {
+                old.SimulatedNotifications.Add(new SimulatedNotificationRecord
+                {
+                    EventId = eventId,
+                    ApplicationId = applicationId,
+                    RecordedAtUtc = recordedAt
+                });
+                await old.SaveChangesAsync();
+            }
+
+            async Task CopyAsync()
+            {
+                await using var from = new SqlConnection(source.ConnectionString);
+                await using var to = new SqlConnection(targetBuilder.ConnectionString);
+                await HistoricalNotificationCopy.CopyAsync(from, to);
+            }
+
+            await CopyAsync();
+            await CopyAsync();
+            var copied = await target.SimulatedNotifications.SingleAsync();
+            Assert.Equal(eventId, copied.EventId);
+            Assert.Equal(applicationId, copied.ApplicationId);
+            Assert.Equal(recordedAt, copied.RecordedAtUtc);
+
+            copied.ApplicationId = Guid.NewGuid();
+            await target.SaveChangesAsync();
+            await Assert.ThrowsAsync<SqlException>(CopyAsync);
+        }
+        finally
+        {
+            await target.Database.EnsureDeletedAsync();
+        }
+    }
     [SqlServerFact]
     public async Task PublisherClaimsOnceAndRetriesAfterAnExpiredLease()
     {
@@ -202,6 +314,29 @@ public sealed class SubmissionNotificationTests
             return Task.CompletedTask;
         }
     }
+
+    private sealed class TestMessageArgs(BinaryData body, string messageId)
+            : ProcessMessageEventArgs(ServiceBusModelFactory.ServiceBusReceivedMessage(body: body, messageId: messageId),
+                new TestReceiver(), CancellationToken.None)
+    {
+        public bool Completed { get; private set; }
+        public string? DeadLetterReason { get; private set; }
+
+        public override Task CompleteMessageAsync(ServiceBusReceivedMessage message, CancellationToken cancellationToken = default)
+        {
+            Completed = true;
+            return Task.CompletedTask;
+        }
+
+        public override Task DeadLetterMessageAsync(ServiceBusReceivedMessage message, string deadLetterReason,
+            string? deadLetterErrorDescription = null, CancellationToken cancellationToken = default)
+        {
+            DeadLetterReason = deadLetterReason;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestReceiver : ServiceBusReceiver;
 
     private sealed class TestActor(bool isStaff) : IApplicationActor
     {

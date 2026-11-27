@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace PD.Mortgages.Api.Services;
+namespace PD.Mortgages.Events;
 
 internal sealed record SubmissionMessage(Guid EventId, Guid ApplicationId, string EventType, int Version, DateTime OccurredAtUtc)
 {

@@ -43,11 +43,12 @@ classify() {
       (.name | ascii_downcase) as $name |
       if $type == "microsoft.managedidentity/userassignedidentities" and
         ($name | oneof(["mortgage-demo-env-pull", "mortgage-demo-env-mortgages", "mortgage-demo-env-products",
-          "mortgage-demo-env-customer-sessions", "mortgage-demo-env-bootstrap", "mortgage-demo-env-staff"])) then "retain"
+          "mortgage-demo-env-customer-sessions", "mortgage-demo-env-bootstrap", "mortgage-demo-env-staff",
+          "mortgage-demo-env-notifications", "mortgage-demo-env-notifications-scaler"])) then "retain"
       elif $type == "microsoft.insights/scheduledqueryrules" and $name == "mortgage-demo-env-server-errors" and tagged then "alert-rules"
       elif $type == "microsoft.insights/actiongroups" and $name == "mortgage-demo-env-alerts" and tagged then "alert-groups"
       elif $type == "microsoft.app/containerapps" and
-        ($name | oneof(["products-api", "eligibility-api", "mortgage-api", "staff-web", "mortgages-web"])) and tagged then "apps"
+        ($name | oneof(["products-api", "eligibility-api", "mortgage-api", "staff-web", "mortgages-web", "notifications-worker"])) and tagged then "apps"
       elif $type == "microsoft.app/jobs" and $name == "mortgage-demo-env-bootstrap" and tagged then "apps"
       elif $type == "microsoft.app/managedenvironments" and $name == "mortgage-demo-env" and tagged then "environment"
       elif $type == "microsoft.network/privateendpoints" and
@@ -62,7 +63,7 @@ classify() {
       elif $type == "microsoft.operationalinsights/workspaces" and $name == "mortgage-demo-env-logs" and tagged then "logs"
       elif $type == "microsoft.network/networkinterfaces" then "nic"
       elif $type == "microsoft.sql/servers/databases" and
-        ($name | oneof([($sql + "/master"), ($sql + "/mortgages"), ($sql + "/products"), ($sql + "/customer-sessions")])) then "child"
+        ($name | oneof([($sql + "/master"), ($sql + "/mortgages"), ($sql + "/products"), ($sql + "/customer-sessions"), ($sql + "/notifications")])) then "child"
       elif $type == "microsoft.network/virtualnetworks/subnets" and
         ($name | oneof(["mortgage-demo-env-vnet/container-apps", "mortgage-demo-env-vnet/private-endpoints"])) then "child"
       elif $type == "microsoft.network/privatednszones/virtualnetworklinks" and

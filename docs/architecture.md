@@ -33,7 +33,9 @@ flowchart LR
     Staff -->|Delegated staff token| API
     Customer --> Sessions[(customer-sessions SQL)]
     API --> Mortgage[(mortgages SQL)]
-    API -->|Publish and consume| Bus[Public Service Bus Basic queue]
+    API -->|Publish| Bus[Public Service Bus Basic queue]
+    Bus -->|Receive| Worker[Notifications Worker]
+    Worker --> Notifications[(notifications SQL)]
     API --> Documents[(Mortgage document storage)]
     API -->|Internal product lookup| Products[Internal Products API]
     API -->|Indicative decision| Eligibility[Internal Eligibility API]
@@ -41,8 +43,8 @@ flowchart LR
 ```
 
 The diagram shows the deployed Azure configuration, not the default local
-configuration. Service Bus is publicly reachable, but authenticated using the
-Mortgage API managed identity; it is not a private endpoint.
+configuration. Service Bus is publicly reachable and uses separate managed
+identities for sending and receiving; it is not a private endpoint.
 
 The Mortgage API is the only runtime owner of mortgage applications, audit history and documents. It hosts `PD.Mortgages.Application` and `PD.Mortgages.Infrastructure`; the web apps use `PD.Mortgages.Client` and shared contracts instead. The customer app owns its separate session database; staff has no database because no staff-owned data requires one. Customer and staff Data Protection keys are stored in separate private Blob containers in Azure and accessed by their respective identities.
 
@@ -56,6 +58,7 @@ flowchart LR
         Sessions[(customer-sessions SQL)]
         Mortgage[(mortgages SQL)]
         ProductDb[(products SQL)]
+        Notifications[(notifications SQL resource)]
     end
     Browser[Customer browser] --> Customer[Customer web]
     StaffBrowser[Staff browser] --> Staff[Staff web]
@@ -68,13 +71,15 @@ flowchart LR
     API --> Products[Products API]
     API --> Eligibility[Eligibility API]
     Products --> ProductDb
+    Worker[Notifications Worker: disabled] -.-> Notifications
 ```
 
 Aspire runs the .NET apps locally and creates a process-scoped development
 credential for customer-to-API calls. That credential is accepted only in
 Development; staff still use Entra sign-in. The local SQL container holds
-three separate databases. SQL-backed submissions create outbox records, but
-Aspire does not configure or enable the Service Bus workers by default.
+four logically separate database resources. SQL-backed submissions create
+outbox records, but Aspire does not enable the publisher or worker by default
+and does not migrate the unused notification database.
 
 The stateless Eligibility API owns the fictional indicative decision rules; product eligibility remains with Products. Only property value, deposit, income and credit-check consent state are sent, using a distinct shared service key. Mortgage owns the saved decision, rule version and audit event, rechecks application version after the call and rejects stale results. A service failure returns an unavailable response, not a declined decision. Existing decisions without a rule version remain readable. No credit bureau is contacted.
 
@@ -89,7 +94,7 @@ Staff can look up retained audit history, including deleted drafts, using the fu
 
 The file persistence provider is for development only: unlike SQL, its audit and tombstone writes are not transactional across files.
 
-For both submission paths, SQL saves the status change, audit entry and one minimal outbox event in the same transaction. The API's publisher uses expiring SQL leases to claim pending events, then sends their IDs, application IDs, event type/version and timestamp to one Service Bus queue. A crash after sending but before recording publication can cause a duplicate. The consumer atomically records one `SimulatedNotifications` row per event before completing the message; it does not send an email. Invalid messages are dead-lettered; repeated processing failures are eventually dead-lettered by Service Bus. This is at-least-once delivery, not exactly once. Existing submissions are not backfilled. File and in-memory providers do not create outbox events; notification workers are disabled by default locally and require SQL.
+For both submission paths, SQL saves the status change, audit entry and one minimal outbox event in the same transaction. The API's publisher uses expiring SQL leases to claim pending events, then sends their IDs, application IDs, event type/version and timestamp to one Service Bus queue. A crash after sending but before recording publication can cause a duplicate. The separate worker atomically records one `SimulatedNotifications` row per event in its own database before completing the message; it does not send an email. Invalid messages are dead-lettered; repeated processing failures are eventually dead-lettered by Service Bus. This is at-least-once delivery, not exactly once. Existing submissions are not backfilled. File and in-memory providers do not create outbox events; notifications are disabled by default locally and require SQL.
 
 Mortgage API request and response shapes and their enums live in `PD.Mortgages.Contracts`, which does not reference the domain. The API and typed client use `PD.Mortgages.Transport` to map wire contracts to the models and service interface in `PD.Mortgages.Abstractions`. The application service implements that interface; neither web app nor the client references the application or domain implementation projects. The small `PD.Mortgages.SharedKernel` contains shared mortgage value enums and their display names, but no entities, persistence or business services. Its existing `PD.Mortgages.Domain.Enums` namespace is retained for compatibility.
 
@@ -97,15 +102,15 @@ Products requests have a ten-second total timeout across retries. Eligibility re
 
 ## Persistence
 
-| Runtime | Mortgage and audit | Documents | Product catalog | Customer sessions |
-| --- | --- | --- | --- | --- |
-| Aspire | `mortgages` SQL | Local files under `LocalApplicationData/PD.Mortgages` | `products` SQL | `customer-sessions` SQL |
-| Standalone API | In-memory by default in Development | In memory with in-memory persistence | Mock catalog by default | Owned by customer app |
-| Azure | `mortgages` Azure SQL | Private Blob container | `products` Azure SQL | Separate `customer-sessions` Azure SQL |
+| Runtime | Mortgage and audit | Documents | Product catalog | Customer sessions | Notifications |
+| --- | --- | --- | --- | --- | --- |
+| Aspire | `mortgages` SQL | Local files under `LocalApplicationData/PD.Mortgages` | `products` SQL | `customer-sessions` SQL | Disabled; separate database resource |
+| Standalone API | In-memory by default in Development | In memory with in-memory persistence | Mock catalog by default | Owned by customer app | Disabled by default |
+| Azure | `mortgages` Azure SQL | Private Blob container | `products` Azure SQL | `customer-sessions` Azure SQL | Separate `notifications` Azure SQL |
 
-Aspire uses one local SQL Server container and volume for all three databases; they are logically separate. Azure uses separate serverless databases on one logical SQL server. Each database has its own newly reset initial migration, and the session cache is created only in the customer-session database. Existing databases with previous migration histories require the data-safe or disposable-local reset procedure in the [migration guidance](../README.md#database-migrations).
+Aspire uses one local SQL Server container and volume for the database resources; they are logically separate. Azure uses four separate serverless databases on one logical SQL server. Each database has its own migration history, and the session cache is created only in the customer-session database. Existing databases with previous migration histories require the data-safe or disposable-local reset procedure in the [migration guidance](../README.md#database-migrations).
 
-In Aspire, the Mortgage API, Products API and customer web app apply their own databases' migrations at startup. The Azure bootstrap applies all three before app deployment, rather than granting schema-migration permissions to the runtime identities.
+In Aspire, the Mortgage API, Products API and customer web app apply their own databases' migrations at startup. The Azure bootstrap applies all four before app deployment and copies historical mortgage simulation records idempotently; it does not grant schema-migration permissions to the runtime identities.
 
 ## Azure deployment
 
@@ -126,6 +131,7 @@ flowchart LR
                     API[Mortgage API]
                     Products[Products API]
                     Eligibility[Eligibility API]
+                    Worker[Notifications Worker]
                     Bootstrap[Database bootstrap job]
                 end
             end
@@ -135,7 +141,7 @@ flowchart LR
             end
         end
         Dns[Private DNS zones linked to VNet]
-        Sql[(Azure SQL server: three databases)]
+        Sql[(Azure SQL server: four databases)]
         Blob[(Storage account: three Blob containers)]
         Registry[Container Registry: public endpoint]
         Bus[Service Bus Basic: public endpoint]
@@ -149,6 +155,7 @@ flowchart LR
     Customer -->|Sessions| SqlEndpoint
     API -->|Mortgage data| SqlEndpoint
     Products -->|Product data| SqlEndpoint
+    Worker -->|Notification records| SqlEndpoint
     Bootstrap -->|Users and migrations| SqlEndpoint
     SqlEndpoint --> Sql
     API -->|Documents| BlobEndpoint
@@ -157,7 +164,8 @@ flowchart LR
     BlobEndpoint --> Blob
     Dns -.->|Private name resolution| SqlEndpoint
     Dns -.->|Private name resolution| BlobEndpoint
-    API <-->|Managed identity| Bus
+    API -->|Sender identity| Bus
+    Bus -->|Receiver identity| Worker
     Registry -.->|Images pulled with identity| Environment
     Environment -.->|Console logs| Logs
 ```
@@ -171,9 +179,9 @@ with identity-based access. The queue is part of the Service Bus namespace.
 
 The customer and staff web apps have public HTTPS ingress. All three APIs have internal ingress. The Eligibility API has no database and shares a separate secret with Mortgage API. The customer managed identity can access only its session database and customer key container, and is assigned the API application role. The Mortgage API identity can access the mortgage database and document container; the Products API identity has read access to its catalog database. The staff identity accesses its own key container and has no SQL or document access. Staff API authorization uses delegated tokens, not the staff app's managed identity. The quickstart assigns the customer API role; the bootstrap job's managed identity provisions SQL users and applies migrations.
 
-One VNet (`10.42.0.0/16`) contains a delegated Container Apps subnet (`10.42.0.0/24`) and a private-endpoint subnet (`10.42.1.0/24`). SQL and Blob private endpoints use linked private DNS zones; public network access is disabled for both services. The registry and Service Bus Basic namespace remain publicly reachable with identity-based access. The API identity has sender and receiver permissions scoped to the queue; local Service Bus authentication is disabled. Hosting both workers in the API avoids another always-on Container App but sacrifices independent scaling and identity isolation. The Container Apps environment has public ingress enabled, but only the two web apps expose external ingress.
+One VNet (`10.42.0.0/16`) contains a delegated Container Apps subnet (`10.42.0.0/24`) and a private-endpoint subnet (`10.42.1.0/24`). SQL and Blob private endpoints use linked private DNS zones; public network access is disabled for both services. The registry and Service Bus Basic namespace remain publicly reachable with identity-based access. The API has queue-scoped sender access; the worker has queue-scoped receiver access and its own SQL identity. A separate scaler identity has namespace-scoped Service Bus Data Owner, as in Microsoft's KEDA example, and is unavailable to application containers (`lifecycle: None`). This is broader than receiver access. Local Service Bus authentication is disabled. The worker has no ingress and is configured for zero to one replicas; scale-from-zero and its permissions still need live validation. Only the two web apps expose external ingress.
 
-This is not a production security boundary: staff ingress is public, and the prototype needs further security, privacy, backup and retention review before handling real data. The in-memory staff token cache is lost on restart; staff may be prompted to sign in again. A customer-to-staff journey and simulated notification have been observed in Azure; this does not validate every journey or future deployment. See the [prototype lifecycle guide](../AZURE_PROTOTYPE_GUIDE.md) for create/delete and identity setup, and the [advanced deployment guide](azure-advanced-deployment.md) for cost notes and operational details.
+This is not a production security boundary: staff ingress is public, and the prototype needs further security, privacy, backup and retention review before handling real data. The in-memory staff token cache is lost on restart; staff may be prompted to sign in again. A customer-to-staff journey and simulated notification were observed using the earlier API-hosted consumer; the separate worker and scale rule have not yet been tested live. See the [prototype lifecycle guide](../AZURE_PROTOTYPE_GUIDE.md) for create/delete and identity setup, and the [advanced deployment guide](azure-advanced-deployment.md) for cost notes and operational details.
 
 ### Creation, updates and deletion
 
@@ -182,9 +190,9 @@ flowchart TD
     Manual[Interactive quickstart] --> Script[Quickstart script]
     Create[GitHub: Create prototype] -->|OIDC; retained group and identities required| Script
     Script --> Foundation[Bicep: foundation, network, SQL, Blob and queue]
-    Foundation --> Images[Build six images in Container Registry]
+    Foundation --> Images[Build seven images in Container Registry]
     Images --> Bootstrap[Run private database bootstrap job]
-    Bootstrap --> Apps[Deploy five Container Apps]
+    Bootstrap --> Apps[Deploy six Container Apps]
     Apps --> Callbacks[Update Staff Web callbacks in Entra]
     Callbacks --> Ready[Check public readiness]
 
@@ -197,7 +205,7 @@ flowchart TD
     Delete[GitHub: Delete prototype resources] --> Review[Check known resources and staff callbacks]
     Review -->|Recognized| Remove[Delete prototype resources and data]
     Review -->|Unknown resources or unexpected DNS links| Stop[Stop; inspect remaining costs]
-    Remove --> Retain[Keep group, six identities and group permissions]
+    Remove --> Retain[Keep group, eight identities and group permissions]
 ```
 
 The on-demand create workflow uses the same quickstart script as an
@@ -218,7 +226,7 @@ runs do not. For the required setup and step-by-step operation, see the
 
 ## Operations and observability
 
-All five apps log request route, status, duration and W3C trace/span IDs; HTTP clients propagate the trace context between services. The existing Log Analytics workspace retains logs for 30 days and is charged by ingestion. Avoid logging request bodies, tokens or personal data. Correlate a journey by searching `ContainerAppConsoleLogs_CL` for its trace ID. Request counters are emitted as .NET meters, but this deployment does not configure a metrics exporter.
+The five web/API apps log request route, status, duration and W3C trace/span IDs; HTTP clients propagate the trace context between services. The worker logs processing and failures separately. The existing Log Analytics workspace retains logs for 30 days and is charged by ingestion. Avoid logging request bodies, tokens or personal data. Correlate a journey by searching `ContainerAppConsoleLogs_CL` for its trace ID. Request counters are emitted as .NET meters, but this deployment does not configure a metrics exporter.
 
 An optional `otlpEndpoint` enables OpenTelemetry HTTP server and client span export to a trusted, separately provisioned OTLP collector; it is off by default. The endpoint must use HTTPS outside Development and cannot contain credentials. Set `otlpProtocol` to `grpc` (the default) or `http/protobuf` to match the collector. Root traces are sampled at 10%, with downstream services honoring the parent decision. URL path and query tags are removed before export, but telemetry can still contain operational metadata: assess the destination, security and retention before enabling it. An Azure Monitor connection string is not an OTLP collector endpoint. Collector and ingestion costs are additional; test connectivity and data handling before relying on traces.
 

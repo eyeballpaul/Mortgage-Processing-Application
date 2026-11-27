@@ -19,6 +19,12 @@ case "$*" in
   "group exists --name test-rg --output tsv") echo "${TEST_GROUP_EXISTS:-true}" ;;
   "group show --name test-rg --query location --output tsv") echo uksouth ;;
   "group create --name test-rg --location uksouth --output none") exit 0 ;;
+  "containerapp list --resource-group test-rg --output json")
+    if [[ "${TEST_LEGACY_APP:-false}" == true ]]; then
+      echo '[{"name":"mortgage-api","properties":{"template":{"containers":[{"env":[]}]}}}]'
+    else
+      echo '[]'
+    fi ;;
   "sql server list --resource-group test-rg --output json")
     if [[ "${TEST_EXISTING_SERVER:-false}" == "true" ]]; then
       echo '[{"name":"sql-server"}]'
@@ -78,6 +84,7 @@ case "$*" in
       (.web.redirectUris | index("https://localhost:7241/signin-oidc") != null and index("https://staff.example/signin-oidc") != null and index("https://staff.example/signout-callback-oidc") != null)' <<< "$body" >/dev/null
     jq --argjson body "$body" '.web = ($body.web + {redirectUriSettings: [$body.web.redirectUris[] | {uri: ., index: null}]})' "$TEST_STATE/staff" > "$TEST_STATE/staff.new"
     mv "$TEST_STATE/staff.new" "$TEST_STATE/staff" ;;
+  "role assignment list --assignee-object-id "*) echo '[]' ;;
   "role assignment list "*) cat "$TEST_STATE/roles" ;;
   "role assignment create "*)
     if [[ "${TEST_FAIL_ROLE:-false}" == true ]]; then exit 1; fi
@@ -141,6 +148,7 @@ grep -q 'deployment group create --name mortgage-bootstrap .*deployApps=false de
 grep -q 'containerapp job start --name bootstrap-job' "$TEST_LOG"
 grep -q 'deployment group create --name mortgage-apps .*deployApps=true deployBootstrap=true createSqlServer=false' "$TEST_LOG"
 grep -q -- '--image mortgages-api:latest --file PD.Mortgages.Api/Dockerfile' "$TEST_LOG"
+grep -q -- '--image notifications-worker:latest --file PD.Notifications.Worker/Dockerfile' "$TEST_LOG"
 grep -q -- '--image mortgages-staff-web:latest --file PD.Mortgages.Staff.Web/Dockerfile' "$TEST_LOG"
 grep -q 'curl .*https://customer.example/health/ready' "$TEST_LOG"
 grep -q 'curl .*https://staff.example/health/ready' "$TEST_LOG"
@@ -214,6 +222,15 @@ if printf '%s' "$existing_auto_inputs" | TEST_GITHUB_TENANT=other bash "$root/in
   echo "Expected tenant mismatch to fail." >&2; exit 1
 fi
 if grep -q 'deployment group create' "$TEST_LOG"; then echo "Tenant mismatch deployed resources." >&2; exit 1; fi
+
+reset_state
+if printf '%s' "$inputs" | TEST_LEGACY_APP=true bash "$root/infra/quickstart-deploy.sh" > "$test_dir/output" 2>&1; then
+  echo "Expected legacy consumer to block deployment." >&2; exit 1
+fi
+grep -q 'older notification consumer' "$test_dir/output"
+if grep -q '^deployment group create' "$TEST_LOG"; then
+  echo "Changed infrastructure while a legacy consumer was present." >&2; exit 1
+fi
 
 reset_state
 echo '[{"scope":"/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.ServiceBus/namespaces/test-sb/queues/submission-notifications","roleDefinitionName":"Role Based Access Control Administrator","roleDefinitionId":"/roles/f58310d9-a9f6-439a-9e8d-f62e7b41a168","condition":"different","conditionVersion":"2.0"}]' > "$TEST_STATE/roles"

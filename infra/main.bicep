@@ -198,11 +198,25 @@ resource mortgagesIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@202
   tags: appTags
 }
 
+resource notificationsIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
+  name: '${containerAppEnvironmentName}-notifications'
+  location: location
+  tags: appTags
+}
+
+resource notificationsScalerIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
+  name: '${containerAppEnvironmentName}-notifications-scaler'
+  location: location
+  tags: appTags
+}
+
 module notifications './notifications.bicep' = {
   name: 'mortgage-notifications'
   params: {
     location: location
     mortgagesIdentityName: mortgagesIdentity.name
+    notificationsIdentityName: notificationsIdentity.name
+    notificationsScalerIdentityName: notificationsScalerIdentity.name
   }
 }
 
@@ -475,6 +489,26 @@ resource customerSessionsDatabase 'Microsoft.Sql/servers/databases@2023-08-01' =
   tags: appTags
 }
 
+resource notificationsDatabase 'Microsoft.Sql/servers/databases@2023-08-01' = {
+  parent: sqlServer
+  name: 'notifications'
+  location: location
+  sku: {
+    name: 'GP_S_Gen5'
+    tier: 'GeneralPurpose'
+    family: 'Gen5'
+    capacity: 2
+  }
+  properties: {
+    useFreeLimit: true
+    freeLimitExhaustionBehavior: 'AutoPause'
+    maxSizeBytes: 34359738368
+    requestedBackupStorageRedundancy: 'Local'
+    minCapacity: json('0.5')
+  }
+  tags: appTags
+}
+
 resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2026-03-01' = {
   name: '${containerAppEnvironmentName}-logs'
   location: location
@@ -617,6 +651,10 @@ resource databaseBootstrap 'Microsoft.App/jobs@2025-01-01' = if (deployBootstrap
             customerSessionsIdentity.name
             '--customer-sessions-identity-client-id'
             customerSessionsIdentity.properties.clientId
+            '--notifications-identity-name'
+            notificationsIdentity.name
+            '--notifications-identity-client-id'
+            notificationsIdentity.properties.clientId
           ]
           env: [
             { name: 'AZURE_CLIENT_ID', value: bootstrapIdentity.properties.clientId }
@@ -633,9 +671,66 @@ resource databaseBootstrap 'Microsoft.App/jobs@2025-01-01' = if (deployBootstrap
     mortgagesDatabase
     productsDatabase
     customerSessionsDatabase
+    notificationsDatabase
     sqlPrivateDnsGroup
     sqlPrivateDnsLink
   ]
+}
+
+resource notificationsWorker 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) {
+  name: 'notifications-worker'
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${imagePullIdentity.id}': {}
+      '${notificationsIdentity.id}': {}
+      '${notificationsScalerIdentity.id}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: containerEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      registries: [{ server: registry.properties.loginServer, identity: imagePullIdentity.id }]
+      identitySettings: [
+        { identity: notificationsScalerIdentity.id, lifecycle: 'None' }
+        { identity: imagePullIdentity.id, lifecycle: 'None' }
+      ]
+    }
+    template: {
+      containers: [{
+        name: 'notifications-worker'
+        image: '${registry.properties.loginServer}/notifications-worker:${imageTag}'
+        env: [
+          { name: 'AZURE_CLIENT_ID', value: notificationsIdentity.properties.clientId }
+          { name: 'Notifications__Enabled', value: 'true' }
+          { name: 'Notifications__ServiceBusNamespace', value: notifications.outputs.fullyQualifiedNamespace }
+          { name: 'Notifications__QueueName', value: notifications.outputs.queueName }
+          { name: 'ConnectionStrings__notifications', value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=notifications;Authentication=Active Directory Managed Identity;User Id=${notificationsIdentity.properties.clientId};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;' }
+        ]
+        resources: { cpu: json('0.25'), memory: '0.5Gi' }
+      }]
+      scale: {
+        minReplicas: 0
+        maxReplicas: 1
+        rules: [{
+          name: 'servicebus'
+          custom: {
+            type: 'azure-servicebus'
+            identity: notificationsScalerIdentity.id
+            metadata: {
+              namespace: notifications.outputs.namespaceName
+              queueName: notifications.outputs.queueName
+              messageCount: '1'
+            }
+          }
+        }]
+      }
+    }
+  }
+  tags: appTags
+  dependsOn: [imagePullRole, notificationsDatabase]
 }
 
 resource productsApi 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) {
@@ -849,6 +944,7 @@ resource mortgageApi 'Microsoft.App/containerApps@2026-07-01' = if (deployApps) 
             { name: 'Persistence__RunMigrationsOnStartup', value: 'false' }
             { name: 'ConnectionStrings__mortgages', value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=mortgages;Authentication=Active Directory Managed Identity;User Id=${mortgagesIdentity.properties.clientId};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;' }
             { name: 'Notifications__Enabled', value: 'true' }
+            { name: 'Notifications__WorkerModel', value: 'separate' }
             { name: 'Notifications__ServiceBusNamespace', value: notifications.outputs.fullyQualifiedNamespace }
             { name: 'Notifications__QueueName', value: notifications.outputs.queueName }
             { name: 'DocumentStorage__Provider', value: 'AzureBlob' }

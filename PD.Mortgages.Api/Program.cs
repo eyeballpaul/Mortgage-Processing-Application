@@ -67,9 +67,7 @@ if (builder.Configuration.GetValue<bool>("Notifications:Enabled"))
         throw new InvalidOperationException("Notifications require SQL Server, Notifications:ServiceBusNamespace and Notifications:QueueName.");
     }
     builder.Services.AddSingleton(new ServiceBusClient(serviceBusNamespace, new DefaultAzureCredential()));
-    builder.Services.AddScoped<SimulatedNotificationStore>();
     builder.Services.AddHostedService<SubmissionOutboxPublisher>();
-    builder.Services.AddHostedService<SubmissionNotificationWorker>();
 }
 builder.Services.AddOptions<MortgageWorkflowOptions>().BindConfiguration(MortgageWorkflowOptions.SectionName)
     .Validate(options => !string.IsNullOrWhiteSpace(options.ConsentTermsVersion), "MortgageWorkflow:ConsentTermsVersion is required.")

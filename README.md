@@ -30,7 +30,7 @@ In Azure, the main connections are:
 
 ```text
 Customer browser -> Customer web -> Mortgage API -> mortgage SQL + document Blob
-                         |               |    \-> Service Bus queue
+                         |               |    \-> Service Bus queue -> Notifications worker -> notifications SQL
                   customer sessions SQL  -> Products API -> products SQL
                                          -> Eligibility API (no database)
 Staff browser -> Staff web -------------> Mortgage API
@@ -42,7 +42,7 @@ Aspire uses a development-only customer credential and local document files;
 it does not enable Service Bus workers by default. See the separate local and
 Azure diagrams in the [architecture guide](docs/architecture.md).
 
-For SQL-backed submissions, the Mortgage API commits an `ApplicationSubmitted` outbox entry with the application and audit entry. When notifications are enabled, API-hosted workers publish it to an Azure Service Bus Basic queue and record a simulated notification. **No email is sent.** Delivery is at least once; duplicate messages are deduplicated when recording the simulation. See [architecture.md](docs/architecture.md) and the [Azure deployment guide](docs/azure-advanced-deployment.md#submission-notifications) for limitations and operation.
+For SQL-backed submissions, the Mortgage API commits an `ApplicationSubmitted` outbox entry with the application and audit entry. Its publisher sends the event to an Azure Service Bus Basic queue. A separate Notifications Worker records a simulation in its own database. **No email is sent.** Delivery is at least once; duplicate messages are deduplicated when recording the simulation. See [architecture.md](docs/architecture.md) and the [Azure deployment guide](docs/azure-advanced-deployment.md#submission-notifications) for limitations and operation.
 
 Customer submissions are anonymous. A random server-side session actor owns each draft; the customer cannot reopen it after submission. A submission can be safely retried using the same session-bound attempt key and application version; a minimal reference and submission time can be recovered for 24 hours in the same session. Losing the session prevents recovery. Staff must sign in with Entra and have the `MortgageStaff` role. The API validates both the calling app and the delegated staff identity, scope and role; audit entries use the validated tenant/object IDs. In Azure the customer app uses a managed identity with the API's `MortgageCustomer` application role. Browser-supplied identity or role headers are not accepted as staff identity.
 
@@ -93,9 +93,9 @@ Without that setup, staff sign-in will not work.
    local apps, return to the terminal and press **Ctrl+C**. Local SQL data is
    kept in a Docker volume, so stopping the apps does not erase it.
 
-Aspire starts both web apps, the internal Mortgage, Products and Eligibility APIs, and one SQL Server container with separate `mortgages`, `products`, and `customer-sessions` databases. It generates separate, process-scoped keys for Mortgage's calls to Products and Eligibility; no local service key needs to be configured manually.
+Aspire starts both web apps, the internal Mortgage, Products and Eligibility APIs, the disabled Notifications Worker, and one SQL Server container with separate `mortgages`, `products`, `customer-sessions` and `notifications` database resources. The notification database is not migrated or used while notifications are disabled. It generates separate, process-scoped keys for Mortgage's calls to Products and Eligibility; no local service key needs to be configured manually.
 
-Aspire runs the .NET apps locally; its Docker container is for SQL Server. For a container image, build from the repository root using the relevant service Dockerfile, for example `docker build -f PD.Mortgages.Web/Dockerfile .`. Azure deployment uses the five service images and a separate database-bootstrap image.
+Aspire runs the .NET apps locally; its Docker container is for SQL Server. For a container image, build from the repository root using the relevant service Dockerfile, for example `docker build -f PD.Mortgages.Web/Dockerfile .`. Azure deployment uses six service images and a separate database-bootstrap image.
 
 The Mortgage API stores documents under `LocalApplicationData/PD.Mortgages`; the SQL Docker volume persists data across restarts. The APIs migrate the mortgage and product databases locally at startup, and the customer web app migrates the customer-session database. Aspire creates a fresh, process-scoped development credential for customer-to-API calls; it is accepted **only** by an API running in Development. Staff still need real Entra sign-in and a delegated API token.
 
@@ -154,11 +154,11 @@ SQL notification integration tests are skipped unless `MORTGAGE_TEST_SQL_CONNECT
 
 ## Azure prototype deployment
 
-The [setup-from-scratch guide](docs/azure-setup-from-scratch.md) gives step-by-step Azure, Entra and GitHub setup without secret values. The [prototype lifecycle guide](AZURE_PROTOTYPE_GUIDE.md) covers routine creation, deletion and recreation after resource-group deletion; the [advanced deployment guide](docs/azure-advanced-deployment.md) covers the interactive quickstart, costs and troubleshooting. The quickstart provisions one VNet with Container Apps and private-endpoint subnets, five Container Apps, three SQL databases, private SQL and Blob endpoints, a private database-bootstrap job and a public Service Bus Basic namespace. Both web apps have public HTTPS ingress; the three APIs have internal ingress. SQL and Blob public network access is disabled. Staff access still requires Entra authentication and the staff app is not private-network-only. Use fictional data only; this is not a production security boundary.
+The [setup-from-scratch guide](docs/azure-setup-from-scratch.md) gives step-by-step Azure, Entra and GitHub setup without secret values. The [prototype lifecycle guide](AZURE_PROTOTYPE_GUIDE.md) covers routine creation, deletion and recreation after resource-group deletion; the [advanced deployment guide](docs/azure-advanced-deployment.md) covers the interactive quickstart, costs and troubleshooting. The quickstart provisions one VNet with Container Apps and private-endpoint subnets, six Container Apps, four SQL databases, private SQL and Blob endpoints, a private database-bootstrap job and a public Service Bus Basic namespace. Both web apps have public HTTPS ingress; the three APIs have internal ingress and the worker has no ingress. SQL and Blob public network access is disabled. Staff access still requires Entra authentication and the staff app is not private-network-only. Use fictional data only; this is not a production security boundary.
 
-The [GitHub Actions workflow](.github/workflows/ci.yml) tests pull requests and, after tests succeed on a push to `main`, deploys changed application images and the Service Bus notification resources and settings to an **existing** quickstart deployment. After one-time setup, separate [on-demand workflows](AZURE_PROTOTYPE_GUIDE.md#on-demand-github-workflows) create the prototype or delete its recognized resources while retaining its resource group and identities. Both have been exercised in Azure; deletion needed a retry, and the subsequent DNS cleanup fix has not yet been tested live. The older [Azure DevOps pipeline](azure-pipelines.yml) is not compatible with the current private SQL bootstrap and should not be used without changes.
+The [GitHub Actions workflow](.github/workflows/ci.yml) tests pull requests and, after tests succeed on a push to `main`, deploys changed application images and the Service Bus notification resources and settings to an **existing** compatible quickstart deployment. After one-time setup, separate [on-demand workflows](AZURE_PROTOTYPE_GUIDE.md#on-demand-github-workflows) create the prototype or delete its recognized resources while retaining its resource group and identities. Earlier versions ran in Azure, but the separate worker and its scale rule have not yet been tested live. The older [Azure DevOps pipeline](azure-pipelines.yml) is not compatible with the current private SQL bootstrap and should not be used without changes.
 
-The SQL template requests the free offer with auto-pause on free-limit exhaustion; once the allowance is used, a database is unavailable until the next month. The apps have at least one replica each, and readiness probes and background maintenance can consume database compute even when idle. Do not assume ordinary idle auto-pause will occur. Registry, image builds, private endpoints, logging and other resources may incur charges; an Azure budget is an alert, not a spending cap. There is no verified whole-environment pause/resume procedure or guaranteed £20 monthly cost.
+The SQL template requests the free offer with auto-pause on free-limit exhaustion; once the allowance is used, a database is unavailable until the next month. The five web/API apps have at least one replica each; the worker is configured to scale to zero but has not been validated in Azure. Readiness probes and background maintenance can consume database compute even when idle. Do not assume ordinary idle auto-pause will occur. Registry, image builds, private endpoints, logging and other resources may incur charges; an Azure budget is an alert, not a spending cap. There is no verified whole-environment pause/resume procedure or guaranteed £20 monthly cost.
 
 Products API key rotation is not zero-downtime: the services do not accept overlapping keys. Schedule a maintenance window and update the matching secret on both services. The GitHub workflow does not update secrets. If an update fails, restore the same previously working secret to both services; do not roll back only one.
 
@@ -172,13 +172,14 @@ Each database has a separate EF Core migration history:
 
 | Database | Migration project | Owned data | Local migration runner |
 | --- | --- | --- | --- |
-| `mortgages` | [PD.Mortgages.Infrastructure](PD.Mortgages.Infrastructure/Persistence/Migrations) | Applications, tombstones, audit, submission outbox and simulated notifications | Mortgage API |
+| `mortgages` | [PD.Mortgages.Infrastructure](PD.Mortgages.Infrastructure/Persistence/Migrations) | Applications, tombstones, audit, outbox and historical simulations | Mortgage API |
 | `products` | [PD.Products.Infrastructure](PD.Products.Infrastructure/Persistence/Migrations) | Product catalog and seed data | Products API |
 | `customer-sessions` | [PD.Mortgages.CustomerSessions](PD.Mortgages.CustomerSessions/Migrations) | Distributed customer session cache | Customer web app |
+| `notifications` | [PD.Notifications.Worker](PD.Notifications.Worker/Migrations) | Simulated notification deduplication | Azure bootstrap; disabled locally by default |
 
-The session cache does not exist in the mortgage database. The Azure bootstrap job applies all three migrations with its admin identity before new app revisions start; runtime identities have only the required data roles. The GitHub workflow reruns the job when the bootstrap project or its dependencies change. Migration histories are independent: do not copy tables or migration history between databases.
+The session cache does not exist in the mortgage database. The Azure bootstrap job applies all four migrations with its admin identity before new app revisions start; runtime identities have only the required data roles. It also copies historical simulation records from the mortgage database idempotently, failing on conflicting event IDs. Migration histories remain independent and are not copied.
 
-All three migration histories were reset for a fresh deployment. Existing
+The original three migration histories were reset for a fresh deployment. Existing
 databases with previous histories cannot apply these initial migrations over
 their existing tables; the reset itself does not delete or update data.
 For **disposable local data only**:

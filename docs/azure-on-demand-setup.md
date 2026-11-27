@@ -18,7 +18,7 @@ granting broader permissions.
 1. Open [Azure Portal](https://portal.azure.com) and select the correct
    directory and subscription. Go to **Resource groups**, then open your
    dedicated prototype group.
-2. On **Resources**, look for these six **Managed Identity** resources:
+2. On **Resources**, look for these six existing **Managed Identity** resources:
    `mortgage-demo-env-pull`, `mortgage-demo-env-mortgages`,
    `mortgage-demo-env-products`, `mortgage-demo-env-customer-sessions`,
    `mortgage-demo-env-bootstrap` and `mortgage-demo-env-staff`.
@@ -27,7 +27,8 @@ granting broader permissions.
    The workflow requires these exact identities and the existing
    `MortgageCustomer` app-role assignment on customer-sessions. It checks
    that assignment but cannot create it. Do not delete the group or identities
-   between normal runs.
+   between normal runs. Two additional notification identities are created
+   or verified in step 2 below.
 4. Open **Microsoft Entra ID → App registrations** and confirm that the
    Mortgage API, Staff Web and GitHub deployment registrations already exist.
    Reuse them; see the [first-time guide](azure-setup-from-scratch.md)
@@ -83,10 +84,54 @@ permission to create the role assignments used by the prototype.
    different wording; see
    [Microsoft's condition examples](https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-examples#example-constrain-roles-and-specific-groups).
 
-This condition allows *any* of the five roles for *any* of the five principals
+This initial condition allows *any* of the five roles for *any* of the five principals
 within the group, not just specific role/principal pairs. Other broader role
 assignments still apply; review them separately. Contributor is also powerful.
 Protect `main` and restrict who can edit workflows.
+
+#### Add the notification worker identities and permissions
+
+The separate worker needs two more retained identities. The worker identity
+receives messages; a scaler-only identity reads queue metrics. The scaler uses
+namespace-scoped **Azure Service Bus Data Owner**, a powerful role that can
+manage entities and send and receive messages. The container cannot use that
+scaler identity. This follows Microsoft's
+[KEDA managed-identity example](https://learn.microsoft.com/azure/aks/keda-workload-identity#create-role-assignments);
+the new setup still needs live Azure validation.
+
+1. Sign in to Azure CLI as an Azure role administrator and select the correct
+   subscription. Open a terminal at the root of this checked-out repository.
+   You need Azure CLI and `jq`; do not use the GitHub service principal for
+   this administrator step.
+2. Find the deployment application's **client ID** in its Entra app registration,
+   or in GitHub → **Settings → Secrets and variables → Actions → Variables →
+   AZURE_CLIENT_ID** if already configured. It is not a secret or the staff
+   app ID. Replace both placeholders and run:
+
+   ```bash
+   export AZURE_RESOURCE_GROUP="<prototype-resource-group>"
+   export AZURE_CLIENT_ID="<github-deployment-client-id>"
+   bash infra/setup-notification-permissions.sh
+   ```
+
+3. Check the printed subscription group, GitHub principal and permission
+   summary. Type `yes` only if they are correct. The script creates the two
+   identities if missing and extends the existing conditioned group-scoped
+   administrator assignment. It permits **receiver only for the worker** and
+   **Data Owner only for the scaler**, for both assignment and removal; it
+   preserves the existing condition. It refuses an unconditioned or ambiguous
+   existing assignment. If it fails, read the error and review Azure before
+   retrying.
+4. In Azure Portal → resource group → **Resources**, confirm
+   `mortgage-demo-env-notifications` and `mortgage-demo-env-notifications-scaler`
+   now exist along with the original six. In **Access control (IAM) → Role
+   assignments**, inspect the updated condition and check for other broader
+   assignments. Allow time for permission propagation.
+
+The scaler's Data Owner permission is restricted to the prototype namespace
+when deployed, but the GitHub delegation condition allows assigning that role
+to the scaler identity anywhere in this dedicated group. Contributor access and
+other pre-existing permissions are unchanged.
 
 ### 3. Add Microsoft Graph permissions and grant consent
 

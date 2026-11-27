@@ -49,8 +49,8 @@ repository variables, and adds staff callbacks to Entra. Choose manual GitHub
 setup on first-time deployment if those prerequisites do not yet exist.
 
 It uses `mortgage-demo-env` as the Container Apps environment, and names the
-five apps `mortgages-web`, `staff-web`, `mortgage-api`, `products-api` and
-`eligibility-api`. The bootstrap job is `mortgage-demo-env-bootstrap`. The
+six apps `mortgages-web`, `staff-web`, `mortgage-api`, `products-api`,
+`eligibility-api` and `notifications-worker`. The bootstrap job is `mortgage-demo-env-bootstrap`. The
 GitHub deployment script currently expects those names.
 
 ## GitHub Actions variables
@@ -106,8 +106,10 @@ that identity. The quickstart supplies the signed-in user and sets the type to
 
 The quickstart also creates a public Basic Service Bus namespace and the
 `submission-notifications` queue using [notifications.bicep](notifications.bicep).
-The Mortgage API managed identity receives queue-scoped sender and receiver
-roles. `Notifications__Enabled`, `Notifications__ServiceBusNamespace` and
+The Mortgage API receives queue-scoped sender access, and the worker's separate
+identity receives queue-scoped receiver access. A separate scaler-only identity
+receives namespace-scoped Service Bus Data Owner; it is unavailable to the
+containers. `Notifications__Enabled`, `Notifications__ServiceBusNamespace` and
 `Notifications__QueueName` are set by the template; no Service Bus key is used.
 The workflow applies this notification module and settings to the existing app.
 It requires the additional constrained role-assignment permission described in

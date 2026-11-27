@@ -1,6 +1,7 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.EntityFrameworkCore;
 using PD.Mortgages.Infrastructure.Persistence;
+using PD.Mortgages.Events;
 
 namespace PD.Mortgages.Api.Services;
 

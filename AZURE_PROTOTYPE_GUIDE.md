@@ -1,11 +1,10 @@
 # Azure prototype: create, delete and recreate
 
-The quickstart deploys two public web apps, three internal APIs, three SQL databases,
+The quickstart deploys two public web apps, three internal APIs, a notification worker, four SQL databases,
 and private SQL and Blob endpoints in one VNet. This is a prototype: use fictional
-data only. The quickstart, staff sign-in and an initial GitHub Actions deployment
-have succeeded in one Azure environment. The workflow's readiness and dependency
-checks passed, as did a customer-to-staff journey using fictional data; a
-subsequent selective incremental deployment has not been independently validated.
+data only. An earlier version of the quickstart, staff sign-in and GitHub
+Actions deployment succeeded in one Azure environment. The separate worker,
+its scale rule and the updated workflows have not yet been validated live.
 
 For detailed first-time setup, see the [setup-from-scratch guide](docs/azure-setup-from-scratch.md).
 
@@ -38,14 +37,15 @@ stop and check rather than guessing if a step looks different.
 
 The **Create prototype** and **Delete prototype resources** workflows are an
 alternative to running the interactive quickstart. They require the one-time
-setup linked above. Creation and deletion have been tested against live Azure; deletion
-required a retry because a DNS link was still being removed. The updated link
-deletion ordering has mock tests but has not yet been tested live.
+setup linked above. Earlier versions of creation and deletion were tested
+against live Azure; deletion required a retry because a DNS link was still
+being removed. The updated worker and link deletion ordering have mock tests
+but have not yet been tested live.
 
 The delete workflow removes recognized prototype resources and their data,
 including SQL databases, blobs, the Service Bus queue, images, and the Log
 Analytics workspace and its logs. The workspace is permanently deleted so its
-name can be reused. It retains the resource group, six managed identities and
+name can be reused. It retains the resource group, eight managed identities and
 group-scoped permissions. If it finds an unrecognized resource or a resource
 without the expected prototype tags, it stops **before deleting resources** and
 lists the resource for review; a billable resource may remain. It removes the
@@ -74,14 +74,14 @@ reviewed separately.
    confirm it loads.
 4. Submit an application with **fictional data only** and check it appears in
    Staff Web. For notifications, open Azure Portal → resource group →
-   `mortgage-api` → **Log stream**, then submit another fictional application.
+   `notifications-worker` → **Log stream**, then submit another fictional application.
    Look for `Simulated notification recorded`. It may take time; **no email is
    sent**. Also test a staff submission and document upload if needed.
 
 #### Delete when finished
 
 **This permanently deletes prototype databases, blobs, queue data, images and
-logs.** Back up anything needed first. The resource group, six identities,
+logs.** Back up anything needed first. The resource group, eight identities,
 Entra registrations, GitHub configuration and group permissions remain.
 
 1. In GitHub, open **Actions → Delete prototype resources → Run workflow**.
@@ -90,7 +90,7 @@ Entra registrations, GitHub configuration and group permissions remain.
    resources behind. Read its log and follow
    [troubleshooting](#workflow-troubleshooting); do not assume cleanup succeeded.
 3. In Azure Portal, open **Resource groups → your group → Resources** and
-   confirm only the six named managed identities remain. Check for additional
+   confirm only the eight named managed identities remain. Check for additional
    resources and costs elsewhere in the subscription too.
 4. Open **Cost Management + Billing → Cost analysis** at the subscription
    scope. Review charges by resource, and check again later because charges can

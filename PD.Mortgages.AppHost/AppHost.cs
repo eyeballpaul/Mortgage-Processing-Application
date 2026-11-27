@@ -7,6 +7,7 @@ var sqlServer = builder.AddSqlServer("mortgages-sql")
 var mortgagesDatabase = sqlServer.AddDatabase("mortgages");
 var customerSessionsDatabase = sqlServer.AddDatabase("customersessions", databaseName: "customer-sessions");
 var productsDatabase = sqlServer.AddDatabase("products");
+var notificationsDatabase = sqlServer.AddDatabase("notifications");
 var documentStorageRootPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
     "PD.Mortgages");
@@ -16,6 +17,11 @@ var eligibilityApiKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 var apiClientId = builder.Configuration["MortgageApi:ApiClientId"] ?? Guid.Empty.ToString();
 var tenantId = builder.Configuration["MortgageApi:TenantId"] ?? Guid.Empty.ToString();
 var staffClientId = builder.Configuration["MortgageApi:StaffClientId"] ?? Guid.Empty.ToString();
+
+builder.AddDotnetProject("notifications-worker", "../PD.Notifications.Worker/PD.Notifications.Worker.csproj")
+    .WithReference(notificationsDatabase)
+    .WithEnvironment("Notifications__Enabled", "false")
+    .WaitFor(notificationsDatabase);
 
 var productsApi = builder.AddDotnetProject("products-api", "../PD.Products.Api/PD.Products.Api.csproj")
     .WithReference(productsDatabase)

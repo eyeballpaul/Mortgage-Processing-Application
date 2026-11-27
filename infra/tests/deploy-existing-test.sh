@@ -14,14 +14,15 @@ case "$*" in
   "group exists "*) echo "${TEST_GROUP_EXISTS:-true}" ;;
   "acr show "*) echo "test.azurecr.io" ;;
   "identity show "*)
-    echo '{"id":"/identities/mortgage-demo-env-mortgages","clientId":"mortgage-client"}' ;;
+    echo '{"id":"/identities/mortgage-demo-env-mortgages","clientId":"mortgage-client","principalId":"11111111-2222-3333-4444-555555555555"}' ;;
   "deployment group create "*)
     if [[ "${TEST_NOTIFICATION_DEPLOY_FAIL:-false}" == "true" ]]; then
       echo "Notification deployment failed" >&2
       exit 1
     fi
     jq -n --arg namespace "${TEST_NAMESPACE:-mortgage.servicebus.windows.net}" \
-      '{fullyQualifiedNamespace:{value:$namespace},queueName:{value:"submission-notifications"}}' ;;
+      '{fullyQualifiedNamespace:{value:$namespace},queueName:{value:"submission-notifications"},queueId:{value:"/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.ServiceBus/namespaces/test-sb/queues/submission-notifications"}}' ;;
+  "role assignment list --assignee-object-id "*) echo '[]' ;;
   "containerapp job show "*)
     if [[ "${TEST_BASELINE:-latest}" == "current" ]]; then marker="$GITHUB_SHA"; else marker=""; fi
     jq -n --arg marker "$marker" '{id:"/job",tags:{"pd-bootstrap-commit":$marker}}' ;;
@@ -46,7 +47,8 @@ case "$*" in
         '{id:("/" + $name), tags:{"pd-deployed-commit":$marker},
           identity:{userAssignedIdentities:{($identity_id):{}}},
           properties:{template:{containers:[{image:$image,env:(
-            [{name:"AZURE_CLIENT_ID",value:$client}] +
+            [{name:"AZURE_CLIENT_ID",value:$client},
+             {name:"Notifications__WorkerModel",value:(if env.TEST_LEGACY_APP == "true" then "legacy" else "separate" end)}] +
             (if $config == "current" then [
               {name:"Notifications__Enabled",value:"true"},
               {name:"Notifications__ServiceBusNamespace",value:"mortgage.servicebus.windows.net"},
@@ -91,9 +93,9 @@ fi
 
 : > "$TEST_LOG"
 bash infra/deployment/deploy-existing.sh > "$test_dir/output"
-[[ "$(grep -c '^acr build ' "$TEST_LOG")" == 6 ]]
-[[ "$(grep -c '^containerapp update ' "$TEST_LOG")" == 5 ]]
-[[ "$(grep -c '^tag update ' "$TEST_LOG")" == 6 ]]
+[[ "$(grep -c '^acr build ' "$TEST_LOG")" == 7 ]]
+[[ "$(grep -c '^containerapp update ' "$TEST_LOG")" == 6 ]]
+[[ "$(grep -c '^tag update ' "$TEST_LOG")" == 7 ]]
 grep -q 'curl .*https://staff-web.example/health/ready' "$TEST_LOG"
 grep -q 'curl .*https://mortgages-web.example/health/dependencies' "$TEST_LOG"
 grep -q '^containerapp update --name mortgage-api .*--image .* --set-env-vars Notifications__Enabled=true' "$TEST_LOG"
@@ -101,6 +103,14 @@ bootstrap_line="$(grep -n '^containerapp job start ' "$TEST_LOG" | cut -d: -f1)"
 notification_line="$(grep -n '^deployment group create ' "$TEST_LOG" | cut -d: -f1)"
 app_line="$(grep -n '^containerapp update --name mortgage-api ' "$TEST_LOG" | cut -d: -f1)"
 (( bootstrap_line < notification_line && notification_line < app_line ))
+
+: > "$TEST_LOG"
+if TEST_LEGACY_APP=true bash infra/deployment/deploy-existing.sh > "$test_dir/output" 2>&1; then
+  echo "Legacy consumer should block deployment." >&2; exit 1
+fi
+if grep -q '^deployment group create\|^acr build\|^containerapp update' "$TEST_LOG"; then
+  echo "Resources were modified despite a legacy consumer." >&2; exit 1
+fi
 
 : > "$TEST_LOG"
 if TEST_JOB_STATUS=Failed bash infra/deployment/deploy-existing.sh > "$test_dir/output" 2>&1; then

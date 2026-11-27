@@ -26,4 +26,5 @@
   <Project Path="PD.Mortgages.Staff.Web/PD.Mortgages.Staff.Web.csproj" />
   <Project Path="PD.Mortgages.Tests/PD.Mortgages.Tests.csproj" />
   <Project Path="PD.Mortgages.Web/PD.Mortgages.Web.csproj" />
+  <Project Path="PD.Notifications.Worker/PD.Notifications.Worker.csproj" />
 </Solution>

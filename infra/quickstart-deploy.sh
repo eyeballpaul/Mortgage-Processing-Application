@@ -170,7 +170,7 @@ api_principal_id="$(jq -er '.id' <<< "$api_sp")"
 customer_role_id="$(jq -er '[.appRoles[] | select(.value == "MortgageCustomer" and .isEnabled and (.allowedMemberTypes | index("Application")))] | if length == 1 then .[0].id else error("MortgageCustomer application role missing or ambiguous") end' <<< "$api_sp")"
 
 if [[ "$automated" == true ]]; then
-  for identity in pull mortgages products customer-sessions bootstrap staff; do
+  for identity in pull mortgages products customer-sessions bootstrap staff notifications notifications-scaler; do
     if ! identity_json="$(az identity show --name "mortgage-demo-env-$identity" --resource-group "$resource_group" --output json)"; then
       echo "Required retained identity mortgage-demo-env-$identity is unavailable; complete one-time setup before deployment." >&2
       exit 1
@@ -194,6 +194,22 @@ if [[ "$automated" == true ]]; then
       exit 1
     fi
     echo "The retained customer identity lacks its MortgageCustomer app role; complete one-time setup before deployment." >&2
+    exit 1
+  fi
+fi
+
+if [[ "$group_exists" == true ]]; then
+  existing_apps="$(az containerapp list --resource-group "$resource_group" --output json)"
+  if ! jq -e 'type == "array"' <<< "$existing_apps" >/dev/null; then
+    echo "Could not verify existing Container Apps; refusing deployment." >&2
+    exit 1
+  fi
+  if jq -e 'any(.[]; .name == "mortgage-api")' <<< "$existing_apps" >/dev/null &&
+     ! jq -e 'any(.[]; .name == "mortgage-api" and
+       any(.properties.template.containers[0].env[]?; .name == "Notifications__WorkerModel" and .value == "separate")) and
+       any(.[]; .name == "notifications-worker")' <<< "$existing_apps" >/dev/null; then
+    echo "An older notification consumer is still deployed in mortgage-api. Deployment stopped before making changes." >&2
+    echo "Back up any required data and follow the legacy cutover instructions before deploying the separate worker." >&2
     exit 1
   fi
 fi
@@ -291,11 +307,13 @@ if [[ "$automated" == true && ( "$customer_principal" != "$expected_customer_pri
   exit 1
 fi
 
+mortgage_principal="$(az deployment group show --name mortgage-foundation --resource-group "$resource_group" \
+  --query properties.outputs.mortgagesIdentityPrincipalId.value --output tsv)"
+queue_id="$(az deployment group show --name mortgage-foundation --resource-group "$resource_group" \
+  --query properties.outputs.notificationQueueId.value --output tsv)"
+bash infra/deployment/remove-legacy-receiver.sh "$mortgage_principal" "$queue_id"
+
 if [[ "$configure_github" == true ]]; then
-  mortgage_principal="$(az deployment group show --name mortgage-foundation --resource-group "$resource_group" \
-    --query properties.outputs.mortgagesIdentityPrincipalId.value --output tsv)"
-  queue_id="$(az deployment group show --name mortgage-foundation --resource-group "$resource_group" \
-    --query properties.outputs.notificationQueueId.value --output tsv)"
   if [[ ! "$mortgage_principal" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] ||
     ! jq -en --arg queue "$queue_id" --arg prefix "/subscriptions/$subscription_id/resourceGroups/$resource_group/providers/Microsoft.ServiceBus/namespaces/" \
       '($queue | ascii_downcase) as $q | ($q | startswith($prefix | ascii_downcase)) and ($q | endswith("/queues/submission-notifications"))' >/dev/null; then
@@ -360,6 +378,7 @@ for image_and_dockerfile in \
   "mortgages-web:PD.Mortgages.Web/Dockerfile" \
   "mortgages-staff-web:PD.Mortgages.Staff.Web/Dockerfile" \
   "mortgages-api:PD.Mortgages.Api/Dockerfile" \
+  "notifications-worker:PD.Notifications.Worker/Dockerfile" \
   "products-api:PD.Products.Api/Dockerfile" \
   "eligibility-api:PD.Eligibility.Api/Dockerfile"; do
   image="${image_and_dockerfile%%:*}"

@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using PD.Mortgages.CustomerSessions;
 using PD.Mortgages.Infrastructure.Persistence;
 using PD.Products.Infrastructure.Persistence;
+using PD.Notifications.Worker;
+using PD.Mortgages.DatabaseBootstrap;
 
 var options = ParseArguments(args);
 var bootstrapClientId = Environment.GetEnvironmentVariable("AZURE_CLIENT_ID")
@@ -18,7 +20,8 @@ foreach (var (databaseName, identity) in new[]
 {
     ("mortgages", options.MortgagesIdentity),
     ("products", options.ProductsIdentity),
-    ("customer-sessions", options.CustomerSessionsIdentity)
+    ("customer-sessions", options.CustomerSessionsIdentity),
+    ("notifications", options.NotificationsIdentity)
 })
 {
     await EnsureApplicationAccessAsync(options.Server, databaseName, identity, token.Token);
@@ -27,6 +30,10 @@ foreach (var (databaseName, identity) in new[]
 await MigrateMortgageDatabaseAsync(options.Server, token.Token);
 await MigrateProductsDatabaseAsync(options.Server, token.Token);
 await MigrateCustomerSessionsDatabaseAsync(options.Server, token.Token);
+await MigrateNotificationsDatabaseAsync(options.Server, token.Token);
+await using (var source = CreateConnection(options.Server, "mortgages", token.Token))
+await using (var target = CreateConnection(options.Server, "notifications", token.Token))
+    await HistoricalNotificationCopy.CopyAsync(source, target);
 
 static async Task EnsureApplicationAccessAsync(
     string server,
@@ -110,6 +117,16 @@ static async Task MigrateCustomerSessionsDatabaseAsync(string server, string acc
     await context.Database.MigrateAsync();
 }
 
+static async Task MigrateNotificationsDatabaseAsync(string server, string accessToken)
+{
+    await using var connection = CreateConnection(server, "notifications", accessToken);
+    var options = new DbContextOptionsBuilder<NotificationsDbContext>()
+        .UseSqlServer(connection)
+        .Options;
+    await using var context = new NotificationsDbContext(options);
+    await context.Database.MigrateAsync();
+}
+
 static SqlConnection CreateConnection(string server, string database, string accessToken)
 {
     var builder = new SqlConnectionStringBuilder
@@ -145,22 +162,27 @@ static BootstrapOptions ParseArguments(string[] arguments)
         !Guid.TryParse(productsIdentityClientIdText, out var productsIdentityClientId) ||
         !values.TryGetValue("customer-sessions-identity-name", out var customerSessionsIdentityName) ||
         !values.TryGetValue("customer-sessions-identity-client-id", out var customerSessionsIdentityClientIdText) ||
-        !Guid.TryParse(customerSessionsIdentityClientIdText, out var customerSessionsIdentityClientId))
+        !Guid.TryParse(customerSessionsIdentityClientIdText, out var customerSessionsIdentityClientId) ||
+        !values.TryGetValue("notifications-identity-name", out var notificationsIdentityName) ||
+        !values.TryGetValue("notifications-identity-client-id", out var notificationsIdentityClientIdText) ||
+        !Guid.TryParse(notificationsIdentityClientIdText, out var notificationsIdentityClientId))
     {
-        throw new ArgumentException("Provide --server and valid identity names and client IDs for mortgages, products, and customer sessions.");
+        throw new ArgumentException("Provide --server and valid identity names and client IDs for mortgages, products, customer sessions, and notifications.");
     }
 
     return new BootstrapOptions(
         server,
         new ApplicationIdentity(mortgagesIdentityName, mortgagesIdentityClientId, CanWrite: true),
         new ApplicationIdentity(productsIdentityName, productsIdentityClientId, CanWrite: false),
-        new ApplicationIdentity(customerSessionsIdentityName, customerSessionsIdentityClientId, CanWrite: true));
+        new ApplicationIdentity(customerSessionsIdentityName, customerSessionsIdentityClientId, CanWrite: true),
+        new ApplicationIdentity(notificationsIdentityName, notificationsIdentityClientId, CanWrite: true));
 }
 
 sealed record BootstrapOptions(
     string Server,
     ApplicationIdentity MortgagesIdentity,
     ApplicationIdentity ProductsIdentity,
-    ApplicationIdentity CustomerSessionsIdentity);
+    ApplicationIdentity CustomerSessionsIdentity,
+    ApplicationIdentity NotificationsIdentity);
 
 sealed record ApplicationIdentity(string Name, Guid ClientId, bool CanWrite);

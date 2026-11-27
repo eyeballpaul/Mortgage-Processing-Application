@@ -5,10 +5,10 @@ application changes. Replace values in `<angle-brackets>` with your own; do not
 include the brackets. Do not put secret values in this file, Git, chat or logs.
 Keep them in a password manager.
 
-The quickstart and an initial GitHub deployment have succeeded in one Azure
-environment. Creating every registration from scratch and a later selective
-incremental deployment have not been independently validated. Use fictional
-data only.
+An earlier quickstart and initial GitHub deployment succeeded in one Azure
+environment. Creating every registration from scratch, the separate worker
+and its scale rule, and a later selective incremental deployment have not been
+independently validated. Use fictional data only.
 
 For the separate one-click create and delete workflows, complete
 the [on-demand workflow setup](azure-on-demand-setup.md)
@@ -24,7 +24,7 @@ DNS-link ordering fix has mock tests but has not yet been tested live.
    its **enterprise application** is the corresponding identity in your
    tenant. Their object IDs differ.
 3. Run the interactive quickstart once. It creates billable Azure resources
-   and the six managed identities needed for later runs.
+   and eight managed identities needed for later runs.
 4. Create a separate GitHub deployment identity and configure access.
 5. Test the apps, then set up the on-demand buttons. When you are finished,
    delete the prototype resources while keeping the group and identities.
@@ -194,13 +194,14 @@ If you create new registrations, use their new IDs rather than old ones.
    choose **yes** and confirm the repository.
 5. The script deploys the infrastructure, including a public Service Bus Basic
    namespace and queue, assigns the customer API role, builds
-   six images, runs the private database bootstrap job and deploys five apps.
+   seven images, runs the private database bootstrap job and deploys six apps.
    Record the customer and staff URLs printed at the end. On failure, inspect
    the error; partial resources remain billable. A retry reapplies the template
    and can overwrite app settings, images and secrets. Use the intended source
    revision, existing names and matching secrets.
-   The notification flow records a simulation only; it sends no email. The new
-   customer notification simulation has been observed in Azure. See
+   The notification flow records a simulation only; it sends no email. An
+   earlier API-hosted simulation was observed in Azure; the separate worker
+   has not yet been tested live. See
    [notification setup and operations](azure-advanced-deployment.md#submission-notifications).
 
 ## 5. Finish Staff Web setup and test
@@ -219,7 +220,7 @@ If you create new registrations, use their new IDs rather than old ones.
    staff URL and sign in with the assigned staff account.
 3. Submit an application using fictional data and check that it appears in
    Staff Web. For a notification check, open Azure Portal → your resource
-   group → `mortgage-api` → **Log stream**, then submit another fictional
+   group → `notifications-worker` → **Log stream**, then submit another fictional
    application. Look for `Simulated notification recorded`; no email is sent.
    Readiness checks alone do not verify sign-in, document upload or submission.
    If access is denied, check the tenant, consent, exact role values and both
@@ -282,7 +283,8 @@ Otherwise follow these manual steps.
    assign**. The Entra registration itself remains after group deletion.
 4. An Azure administrator must also grant a constrained role-assignment
    permission. For the on-demand create and delete workflows, use the
-   five-role, five-principal **group-scoped** condition in
+   initial five-role, five-principal **group-scoped** condition and the
+   notification extension in
    [one-time setup](azure-on-demand-setup.md#2-allow-the-deployment-identity-to-manage-azure-resources).
    The quickstart's optional queue-scoped condition alone is not sufficient for
    those workflows. For application-only deployment, see the narrower
@@ -313,7 +315,7 @@ Otherwise follow these manual steps.
    ownership. Return here when those checks are complete.
 4. Push or merge an application change to `main`. After build and tests pass,
    the workflow deploys to the **existing** resources. On the first deployment
-   after quickstart, no commit baselines exist, so it builds all six images and
+   after quickstart, no commit baselines exist, so it builds all seven images and
    runs bootstrap. Later runs select affected projects; this selective path still
    needs a live test. The workflow applies the Service Bus notification Bicep and
    settings, but does not create the core infrastructure or update secrets.
@@ -331,7 +333,7 @@ Otherwise follow these manual steps.
 
 Use **Actions → Delete prototype resources** as described in
 [delete when finished](../AZURE_PROTOTYPE_GUIDE.md#delete-when-finished). This
-destroys prototype data but keeps the dedicated group and six managed
+destroys prototype data but keeps the dedicated group and eight managed
 identities so the create workflow can be used again. Verify success and review
 costs.
 

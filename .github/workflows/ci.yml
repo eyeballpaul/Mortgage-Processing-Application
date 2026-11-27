@@ -37,6 +37,8 @@ jobs:
           bash infra/tests/deploy-existing-test.sh
           bash infra/tests/quickstart-test.sh
           bash infra/tests/delete-prototype-test.sh
+          bash infra/tests/remove-legacy-receiver-test.sh
+          bash infra/tests/setup-notification-permissions-test.sh
 
       - name: Check vulnerable NuGet packages
         shell: pwsh

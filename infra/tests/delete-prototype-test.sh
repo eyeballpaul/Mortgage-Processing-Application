@@ -74,7 +74,10 @@ reset_state() {
     {application:"pd-mortgages-demo",managedBy:"bicep"} as $tags |
     [
       {id:($prefix + "Microsoft.ManagedIdentity/userAssignedIdentities/mortgage-demo-env-mortgages"),type:"Microsoft.ManagedIdentity/userAssignedIdentities",name:"mortgage-demo-env-mortgages"},
+      {id:($prefix + "Microsoft.ManagedIdentity/userAssignedIdentities/mortgage-demo-env-notifications"),type:"Microsoft.ManagedIdentity/userAssignedIdentities",name:"mortgage-demo-env-notifications"},
+      {id:($prefix + "Microsoft.ManagedIdentity/userAssignedIdentities/mortgage-demo-env-notifications-scaler"),type:"Microsoft.ManagedIdentity/userAssignedIdentities",name:"mortgage-demo-env-notifications-scaler"},
       {id:($prefix + "Microsoft.App/containerApps/mortgage-api"),type:"Microsoft.App/containerApps",name:"mortgage-api",tags:$tags},
+      {id:($prefix + "Microsoft.App/containerApps/notifications-worker"),type:"Microsoft.App/containerApps",name:"notifications-worker",tags:$tags},
       {id:($prefix + "Microsoft.App/containerApps/staff-web"),type:"Microsoft.App/containerApps",name:"staff-web",tags:$tags},
       {id:($prefix + "Microsoft.App/managedEnvironments/mortgage-demo-env"),type:"Microsoft.App/managedEnvironments",name:"mortgage-demo-env",tags:$tags},
       {id:($prefix + "Microsoft.Network/privateEndpoints/sql-server-private"),type:"Microsoft.Network/privateEndpoints",name:"sql-server-private",tags:$tags},
@@ -98,7 +101,7 @@ reset_state() {
 
 reset_state
 bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
-jq -e 'length == 1 and .[0].type == "Microsoft.ManagedIdentity/userAssignedIdentities"' "$TEST_STATE/resources" >/dev/null
+jq -e 'length == 3 and all(.[]; .type == "Microsoft.ManagedIdentity/userAssignedIdentities")' "$TEST_STATE/resources" >/dev/null
 jq -e '.web.redirectUris == ["https://localhost:7241/signin-oidc"] and .web.homePageUrl == "https://existing.example"' "$TEST_STATE/staff" >/dev/null
 app_line="$(grep -n 'resource delete .*containerApps/mortgage-api' "$TEST_LOG" | cut -d: -f1)"
 environment_line="$(grep -n 'resource delete .*managedEnvironments' "$TEST_LOG" | cut -d: -f1)"
