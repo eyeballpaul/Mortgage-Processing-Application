@@ -3,7 +3,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 test_dir="$(mktemp -d "${TMPDIR:-/tmp}/mortgage-quickstart-test.XXXXXXXX")"
-trap 'rm -f -- "$test_dir/az" "$test_dir/gh" "$test_dir/curl" "$test_dir/sleep" "$test_dir/log" "$test_dir/output" "$test_dir/roles" "$test_dir/staff"; rmdir "$test_dir"' EXIT
+trap 'rm -f -- "$test_dir/az" "$test_dir/gh" "$test_dir/curl" "$test_dir/sleep" "$test_dir/log" "$test_dir/output" "$test_dir/roles" "$test_dir/staff" "$test_dir/setup.json"; rmdir "$test_dir"' EXIT
 
 cat > "$test_dir/az" <<'MOCK'
 #!/usr/bin/env bash
@@ -50,6 +50,8 @@ case "$*" in
         jq -e --arg principal "${TEST_EXPECTED_PRINCIPAL:-user-id}" --arg type "${TEST_EXPECTED_TYPE:-User}" \
           '.parameters.pipelinePrincipalId.value == $principal and
           .parameters.pipelinePrincipalType.value == $type and
+          .parameters.mortgageApiClientId.value == "api-client" and
+          .parameters.staffClientId.value == "staff-client" and
           .parameters.staffClientSecret.value == "staff-secret" and
           .parameters.productServiceApiKey.value == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' \
           "$parameter_file" > /dev/null
@@ -155,6 +157,45 @@ grep -q 'curl .*https://customer.example/health/ready' "$TEST_LOG"
 grep -q 'curl .*https://staff.example/health/ready' "$TEST_LOG"
 jq -e '.web.homePageUrl == "https://existing.example" and .web.implicitGrantSettings.enableIdTokenIssuance == true and (.web.redirectUris | length == 3)' "$TEST_STATE/staff" >/dev/null
 if grep -q '^gh ' "$TEST_LOG"; then echo "Manual GitHub mode called gh." >&2; exit 1; fi
+
+reset_state
+jq -n '{
+  confirmed:true,
+  subscriptionId:"subscription-id",
+  tenantId:"tenant-id",
+  resourceGroup:"test-rg",
+  location:"uksouth",
+  registry:"registryname",
+  sqlServer:"sql-server",
+  storageAccount:"storageaccount",
+  mortgageApiClientId:"api-client",
+  staffClientId:"staff-client",
+  staffClientSecret:"staff-secret",
+  productsApiKey:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  eligibilityApiKey:"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  configureGitHub:true,
+  githubRepository:"owner/repo"
+}' > "$test_dir/setup.json"
+PROTOTYPE_SETUP_CONFIG="$test_dir/setup.json" \
+  bash "$root/infra/quickstart-deploy.sh" </dev/null > "$test_dir/output"
+if grep -Eq 'Resource group name|Mortgage API application|Staff web application|Configure the existing GitHub deployment identity|GitHub repository \(owner/name\)' "$test_dir/output"; then
+  echo "The structured setup quickstart prompted for configured values." >&2
+  exit 1
+fi
+grep -q 'gh variable set AZURE_RESOURCE_GROUP --repo owner/repo --body test-rg' "$TEST_LOG"
+
+reset_state
+jq '.subscriptionId = "wrong-subscription"' "$test_dir/setup.json" > "$test_dir/setup.json.new"
+mv "$test_dir/setup.json.new" "$test_dir/setup.json"
+if PROTOTYPE_SETUP_CONFIG="$test_dir/setup.json" \
+  bash "$root/infra/quickstart-deploy.sh" </dev/null > "$test_dir/output" 2>&1; then
+  echo "Expected a setup configuration for another subscription to be rejected." >&2
+  exit 1
+fi
+if grep -q 'deployment group create' "$TEST_LOG"; then
+  echo "Deployed resources despite a setup subscription mismatch." >&2
+  exit 1
+fi
 
 reset_state
 printf '%s' "$inputs" | TEST_EXISTING_SERVER=true bash "$root/infra/quickstart-deploy.sh" > "$test_dir/output"

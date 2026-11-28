@@ -1,17 +1,14 @@
-# Legacy deployment scripts
+# Legacy scripts
 
 The scripts in this directory are **not verified** for the current deployment.
-Do not use them to deploy, pause or resume resources, retrieve URLs, or estimate
-costs. In particular, they do not establish that the entire environment is
-paused and their fixed cost estimates are unsupported. The pause and resume
-scripts use `az containerapp replica count set`, which is not listed in the
-current Azure CLI replica command reference; do not assume they stopped any apps.
+Do not use them to deploy resources, retrieve URLs, or estimate costs. Their
+status and cost output does not reflect the current infrastructure. There is
+no verified whole-environment pause or resume procedure.
 
 Use the [prototype lifecycle guide](../../AZURE_PROTOTYPE_GUIDE.md) for routine
 GitHub workflows and deletion, or the
 [advanced deployment guide](../../docs/azure-advanced-deployment.md) for the
-current quickstart and cost guidance. There is currently no verified
-whole-environment pause/resume tool.
+current quickstart and cost guidance.
 
 ## What to do instead
 

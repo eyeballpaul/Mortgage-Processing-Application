@@ -4,6 +4,7 @@ set -euo pipefail
 : "${AZURE_RESOURCE_GROUP:?Set AZURE_RESOURCE_GROUP to the dedicated prototype resource group}"
 : "${AZURE_CLIENT_ID:?Set AZURE_CLIENT_ID to the GitHub deployment application client ID}"
 
+# Resolve and cross-check the deployment identity's exact group scope.
 subscription="$(az account show --query id --output tsv)"
 group_id="$(az group show --name "$AZURE_RESOURCE_GROUP" --query id --output tsv)"
 github_principal="$(az ad sp show --id "$AZURE_CLIENT_ID" --query id --output tsv)"
@@ -16,6 +17,7 @@ if ! jq -en --arg actual "$group_id" --arg expected "$expected_group" \
 fi
 
 admin_role=f58310d9-a9f6-439a-9e8d-f62e7b41a168
+# Preserve the existing conditioned role assignment; never replace or broaden an unknown condition.
 assignments="$(az role assignment list --assignee-object-id "$github_principal" --scope "$group_id" --output json)"
 assignment="$(jq -ce --arg principal "$github_principal" --arg group "$group_id" --arg role "$admin_role" '
   if type != "array" then error("Invalid role assignment listing") else
@@ -40,6 +42,7 @@ if [[ "$confirm" != yes ]]; then
   exit 1
 fi
 
+# Create only the two named identities if missing; reject ambiguous results.
 identities="$(az identity list --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
 if ! jq -e 'type == "array"' <<< "$identities" >/dev/null; then
   echo "Invalid managed identity listing." >&2
@@ -69,6 +72,7 @@ fi
 
 receiver=4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0
 owner=090c5cfd-751d-490a-894a-3ce6f1109419
+# Add only the worker/scaler assignments to the previously reviewed permission condition.
 extra="((ActionMatches{'Microsoft.Authorization/roleAssignments/write'} AND ((@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$receiver} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$worker}) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$owner} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$scaler}))) OR (ActionMatches{'Microsoft.Authorization/roleAssignments/delete'} AND ((@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$receiver} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$worker}) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$owner} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$scaler}))))"
 old_condition="$(jq -er '.condition' <<< "$assignment")"
 if jq -en --arg old "$old_condition" --arg extra "$extra" '
@@ -91,10 +95,12 @@ if ! jq -e --argjson before "$assignment" '
   echo "The existing role assignment changed during setup; inspect it before retrying." >&2
   exit 1
 fi
+# Update from a private file to avoid losing the existing role-assignment fields.
 parameter_file="$(mktemp "${TMPDIR:-/tmp}/mortgage-rbac.XXXXXXXX")"
 trap 'rm -f -- "$parameter_file"' EXIT
 chmod 600 "$parameter_file"
 jq --arg condition "$condition" '.condition = $condition' <<< "$assignment" > "$parameter_file"
+# Update the existing assignment (rather than creating a parallel broader grant) and verify it.
 az role assignment update --role-assignment "$parameter_file" --output none
 updated="$(az role assignment list --assignee-object-id "$github_principal" --scope "$group_id" --output json)"
 if ! jq -e --arg id "$assignment_id" --arg condition "$condition" '

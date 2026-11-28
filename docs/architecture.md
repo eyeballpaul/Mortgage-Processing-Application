@@ -251,7 +251,9 @@ This is not a production security boundary: staff ingress is public, and the pro
 
 ```mermaid
 flowchart TD
-    Manual[Interactive quickstart] --> Script[Quickstart script]
+    Fresh[Local: fresh bootstrap] --> EntraGitHub[Create Entra apps and GitHub OIDC]
+    EntraGitHub --> Script[Configured quickstart]
+    Recovery[Local: resource-group recovery or Azure retry] --> Script
     Create[GitHub: Create prototype] -->|OIDC; retained group and identities required| Script
     Script --> Foundation[Bicep: foundation, network, SQL, Blob and queue]
     Foundation --> Images[Build seven images in Container Registry]
@@ -259,7 +261,8 @@ flowchart TD
     Bootstrap --> Apps[Deploy six Container Apps]
     Apps --> Callbacks[Update Staff Web callbacks in Entra]
     Callbacks --> Ready[Check public readiness]
-    Ready --> Owners[Initialize foundation and per-app deployment stacks]
+    Ready --> Finalize[Local finalizer: scoped permissions and deployment stacks]
+    Finalize --> Owners[Foundation and per-app deployment stacks owned]
 
     Push[Push to main] --> CI[Build, test and security checks]
     CI --> Deploy[Manual: Deploy prototype changes]
@@ -276,10 +279,22 @@ flowchart TD
     Remove --> Retain[Keep group, eight identities and group permissions]
 ```
 
-The on-demand create workflow uses the same quickstart script as an
-interactive deployment, but does not create a missing group, identities or
-customer app-role assignment. Entra registrations and GitHub configuration
-are outside the group and remain after normal deletion. The delete workflow
+Fresh bootstrap creates Entra and GitHub configuration, then calls the same
+configured quickstart and finalizer used by resource-group recovery. Both
+local paths pass values through a mode-0600 temporary JSON file so secrets
+are not simulated as terminal input or included in command arguments. The
+finalizer restores group-scoped permissions for newly created identities,
+extends the notification permission condition, and initializes deployment
+stack ownership. Resource-group recovery can also reconcile an existing
+dedicated group after an Azure deployment or finalization failure.
+
+The on-demand create workflow uses the same quickstart script, but does not
+create a missing group, identities or customer app-role assignment. Entra
+registrations and GitHub configuration are outside the group and remain after
+normal deletion. Fresh bootstrap does not resume incomplete Entra or GitHub
+identity setup; inspect partial state before retrying. Once repository
+settings and secrets are saved, use recovery to retry the Azure phase rather
+than rerunning bootstrap. The delete workflow
 removes the current staff callback URIs before deleting recognized resources;
 an error after deletion starts can leave a partially deleted, billable
 environment. It permanently deletes databases, blobs, queue data, images and

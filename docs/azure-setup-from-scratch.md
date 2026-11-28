@@ -11,24 +11,22 @@ and selective incremental deployment have not been independently validated
 against live Azure. Use fictional data only.
 
 For the separate one-click create and delete workflows, complete
-the [on-demand workflow setup](azure-on-demand-setup.md)
-after the initial interactive deployment and GitHub identity setup below.
+the [on-demand workflow setup](azure-on-demand-setup.md) after the scripted
+bootstrap or manual quickstart has completed.
 Earlier versions were exercised in Azure; deletion needed a retry. The updated
 workflows, separate worker, scale rule and DNS-link ordering fix have not yet
 been tested live.
 
 ## What you are going to do
 
-1. Prepare an Azure subscription, a GitHub repository and a terminal.
-2. Create two Entra registrations: one identifies the Mortgage API and one
-   allows staff to sign in. An **app registration** describes an app;
-   its **enterprise application** is the corresponding identity in your
-   tenant. Their object IDs differ.
-3. Run the interactive quickstart once. It creates billable Azure resources
-   and eight managed identities needed for later runs.
-4. Create a separate GitHub deployment identity and configure access.
-5. Test the apps, then set up the on-demand buttons. When you are finished,
-   delete the prototype resources while keeping the group and identities.
+1. Prepare an Azure subscription, its Entra tenant, an existing staff user,
+   an accessible GitHub repository and the required command-line tools.
+2. Choose either the scripted bootstrap, which creates the Entra and GitHub
+   setup as well as Azure resources, or the manual interactive quickstart
+   documented later in this guide.
+3. Test the apps, then optionally set up the on-demand buttons. When you are
+   finished, delete the prototype resources while keeping the group and
+   identities if you plan to use those workflows.
 
 You need an Azure subscription, access to the Azure tenant, a copy of this
 repository on GitHub, and permission to administer its settings. You may need
@@ -53,9 +51,28 @@ subscription-wide permissions.
 
 Install Azure CLI with the Container Apps commands, `jq`, OpenSSL, `curl`,
 `uuidgen` and GitHub CLI. Sign in to Azure and GitHub with accounts authorized
-to create app registrations, grant the documented permissions and consent,
-create resource groups and role assignments, and manage repository secrets
-and variables. Then run:
+to create app registrations and service principals, grant the required
+tenant-wide consent, create resource groups and Azure role assignments, and
+manage repository Actions secrets and variables.
+
+Before running, make sure:
+
+- The selected subscription belongs to the Entra tenant you intend to use.
+- The staff member you will enter at the prompt already exists in that tenant.
+- The GitHub repository is accessible to your GitHub CLI account and uses the
+  `main` branch for its deployment workflows. The script creates OIDC trust
+  specifically for `main`, and GitHub Actions must be enabled for the
+  repository.
+- The chosen resource-group name is unused, and the tenant has no app
+  registrations named `Mortgage API`, `Staff Web`, or `GitHub deployment`.
+  The script creates these itself; do not create them manually first.
+- Your Azure permissions allow resource-group creation/deployment and the
+  required role assignments. An authorized Entra administrator must be able
+  to grant the app permissions and consent requested by the script. GitHub
+  access must allow repository secrets and variables to be managed.
+
+No separate VNet, Entra app registration, GitHub OIDC credential, or GitHub
+Actions variable/secret setup is required beforehand. Then sign in and run:
 
 ```bash
 az login
@@ -71,14 +88,28 @@ prototype. It asks for the staff user's Entra UPN and resource names.
 Tenant-admin consent and Azure role-assignment permissions are still required;
 the script cannot grant itself those permissions.
 
-The script refuses to reuse app registrations with the same display names.
-If it stops partway through, it may have left Entra objects behind; inspect
-those objects with an administrator before retrying. It prints newly generated
-secrets once to the terminal and stores them in GitHub. Save them in a
-password manager before continuing; GitHub will not reveal them later. Keep
-the terminal private and do not paste its output into logs, chat or source
-control. The script and complete setup have not yet been validated against
-live Azure.
+Fresh bootstrap checks for name collisions before changing Azure, and refuses
+to adopt an existing group or any of the three named app registrations. It
+does not automatically resume failures during Entra registration and GitHub
+identity setup. If it stops during that phase, its error identifies the
+operation; inspect the selected tenant, group and registrations before
+continuing. Do not rerun fresh bootstrap while those objects remain.
+
+After all GitHub settings and secrets have been saved, a failure during Azure
+deployment or final permission setup can be retried with
+`bash infra/recover-prototype.sh`. The script can reconcile an existing group
+when you confirm it is the dedicated prototype group. Re-enter the same
+resource names and saved secret values. This avoids repeating Entra app
+creation, but is not a resume mechanism for an incomplete Entra/GitHub
+bootstrap.
+
+Bootstrap prints newly generated secrets once to the terminal and stores them
+in GitHub. Save them in a password manager before continuing; GitHub will not
+reveal them later. Keep the terminal private and do not paste its output into
+logs, chat or source control. The local scripts pass deployment settings
+through a mode-0600 temporary JSON file, remove it when they exit, and do not
+include secrets in command arguments. The scripts and complete setup have not
+yet been validated against live Azure.
 
 ### Recovery after deleting only the resource group
 
@@ -94,18 +125,35 @@ gh auth login --hostname github.com
 bash infra/recover-prototype.sh
 ```
 
-The script refuses to run if the resource group already exists. It runs the
-interactive quickstart, restores the constrained group-scoped deployment
-permissions using the newly created managed identity IDs, extends the
-notification permissions, and initializes deployment-stack ownership. It
-prompts for the existing `DEPLOYMENT_FINGERPRINT_KEY`; retrieve it from your
-password manager, because GitHub secrets cannot be read back. Do not start a
+The script asks for the resource-group name and checks that it is in the
+selected subscription. If the group is missing, it creates it. If it exists,
+continue only when it is the dedicated prototype group; this mode supports
+retrying after a deployment or finalization failure. It runs the configured
+quickstart, restores constrained group-scoped permissions using the current
+managed identity IDs, extends notification permissions, and initializes
+deployment-stack ownership. It prompts for the existing staff secret, both
+service API keys, and `DEPLOYMENT_FINGERPRINT_KEY`; retrieve these from your
+password manager because GitHub secrets cannot be read back. Do not start a
 GitHub deployment while either local script is running.
+
+The shared finalizer asks you to confirm the constrained role-assignment
+permissions and notification permission extension. Review each prompt before
+typing `yes`; the group-scoped permission is limited to the documented roles
+and principals, while the Service Bus scaler role is broader within its
+namespace.
 
 Both paths create billable resources and can leave partial changes if a
 deployment fails. Inspect the error and Azure state before retrying. The
 normal GitHub workflows remain the day-to-day create, delete and selective
 deployment path once setup is complete.
+
+## Manual setup path: interactive quickstart
+
+The numbered steps below describe the alternative manual setup using
+`infra/quickstart-deploy.sh`. They are not prerequisites for
+`infra/bootstrap-prototype.sh`: fresh bootstrap creates the Entra app
+registrations and GitHub deployment identity itself. Do not manually create
+those objects before running bootstrap.
 
 ## 1. Prepare
 
@@ -405,8 +453,8 @@ Deleting the whole resource group is a separate, more disruptive alternative:
 it also removes identities and group permissions, so the create button alone
 cannot recreate the prototype. See
 [resource-group recreation](../AZURE_PROTOTYPE_GUIDE.md#after-deleting-the-resource-group).
-There is no verified whole-environment pause; do not rely on the older pause
-script to stop charges.
+There is no verified whole-environment pause; stopping the apps alone would
+not stop charges from the other Azure resources.
 
 See the [Azure deployment guide](../AZURE_PROTOTYPE_GUIDE.md) for retry, recreation,
 cost and troubleshooting details.

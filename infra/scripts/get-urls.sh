@@ -63,7 +63,7 @@ else
     echo ""
     echo "This might mean:"
     echo "  1. Apps haven't finished deploying"
-    echo "  2. Apps are in paused state (run './resume-apps.sh')"
+    echo "  2. Apps have not finished deploying or are not running"
     echo "  3. Container App endpoints are not configured as public"
   fi
 fi

@@ -11,6 +11,7 @@ for command in az jq; do
   fi
 done
 
+# Resolve and cross-check the actual Azure scope before changing role assignments.
 subscription="$(az account show --query id --output tsv)"
 tenant="$(az account show --query tenantId --output tsv)"
 group_id="$(az group show --name "$AZURE_RESOURCE_GROUP" --query id --output tsv)"
@@ -23,6 +24,7 @@ if ! jq -en --arg actual "$group_id" --arg expected "$expected_group" \
   exit 1
 fi
 
+# Resolve the five intended principals so the permission condition never uses mutable display names.
 identities=()
 for suffix in pull mortgages customer-sessions staff; do
   principal="$(az identity show --name "mortgage-demo-env-$suffix" --resource-group "$AZURE_RESOURCE_GROUP" --query principalId --output tsv)"
@@ -40,6 +42,7 @@ if [[ "$unique_principals" != "${#principals[@]}" ]]; then
   exit 1
 fi
 
+# Resolve built-in role IDs by name rather than relying on region- or tenant-specific assumptions.
 role_names=(
   "AcrPush"
   "AcrPull"
@@ -61,10 +64,12 @@ for role_name in "${role_names[@]}"; do
   role_ids+=("$role_id")
 done
 
+# Limit role-assignment administration to this explicit role/principal matrix.
 roles_csv="$(IFS=,; echo "${role_ids[*]}")"
 principals_csv="$(IFS=,; echo "${principals[*]}")"
 condition="((ActionMatches{'Microsoft.Authorization/roleAssignments/write'} AND @Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$roles_csv} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$principals_csv}) OR (ActionMatches{'Microsoft.Authorization/roleAssignments/delete'} AND @Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$roles_csv} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$principals_csv}))"
 
+# Refuse to create a conditioned administrator role unless the expected Contributor grant exists.
 assignments="$(az role assignment list --assignee-object-id "$github_principal" --scope "$group_id" --output json)"
 if ! jq -e 'type == "array"' <<< "$assignments" >/dev/null; then
   echo "Azure returned an invalid role assignment list." >&2
@@ -109,12 +114,14 @@ echo "Selected resource group: $group_id"
 echo "GitHub deployment principal: $github_principal"
 echo "This grants constrained role-assignment administration on the resource group."
 echo "It allows each of five roles for each of five listed principals; inspect the condition before approval."
+printf 'Condition: %s\n' "$condition"
 read -r -p "Create the conditioned assignment? Type yes: " confirm
 if [[ "$confirm" != yes ]]; then
   echo "Setup cancelled."
   exit 1
 fi
 
+# Create the least-privilege group-scoped assignment only after explicit administrator confirmation.
 az role assignment create \
   --assignee-object-id "$github_principal" \
   --assignee-principal-type ServicePrincipal \
@@ -124,6 +131,7 @@ az role assignment create \
   --condition-version 2.0 \
   --output none
 
+# Read back the assignment and verify Azure stored the exact condition before reporting success.
 updated="$(az role assignment list --assignee-object-id "$github_principal" --scope "$group_id" --output json)"
 if ! jq -e --arg scope "$group_id" --arg role "$admin_role" --arg condition "$condition" '
   any(.[]; (.scope | ascii_downcase) == ($scope | ascii_downcase) and

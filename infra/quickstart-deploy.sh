@@ -22,6 +22,43 @@ if ! az account show --output none; then
 fi
 
 automated="${AUTOMATED_DEPLOYMENT:-false}"
+setup_config="${PROTOTYPE_SETUP_CONFIG:-}"
+if [[ "$automated" == true && -n "$setup_config" ]]; then
+  echo "PROTOTYPE_SETUP_CONFIG cannot be used with AUTOMATED_DEPLOYMENT." >&2
+  exit 1
+fi
+
+# Local setup entry points pass a mode-0600 JSON file so secrets are not sent
+# as command-line arguments or through a simulated interactive prompt stream.
+if [[ -n "$setup_config" ]]; then
+  if [[ ! -f "$setup_config" || -L "$setup_config" || ! -r "$setup_config" ]]; then
+    echo "The local setup configuration must be a readable regular file, not a symlink." >&2
+    exit 1
+  fi
+  # Protect secrets even when a caller supplied a file outside the local wrappers.
+  chmod 600 "$setup_config"
+  if ! jq -e '
+    type == "object" and .confirmed == true and
+    (.subscriptionId | type == "string" and length > 0) and
+    (.tenantId | type == "string" and length > 0) and
+    (.resourceGroup | type == "string" and length > 0) and
+    (.location | type == "string" and length > 0) and
+    (.registry | type == "string" and length > 0) and
+    (.sqlServer | type == "string" and length > 0) and
+    (.storageAccount | type == "string" and length > 0) and
+    (.mortgageApiClientId | type == "string" and length > 0) and
+    (.staffClientId | type == "string" and length > 0) and
+    (.staffClientSecret | type == "string" and length > 0) and
+    (.productsApiKey | type == "string" and length > 0) and
+    (.eligibilityApiKey | type == "string" and length > 0) and
+    .configureGitHub == true and
+    (.githubRepository | type == "string" and length > 0)
+  ' "$setup_config" >/dev/null; then
+    echo "The local setup configuration is missing, unreadable, or invalid." >&2
+    exit 1
+  fi
+fi
+
 if [[ "$automated" == true ]]; then
   : "${AZURE_CLIENT_ID:?Missing AZURE_CLIENT_ID}"
   : "${AZURE_SUBSCRIPTION_ID:?Missing AZURE_SUBSCRIPTION_ID}"
@@ -47,6 +84,12 @@ fi
 subscription_name="$(az account show --query name --output tsv)"
 subscription_id="$(az account show --query id --output tsv)"
 tenant_id="$(az account show --query tenantId --output tsv)"
+if [[ -n "$setup_config" ]] &&
+  { [[ "$subscription_id" != "$(jq -er '.subscriptionId' "$setup_config")" ]] ||
+    [[ "$tenant_id" != "$(jq -er '.tenantId' "$setup_config")" ]]; }; then
+  echo "The selected Azure subscription or tenant does not match the setup configuration." >&2
+  exit 1
+fi
 echo "Selected subscription: $subscription_name ($subscription_id)"
 echo "This deployment creates billable resources. An Azure budget does not cap spending."
 echo "Azure SQL free-offer databases become unavailable for the rest of the month when their free compute is exhausted."
@@ -62,11 +105,10 @@ if [[ "$automated" == true ]]; then
     exit 1
   fi
   resource_group="$AZURE_RESOURCE_GROUP"
+elif [[ -n "$setup_config" ]]; then
+  resource_group="$(jq -er '.resourceGroup' "$setup_config")"
 else
-  resource_group="${AZURE_RESOURCE_GROUP:-}"
-  if [[ -z "$resource_group" ]]; then
-    read -r -p "Resource group name (existing or new): " resource_group
-  fi
+  read -r -p "Resource group name (existing or new): " resource_group
 fi
 if [[ -z "$resource_group" ]]; then
   echo "A resource group name is required." >&2
@@ -74,14 +116,24 @@ if [[ -z "$resource_group" ]]; then
 fi
 group_exists="$(az group exists --name "$resource_group" --output tsv)"
 case "$group_exists" in
-  true) location="$(az group show --name "$resource_group" --query location --output tsv)" ;;
+  true)
+    location="$(az group show --name "$resource_group" --query location --output tsv)"
+    if [[ -n "$setup_config" && "$location" != "$(jq -er '.location' "$setup_config")" ]]; then
+      echo "The existing resource group's region does not match the setup configuration." >&2
+      exit 1
+    fi
+    ;;
   false)
     if [[ "$automated" == true ]]; then
       echo "The persistent resource group is missing; complete one-time setup before running the workflow." >&2
       exit 1
     fi
-    read -r -p "Region for the new resource group [uksouth]: " location
-    location="${location:-uksouth}" ;;
+    if [[ -n "$setup_config" ]]; then
+      location="$(jq -er '.location' "$setup_config")"
+    else
+      read -r -p "Region for the new resource group [uksouth]: " location
+      location="${location:-uksouth}"
+    fi ;;
   *) echo "Could not determine whether the resource group exists." >&2; exit 1 ;;
 esac
 if [[ "$automated" == true ]]; then
@@ -94,6 +146,15 @@ if [[ "$automated" == true ]]; then
   products_key="$PRODUCTS_API_KEY"
   eligibility_key="$ELIGIBILITY_API_KEY"
   unset STAFF_CLIENT_SECRET PRODUCTS_API_KEY ELIGIBILITY_API_KEY
+elif [[ -n "$setup_config" ]]; then
+  registry="$(jq -er '.registry' "$setup_config")"
+  sql_server="$(jq -er '.sqlServer' "$setup_config")"
+  storage="$(jq -er '.storageAccount' "$setup_config")"
+  api_client_id="$(jq -er '.mortgageApiClientId' "$setup_config")"
+  staff_client_id="$(jq -er '.staffClientId' "$setup_config")"
+  staff_secret="$(jq -er '.staffClientSecret' "$setup_config")"
+  products_key="$(jq -er '.productsApiKey' "$setup_config")"
+  eligibility_key="$(jq -er '.eligibilityApiKey' "$setup_config")"
 else
   suffix="$(openssl rand -hex 4)"
   read -r -p "Container registry name [mortgagedemo$suffix]: " registry
@@ -102,14 +163,8 @@ else
   sql_server="${sql_server:-mortgage-demo-sql-$suffix}"
   read -r -p "Storage account name [mortgagest$suffix]: " storage
   storage="${storage:-mortgagest$suffix}"
-  api_client_id="${MORTGAGE_API_CLIENT_ID:-}"
-  staff_client_id="${STAFF_CLIENT_ID:-}"
-  if [[ -z "$api_client_id" ]]; then
-    read -r -p "Mortgage API application (client) ID: " api_client_id
-  fi
-  if [[ -z "$staff_client_id" ]]; then
-    read -r -p "Staff web application (client) ID: " staff_client_id
-  fi
+  read -r -p "Mortgage API application (client) ID: " api_client_id
+  read -r -p "Staff web application (client) ID: " staff_client_id
   read -r -s -p "Staff web client secret value: " staff_secret
   echo
   echo "Enter two different API keys (32-128 letters, digits, underscores or hyphens)."
@@ -131,6 +186,8 @@ fi
 
 if [[ "$automated" == true ]]; then
   configure_github=preconfigured
+elif [[ -n "$setup_config" ]]; then
+  configure_github=true
 else
   read -r -p "Configure the existing GitHub deployment identity and repository variables? [Y/n]: " configure_github
   case "$configure_github" in
@@ -146,8 +203,9 @@ if [[ "$configure_github" == true ]]; then
   fi
   export GH_HOST=github.com
   gh auth status --hostname github.com
-  github_repo="${GITHUB_REPOSITORY:-}"
-  if [[ -z "$github_repo" ]]; then
+  if [[ -n "$setup_config" ]]; then
+    github_repo="$(jq -er '.githubRepository' "$setup_config")"
+  else
     read -r -p "GitHub repository (owner/name): " github_repo
   fi
   if [[ ! "$github_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
@@ -238,7 +296,7 @@ elif [[ "$automated" != true ]]; then
 fi
 echo "Existing resources and app settings may be overwritten. Do not run this alongside a GitHub deployment."
 echo "The deployment principal needs deployment and role-assignment permissions and Entra app-management permissions."
-if [[ "$automated" != true ]]; then
+if [[ "$automated" != true && -z "$setup_config" ]]; then
   read -r -p "Create or update these Azure resources? Type yes to continue: " confirm
   if [[ "$confirm" != "yes" ]]; then
     echo "Deployment cancelled."

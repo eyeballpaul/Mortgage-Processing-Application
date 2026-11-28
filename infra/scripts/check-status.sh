@@ -89,18 +89,5 @@ fi
 
 echo ""
 
-# Estimated Monthly Cost
-echo "💰 Estimated Monthly Cost:"
-if [ "$TOTAL_REPLICAS" = "0" ]; then
-  echo "  Paused state: £1-2/month"
-else
-  echo "  Running state: £18-23/month"
-  echo "    - Container Apps (5 services): £3-5"
-  echo "    - SQL Database (3 databases): £10-12"
-  echo "    - Storage & Registry: £5"
-  echo ""
-  echo "  💡 Tip: Run './pause-apps.sh $RESOURCE_GROUP' to reduce to £1-2/month"
-fi
-
 echo ""
 echo "=========================="

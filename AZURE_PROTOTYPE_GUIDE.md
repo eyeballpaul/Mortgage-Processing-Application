@@ -403,14 +403,16 @@ bash infra/recover-prototype.sh
 ```
 
 The script requires the existing GitHub deployment app, OIDC credential,
-repository settings and secrets. It runs the quickstart to recreate resources,
-then restores the group-scoped permissions for the new managed identity IDs,
-reapplies the notification permissions and initializes deployment-stack
-ownership. Have the staff secret, both service API keys and
-`DEPLOYMENT_FINGERPRINT_KEY` available from your password manager. GitHub does
-not reveal saved secret values. The script refuses if the group still exists.
-It requires an Azure administrator for resource creation and role assignments;
-it does not grant GitHub subscription-wide privileges.
+repository settings and secrets. If the group is missing, it recreates it; if
+it exists, confirm that it is the dedicated prototype group before allowing
+the quickstart to reconcile it. This also supports retries after a deployment
+or finalization failure. The script restores the group-scoped permissions for
+the new managed identity IDs, reapplies the notification permissions and
+initializes deployment-stack ownership. Have the staff secret, both service
+API keys and `DEPLOYMENT_FINGERPRINT_KEY` available from your password
+manager. GitHub does not reveal saved secret values. It requires an Azure
+administrator for resource creation and role assignments; it does not grant
+GitHub subscription-wide privileges.
 
 If the Entra app registrations or GitHub configuration are also missing, use
 the separate [fresh bootstrap path](docs/azure-setup-from-scratch.md#first-setup-when-the-entra-and-github-setup-is-also-missing)
@@ -420,10 +422,14 @@ resource group was deleted; it will refuse to duplicate existing app
 registrations.
 
 Both paths can incur charges and leave partial resources after a failure.
-Review the subscription, resource names and any existing Azure state before
-retrying. Test customer access and staff sign-in after recovery. The quickstart
-builds images and runs the database bootstrap; old build artifacts may refer
-to the registry that was deleted.
+Fresh bootstrap does not resume a failure during Entra app creation or GitHub
+identity setup; inspect the tenant, group and repository before any retry.
+Once all GitHub settings and secrets have been saved, use the recovery script
+to retry Azure deployment or finalization instead of rerunning fresh
+bootstrap. Review the subscription, resource names and any existing Azure
+state before proceeding. Test customer access and staff sign-in after
+recovery. The quickstart builds images and runs the database bootstrap; old
+build artifacts may refer to the registry that was deleted.
 
 GitHub serializes workflow deployments, but cannot serialize a local recovery
 or bootstrap run. Avoid running them against the same group simultaneously.
@@ -461,5 +467,6 @@ az group exists --name "<resource-group>"
 Confirm the deletion prompt only after verifying the group. The final command
 should return `false` once deletion has completed.
 
-The older scripts in [infra/scripts](infra/scripts/README.md) are not verified
-pause/resume or cost-estimation tools; do not use them to control costs.
+There is no supported whole-environment pause or reliable cost-estimation
+script. Use the documented delete workflow to remove prototype resources, and
+check subscription-level Cost Management for actual charges.

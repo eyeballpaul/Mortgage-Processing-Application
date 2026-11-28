@@ -42,6 +42,9 @@ jobs:
           bash infra/tests/reconcile-prototype-test.sh
           bash infra/tests/sync-staff-callbacks-test.sh
           bash infra/tests/quickstart-test.sh
+          bash infra/tests/write-setup-config-test.sh
+          bash infra/tests/bootstrap-prototype-test.sh
+          bash infra/tests/setup-deployment-permissions-test.sh
           bash infra/tests/delete-prototype-test.sh
           bash infra/tests/remove-legacy-receiver-test.sh
           bash infra/tests/setup-notification-permissions-test.sh

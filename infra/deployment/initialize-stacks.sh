@@ -6,6 +6,7 @@ source infra/deployment/services.sh
 : "${AZURE_RESOURCE_GROUP:?Missing AZURE_RESOURCE_GROUP}"
 : "${DEPLOYMENT_FINGERPRINT_KEY:?Missing DEPLOYMENT_FINGERPRINT_KEY}"
 
+# Keep generated stack parameters private because they contain deployment secrets.
 umask 077
 work="$(mktemp -d "${TMPDIR:-/tmp}/mortgage-init-stacks.XXXXXXXX")"
 cleanup() {
@@ -15,10 +16,12 @@ cleanup() {
   exit "$status"
 }
 trap cleanup EXIT
+# Adopt the already deployed foundation and resources so future changes are stack-managed.
 export STACK_PARAMETERS="$work/parameters.json"
 STACK_TARGET=foundation bash infra/deployment/stack-parameters.sh
 ALLOW_CREATE=true bash infra/deployment/foundation-stack.sh
 
+# Initialize each current image as the baseline for later selective deployments.
 for service in database-bootstrap "${app_services[@]}"; do
   if [[ "$service" == database-bootstrap ]]; then
     app="$(az containerapp job show --resource-group "$AZURE_RESOURCE_GROUP" \
