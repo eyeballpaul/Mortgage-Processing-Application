@@ -24,6 +24,7 @@ foreach (var (databaseName, identity) in new[]
     ("notifications", options.NotificationsIdentity)
 })
 {
+    Console.WriteLine($"Ensuring application access in SQL database '{databaseName}'.");
     await EnsureApplicationAccessAsync(options.Server, databaseName, identity, token.Token);
 }
 
@@ -135,7 +136,7 @@ static SqlConnection CreateConnection(string server, string database, string acc
         InitialCatalog = database,
         Encrypt = true,
         TrustServerCertificate = false,
-        ConnectTimeout = 30
+        ConnectTimeout = 120
     };
     return new SqlConnection(builder.ConnectionString) { AccessToken = accessToken };
 }
