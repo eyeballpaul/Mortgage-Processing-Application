@@ -117,7 +117,7 @@ resource scaler 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 
 // Return the namespace host without protocol, path or port: the API and worker
-// use it to connect with managed identities.
+// the publisher and worker use it to connect with managed identities.
 output fullyQualifiedNamespace string = first(split(replace(replace(serviceBus.properties.serviceBusEndpoint, 'https://', ''), '/', ''), ':'))
 // Return the short namespace name for the Container Apps scaling rule.
 output namespaceName string = serviceBus.name

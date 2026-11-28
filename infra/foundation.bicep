@@ -669,9 +669,12 @@ resource containerEnvironment 'Microsoft.App/managedEnvironments@2026-07-01' = {
   ]
 }
 
+// Return the registry login host so app templates and build scripts can form image references.
 output registryServer string = registry.properties.loginServer
+// Return resource IDs for attaching the pull identity and Container Apps environment to apps.
 output imagePullIdentityId string = imagePullIdentity.id
 output environmentId string = containerEnvironment.id
+// Return client IDs used by runtime configuration to select each managed identity.
 output mortgagesIdentityClientId string = mortgagesIdentity.properties.clientId
 output outboxPublisherIdentityClientId string = outboxPublisherIdentity.properties.clientId
 output productsIdentityClientId string = productsIdentity.properties.clientId
@@ -679,21 +682,27 @@ output customerSessionsIdentityClientId string = customerSessionsIdentity.proper
 output notificationsIdentityClientId string = notificationsIdentity.properties.clientId
 output bootstrapIdentityClientId string = bootstrapIdentity.properties.clientId
 output staffIdentityClientId string = staffIdentity.properties.clientId
+// Return the private SQL server host for encrypted managed-identity connections.
 output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
+// Return Service Bus connection details from the notifications module.
 output serviceBusFqdn string = notifications.outputs.fullyQualifiedNamespace
 output serviceBusName string = notifications.outputs.namespaceName
 output serviceBusQueueName string = notifications.outputs.queueName
 output serviceBusQueueId string = notifications.outputs.queueId
+// Return stable Azure resource names for the bootstrap job's SQL user setup.
 output mortgagesIdentityName string = mortgagesIdentity.name
 output outboxPublisherIdentityName string = outboxPublisherIdentity.name
 output productsIdentityName string = productsIdentity.name
 output customerSessionsIdentityName string = customerSessionsIdentity.name
 output notificationsIdentityName string = notificationsIdentity.name
+// Return Entra principal IDs used by scripts to verify API-role assignments and SQL setup.
 output mortgagesIdentityPrincipalId string = mortgagesIdentity.properties.principalId
 output outboxPublisherIdentityPrincipalId string = outboxPublisherIdentity.properties.principalId
 output customerSessionsIdentityPrincipalId string = customerSessionsIdentity.properties.principalId
 output notificationsIdentityPrincipalId string = notificationsIdentity.properties.principalId
+// Return the scaler identity resource ID to configure it on the worker's KEDA rule.
 output notificationsScalerIdentityId string = notificationsScalerIdentity.id
+// Return user-assigned identity resource IDs for app and bootstrap module attachments.
 output notificationsIdentityId string = notificationsIdentity.id
 output outboxPublisherIdentityId string = outboxPublisherIdentity.id
 output customerSessionsIdentityId string = customerSessionsIdentity.id
@@ -701,5 +710,6 @@ output mortgagesIdentityId string = mortgagesIdentity.id
 output productsIdentityId string = productsIdentity.id
 output bootstrapIdentityId string = bootstrapIdentity.id
 output staffIdentityId string = staffIdentity.id
+// Return the storage account name and common tags for dependent app modules.
 output storageName string = documentStorage.name
 output tags object = appTags

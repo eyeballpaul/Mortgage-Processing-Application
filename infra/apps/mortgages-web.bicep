@@ -1,22 +1,34 @@
+// Deploy the public customer journey. The web app owns only customer sessions
+// and Data Protection keys; mortgage application data stays behind Mortgage API.
 targetScope = 'resourceGroup'
 
+// Registry host and pull identity used to fetch this app's image.
 param registryServer string
 param pullIdentityId string
+// Shared Container Apps environment and customer identity client ID.
 param environmentId string
 param customerSessionsIdentityClientId string
+// Private SQL host for sessions, internal Mortgage API host, and attached identity resource ID.
 param sqlServerFqdn string
 param mortgageApiFqdn string
 param customerSessionsIdentityId string
+// Storage account name for this app's separate Data Protection key container.
 param storageName string
+// App name and Mortgage API client ID used to request the API token.
 param appName string
 param mortgageApiClientId string
+// Optional distributed tracing settings.
 param otlpEndpoint string
 param otlpProtocol string
+// Use imageTag for ordinary deployments or imageRef for an immutable digest.
 param imageTag string
 param imageRef string = ''
+// Common resource tags and Azure deployment region.
 param appTags object
 param location string
 
+// Expose the customer web app publicly over HTTPS while retaining a private
+// connection to SQL, Blob and the internal Mortgage API.
 resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = {
   name: appName
   location: location
@@ -30,7 +42,9 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = {
   properties: {
 	managedEnvironmentId: environmentId
 	configuration: {
+	  // Single mode makes the selected deployment revision the only active one.
 	  activeRevisionsMode: 'Single'
+	  // Pull the image with the dedicated identity; runtime uses the customer identity.
 	  registries: [
 		{
 		  server: registryServer
@@ -38,6 +52,7 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = {
 		}
 	  ]
 	  ingress: {
+		// Public HTTPS is intentional for the customer browser journey.
 		external: true
 		allowInsecure: false
 		targetPort: 8080
@@ -48,6 +63,7 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = {
 	  containers: [
 		{
 		  name: 'mortgages-web'
+		  // Use the immutable digest supplied by release tooling when available.
 		  image: empty(imageRef) ? '${registryServer}/mortgages-web:${imageTag}' : imageRef
 		  env: [
             // Configure telemetry and production proxy handling, then select
@@ -92,6 +108,7 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = {
 			cpu: json('0.5')
 			memory: '1Gi'
 		  }
+		  // Readiness gates public traffic; liveness detects a stuck process.
 		  probes: [
 			{
 			  type: 'Readiness'
@@ -117,6 +134,7 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = {
 		}
 	  ]
 	  scale: {
+		// One replica limits prototype compute; there is no configured scale-out.
 		minReplicas: 1
 		maxReplicas: 1
 	  }
@@ -125,4 +143,5 @@ resource mortgagesWeb 'Microsoft.App/containerApps@2026-07-01' = {
   tags: appTags
 }
 
+// Return the public ingress hostname for display and readiness checks.
 output fqdn string = mortgagesWeb.properties.configuration.ingress.fqdn

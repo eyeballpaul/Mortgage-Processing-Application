@@ -128,6 +128,8 @@ param otlpEndpoint string = ''
 @description('OTLP transport protocol used when trace export is enabled.')
 param otlpProtocol string = 'grpc'
 
+// Deploy shared networking, data services, identities, registry and monitoring
+// first; the outputs below are passed to the app modules.
 module foundation './foundation.bicep' = {
   name: 'mortgage-foundation-deployment'
   params: {
@@ -357,9 +359,11 @@ output databaseBootstrapJobName string = deployBootstrap ? databaseBootstrap!.ou
 output outboxPublisherAppName string = deployApps ? outboxPublisher!.outputs.appName : ''
 // The Mortgage identity name identifies the runtime identity to scripts.
 output mortgagesIdentityName string = foundation.outputs.mortgagesIdentityName
+// The publisher's retained identity is provisioned alongside the foundation.
 output outboxPublisherIdentityName string = foundation.outputs.outboxPublisherIdentityName
 // Its client ID selects the identity when requesting managed-identity tokens.
 output mortgagesIdentityClientId string = foundation.outputs.mortgagesIdentityClientId
+// The publisher uses this client ID to request SQL and Service Bus tokens.
 output outboxPublisherIdentityClientId string = foundation.outputs.outboxPublisherIdentityClientId
 // Its principal/object ID identifies it in Azure role assignments.
 output mortgagesIdentityPrincipalId string = foundation.outputs.mortgagesIdentityPrincipalId
