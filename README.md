@@ -17,7 +17,9 @@ The customer and staff journeys record an optional credit-check choice. Declinin
 5. **Use the manual quickstart or troubleshoot notifications:** see the
    [advanced deployment guide](docs/azure-advanced-deployment.md).
 6. **Understand the components:** read the [architecture guide](docs/architecture.md).
-7. **Report a security issue:** follow the private
+7. **Explore what a bank would need before production:** read the
+   [productionisation roadmap](docs/production-readiness-roadmap.md).
+8. **Report a security issue:** follow the private
    [security reporting instructions](SECURITY.md).
 
 Azure resources cost money while they exist. A budget sends alerts; it does not
@@ -271,7 +273,7 @@ both connection variables are set:
 
 ## Azure prototype deployment
 
-The [setup-from-scratch guide](docs/azure-setup-from-scratch.md) gives step-by-step Azure, Entra and GitHub setup without secret values. The [prototype lifecycle guide](AZURE_PROTOTYPE_GUIDE.md) covers fresh bootstrap, resource-group recovery/retry, routine creation and deletion; the [advanced deployment guide](docs/azure-advanced-deployment.md) covers the interactive quickstart, costs and troubleshooting. The quickstart provisions one VNet with Container Apps and private-endpoint subnets, six Container Apps, four SQL databases, private SQL and Blob endpoints, a private database-bootstrap job and a public Service Bus Basic namespace. Both web apps have public HTTPS ingress; the three APIs have internal ingress and the worker has no ingress. SQL and Blob public network access is disabled. Staff access still requires Entra authentication and the staff app is not private-network-only. Use fictional data only; this is not a production security boundary.
+The [setup-from-scratch guide](docs/azure-setup-from-scratch.md) gives step-by-step Azure, Entra and GitHub setup without secret values. The [prototype lifecycle guide](AZURE_PROTOTYPE_GUIDE.md) covers fresh bootstrap, resource-group recovery/retry, routine creation and deletion; the [advanced deployment guide](docs/azure-advanced-deployment.md) covers the interactive quickstart, costs and troubleshooting. The quickstart provisions one VNet with Container Apps and private-endpoint subnets, six Container Apps, four SQL databases, private SQL and Blob endpoints, a private database-bootstrap job and a public Service Bus Basic namespace. Both web apps have public HTTPS ingress; the three APIs have internal ingress and the worker has no ingress. SQL and Blob public network access is disabled. Staff access still requires Entra authentication and the staff app is not private-network-only. Use fictional data only; this is not a production security boundary. For the gaps and work to assess before a real bank deployment, see the [productionisation roadmap](docs/production-readiness-roadmap.md).
 
 The [GitHub Actions workflow](.github/workflows/ci.yml) tests changes on push; it **does not build images or deploy them**. After the checks succeed, run **Deploy prototype changes** to build affected images and reconcile owned infrastructure, migrations and apps. Removed managed resources and their child resources, including data, can be deleted. Follow the [beginner's guide](AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype), including its one-time recreation and secret setup. These workflows, the separate worker and its scale rule have not been validated live in Azure. The older [Azure DevOps pipeline](azure-pipelines.yml) is not compatible with the current private SQL bootstrap and should not be used without changes.
 
