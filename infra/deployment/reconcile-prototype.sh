@@ -121,6 +121,7 @@ if [[ "$(jq -r '.bootstrapBuild' "$APP_PLAN")" == true || "$migrated_sha" != "$f
   fi
   RELEASE_SERVICE=database-bootstrap RELEASE_COMMIT="$GITHUB_SHA" RELEASE_DIGEST="$bootstrap_digest" \
     bash infra/deployment/deploy-image.sh
+  STACK_TARGET=foundation bash infra/deployment/stack-parameters.sh
   STACK_MIGRATED_SHA="$foundation_sha" bash infra/deployment/foundation-stack.sh
 fi
 

@@ -84,6 +84,10 @@ grep -q 'app-stack.sh .*retired delete' "$TEST_LOG"
 TEST_JOB_MISSING=true /bin/bash infra/deployment/reconcile-prototype.sh > "$dir/output"
 grep -q 'app-stack.sh .*database-bootstrap apply .*true' "$TEST_LOG"
 grep -q 'deploy-image.sh .*database-bootstrap' "$TEST_LOG"
+bootstrap_line="$(grep -n 'helper infra/deployment/deploy-image.sh .*database-bootstrap' "$TEST_LOG" | tail -n1 | cut -d: -f1)"
+foundation_parameters_line="$(grep -n 'helper infra/deployment/stack-parameters.sh foundation' "$TEST_LOG" | tail -n1 | cut -d: -f1)"
+foundation_marker_line="$(grep -n "helper infra/deployment/foundation-stack.sh .* $TEST_FOUNDATION_SHA$" "$TEST_LOG" | tail -n1 | cut -d: -f1)"
+[[ "$bootstrap_line" -lt "$foundation_parameters_line" && "$foundation_parameters_line" -lt "$foundation_marker_line" ]]
 
 printf '%s' old > "$dir/migrated"
 : > "$TEST_LOG"
