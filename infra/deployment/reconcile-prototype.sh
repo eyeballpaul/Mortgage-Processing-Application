@@ -110,7 +110,6 @@ STACK_SERVICE=database-bootstrap STACK_ACTION=apply STACK_IMAGE="$bootstrap_imag
   ALLOW_CREATE="$bootstrap_missing" bash infra/deployment/app-stack.sh
 
 foundation="$(az stack group show --resource-group "$AZURE_RESOURCE_GROUP" --name pd-foundation --output json)"
-foundation_id="$(jq -er '.id | select(type == "string" and length > 0)' <<< "$foundation")"
 foundation_sha="$(jq -er '.tags["pd-template-sha"] | select(type == "string" and test("^[0-9a-f]{64}$"))' <<< "$foundation")"
 migrated_sha="$(jq -r '.tags["pd-migrated-sha"] // ""' <<< "$foundation")"
 if [[ "$(jq -r '.bootstrapBuild' "$APP_PLAN")" == true || "$migrated_sha" != "$foundation_sha" ]]; then
@@ -122,8 +121,7 @@ if [[ "$(jq -r '.bootstrapBuild' "$APP_PLAN")" == true || "$migrated_sha" != "$f
   fi
   RELEASE_SERVICE=database-bootstrap RELEASE_COMMIT="$GITHUB_SHA" RELEASE_DIGEST="$bootstrap_digest" \
     bash infra/deployment/deploy-image.sh
-  az tag update --resource-id "$foundation_id" --operation merge \
-    --tags "pd-migrated-sha=$foundation_sha" --output none
+  STACK_MIGRATED_SHA="$foundation_sha" bash infra/deployment/foundation-stack.sh
 fi
 
 for service in "${app_services[@]}"; do

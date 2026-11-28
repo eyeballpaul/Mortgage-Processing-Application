@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 dir="$(mktemp -d "${TMPDIR:-/tmp}/mortgage-foundation-test.XXXXXXXX")"
-trap 'rm -f -- "$dir/az" "$dir/log" "$dir/output" "$dir/template.json" "$dir/parameters.json" "$dir/canonical.json"; rmdir "$dir"' EXIT
+trap 'rm -f -- "$dir/az" "$dir/log" "$dir/output" "$dir/template.json" "$dir/parameters.json" "$dir/canonical.json" "$dir/migrated-sha"; rmdir "$dir"' EXIT
 
 cat > "$dir/az" <<'MOCK'
 #!/usr/bin/env bash
@@ -12,8 +12,18 @@ case "$*" in
   "account show "*) echo sub ;;
   "group show "*) echo /subscriptions/sub/resourceGroups/rg ;;
   "stack group list "*) echo "${TEST_STACKS:-[]}" ;;
-  "stack group show "*) echo "$TEST_STACK" ;;
-  "stack group create "*) : ;;
+  "stack group show "*)
+    if [[ -n "${STACK_MIGRATED_SHA:-}" && -f "$TEST_DIR/migrated-sha" ]]; then
+      jq --arg sha "$STACK_MIGRATED_SHA" '.tags["pd-migrated-sha"] = $sha' <<< "$TEST_STACK"
+    else
+      echo "$TEST_STACK"
+    fi
+    ;;
+  "stack group create "*)
+    if [[ -n "${STACK_MIGRATED_SHA:-}" ]]; then
+      printf '%s' "$STACK_MIGRATED_SHA" > "$TEST_DIR/migrated-sha"
+    fi
+    ;;
   "bicep build "*) cat "$TEST_DIR/template.json" ;;
   *) echo "Unexpected Azure command: $*" >&2; exit 1 ;;
 esac
@@ -54,6 +64,18 @@ TEST_STACKS='[{"name":"pd-foundation"}]' bash infra/deployment/foundation-stack.
 if grep -q '^stack group create ' "$TEST_LOG"; then echo "An unchanged foundation was reapplied." >&2; exit 1; fi
 
 : > "$TEST_LOG"
+TEST_STACKS='[{"name":"pd-foundation"}]' STACK_MIGRATED_SHA="$fingerprint" \
+  bash infra/deployment/foundation-stack.sh > "$dir/output"
+grep -q "^stack group create .*pd-migrated-sha=$fingerprint" "$TEST_LOG"
+
+: > "$TEST_LOG"
+TEST_STACKS='[{"name":"pd-foundation"}]' STACK_MIGRATED_SHA="$fingerprint" \
+  bash infra/deployment/foundation-stack.sh > "$dir/output"
+if grep -q '^stack group create ' "$TEST_LOG"; then
+  echo "An unchanged migration marker reapplied the foundation." >&2; exit 1
+fi
+
+: > "$TEST_LOG"
 TEST_STACKS='[{"name":"pd-foundation"}]' \
   TEST_STACK="$(stack_json "$group/providers/Microsoft.Network/virtualNetworks/demo" "different")" \
   bash infra/deployment/foundation-stack.sh > "$dir/output"
@@ -74,6 +96,13 @@ if TEST_STACKS='[{"name":"pd-foundation"}]' \
   echo "An out-of-scope resource was accepted." >&2; exit 1
 fi
 if grep -q '^stack group create ' "$TEST_LOG"; then echo "An out-of-scope stack was applied." >&2; exit 1; fi
+
+: > "$TEST_LOG"
+if TEST_STACKS='[{"name":"pd-foundation"}]' STACK_MIGRATED_SHA=invalid \
+  bash infra/deployment/foundation-stack.sh > "$dir/output" 2>&1; then
+  echo "An invalid migration marker was accepted." >&2; exit 1
+fi
+if grep -q '^stack group create ' "$TEST_LOG"; then echo "An invalid migration marker was applied." >&2; exit 1; fi
 
 jq '.resources += [{"type":"Microsoft.App/containerApps","name":"unexpected"}]' "$dir/template.json" > "$dir/output"
 mv "$dir/output" "$dir/template.json"

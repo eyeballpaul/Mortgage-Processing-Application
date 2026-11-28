@@ -6,6 +6,12 @@ cd "$(dirname "$0")/../.."
 : "${AZURE_RESOURCE_GROUP:?Missing AZURE_RESOURCE_GROUP}"
 : "${STACK_PARAMETERS:?Missing STACK_PARAMETERS}"
 
+migrated_sha="${STACK_MIGRATED_SHA:-}"
+if [[ -n "$migrated_sha" && ! "$migrated_sha" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "STACK_MIGRATED_SHA must be a SHA-256 fingerprint." >&2
+  exit 1
+fi
+
 if [[ "$(az account show --query id --output tsv)" != "$AZURE_SUBSCRIPTION_ID" ]]; then
   echo "Selected Azure subscription does not match the configured subscription." >&2
   exit 1
@@ -74,17 +80,34 @@ if ! jq -e '
 fi
 jq -cS '.parameters' "$STACK_PARAMETERS" > "$work/parameters.json"
 fingerprint="$(cat "$work/template.json" "$work/parameters.json" | openssl dgst -sha256 | awk '{print $NF}')"
-if [[ "$exists" == true && "$(jq -r '.tags["pd-template-sha"] // ""' <<< "$current")" == "$fingerprint" ]]; then
-  echo "Foundation infrastructure template and parameters are unchanged."
-  exit 0
+if [[ -n "$migrated_sha" && "$migrated_sha" != "$fingerprint" ]]; then
+  echo "The migration marker must match the current foundation fingerprint." >&2
+  exit 1
+fi
+if [[ "$exists" == true ]]; then
+  current_fingerprint="$(jq -r '.tags["pd-template-sha"] // ""' <<< "$current")"
+  current_migrated_sha="$(jq -r '.tags["pd-migrated-sha"] // ""' <<< "$current")"
+  if [[ "$current_fingerprint" == "$fingerprint" &&
+        ( -z "$migrated_sha" || "$current_migrated_sha" == "$migrated_sha" ) ]]; then
+    echo "Foundation infrastructure template and parameters are unchanged."
+    exit 0
+  fi
 fi
 echo "Applying the owned shared infrastructure. Removed managed resources and their child resources may be deleted."
+stack_tags=("pd-owner=mortgage-prototype" "pd-target=foundation" "pd-template-sha=$fingerprint")
+if [[ -n "$migrated_sha" ]]; then
+  stack_tags+=("pd-migrated-sha=$migrated_sha")
+fi
 az stack group create --resource-group "$AZURE_RESOURCE_GROUP" --name "$stack" \
   --template-file "$work/template.json" --parameters "@$STACK_PARAMETERS" \
   --deny-settings-mode none --action-on-unmanage deleteResources --resources-without-delete-support fail --yes \
-  --tags "pd-owner=mortgage-prototype" "pd-target=foundation" "pd-template-sha=$fingerprint" --output none
+  --tags "${stack_tags[@]}" --output none
 created="$(az stack group show --resource-group "$AZURE_RESOURCE_GROUP" --name "$stack" --output json)"
 if ! verify_stack <<< "$created"; then
   echo "Foundation stack ownership could not be verified after deployment; inspect Azure before retrying." >&2
+  exit 1
+fi
+if [[ -n "$migrated_sha" && "$(jq -r '.tags["pd-migrated-sha"] // ""' <<< "$created")" != "$migrated_sha" ]]; then
+  echo "Foundation migration marker could not be verified after deployment; inspect Azure before retrying." >&2
   exit 1
 fi

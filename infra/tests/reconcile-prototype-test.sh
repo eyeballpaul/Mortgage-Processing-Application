@@ -23,17 +23,20 @@ case "$*" in
   "acr show "*) echo registry.example ;;
   "containerapp job show "*) echo '{"properties":{"template":{"containers":[{"image":"registry.example/database-bootstrap:latest"}]}}}' ;;
   "containerapp show "*) echo '{"properties":{"template":{"containers":[{"image":"registry.example/test:latest"}]}}}' ;;
-  "tag update "*) printf '%s' "$TEST_FOUNDATION_SHA" > "$TEST_DIR/migrated" ;;
   *) echo "Unexpected Azure command: $*" >&2; exit 1 ;;
 esac
 MOCK
 cat > "$dir/bash" <<'MOCK'
 #!/bin/bash
 set -euo pipefail
-echo "helper $* ${STACK_TARGET:-} ${STACK_SERVICE:-} ${STACK_ACTION:-} ${RELEASE_SERVICE:-} ${ALLOW_CREATE:-}" >> "$TEST_LOG"
+echo "helper $* ${STACK_TARGET:-} ${STACK_SERVICE:-} ${STACK_ACTION:-} ${RELEASE_SERVICE:-} ${ALLOW_CREATE:-} ${STACK_MIGRATED_SHA:-}" >> "$TEST_LOG"
 case "$1" in
   infra/deployment/stack-parameters.sh) echo '{}' > "$STACK_PARAMETERS" ;;
-  infra/deployment/foundation-stack.sh) : ;;
+  infra/deployment/foundation-stack.sh)
+    if [[ -n "${STACK_MIGRATED_SHA:-}" ]]; then
+      printf '%s' "$STACK_MIGRATED_SHA" > "$TEST_DIR/migrated"
+    fi
+    ;;
   infra/deployment/plan-apps.sh)
     jq -cn --arg changed "${TEST_CHANGED_SERVICE:-}" --arg missing "${TEST_MISSING_SERVICE:-}" \
       --arg digest "$TEST_DIGEST" --arg bootstrap "${TEST_BOOTSTRAP_BUILD:-false}" --arg missing_job "${TEST_JOB_MISSING:-false}" '
