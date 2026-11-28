@@ -63,7 +63,10 @@ if [[ "$automated" == true ]]; then
   fi
   resource_group="$AZURE_RESOURCE_GROUP"
 else
-  read -r -p "Resource group name (existing or new): " resource_group
+  resource_group="${AZURE_RESOURCE_GROUP:-}"
+  if [[ -z "$resource_group" ]]; then
+    read -r -p "Resource group name (existing or new): " resource_group
+  fi
 fi
 if [[ -z "$resource_group" ]]; then
   echo "A resource group name is required." >&2
@@ -99,8 +102,14 @@ else
   sql_server="${sql_server:-mortgage-demo-sql-$suffix}"
   read -r -p "Storage account name [mortgagest$suffix]: " storage
   storage="${storage:-mortgagest$suffix}"
-  read -r -p "Mortgage API application (client) ID: " api_client_id
-  read -r -p "Staff web application (client) ID: " staff_client_id
+  api_client_id="${MORTGAGE_API_CLIENT_ID:-}"
+  staff_client_id="${STAFF_CLIENT_ID:-}"
+  if [[ -z "$api_client_id" ]]; then
+    read -r -p "Mortgage API application (client) ID: " api_client_id
+  fi
+  if [[ -z "$staff_client_id" ]]; then
+    read -r -p "Staff web application (client) ID: " staff_client_id
+  fi
   read -r -s -p "Staff web client secret value: " staff_secret
   echo
   echo "Enter two different API keys (32-128 letters, digits, underscores or hyphens)."
@@ -137,7 +146,10 @@ if [[ "$configure_github" == true ]]; then
   fi
   export GH_HOST=github.com
   gh auth status --hostname github.com
-  read -r -p "GitHub repository (owner/name): " github_repo
+  github_repo="${GITHUB_REPOSITORY:-}"
+  if [[ -z "$github_repo" ]]; then
+    read -r -p "GitHub repository (owner/name): " github_repo
+  fi
   if [[ ! "$github_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
     echo "Enter a GitHub repository as owner/name." >&2
     exit 1

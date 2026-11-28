@@ -8,7 +8,8 @@ The customer and staff journeys record an optional credit-check choice. Declinin
 
 1. **Run locally:** follow [Local development with Aspire](#local-development-with-aspire).
 2. **Deploy to Azure for the first time:** follow the
-   [setup-from-scratch guide](docs/azure-setup-from-scratch.md) in order.
+   [setup-from-scratch guide](docs/azure-setup-from-scratch.md), which has
+   separate scripts for a fresh setup and recovery after resource-group deletion.
 3. **Create or remove an already configured Azure prototype:** use the
    [on-demand workflow instructions](AZURE_PROTOTYPE_GUIDE.md#run-the-workflows).
 4. **Configure on-demand workflows:** follow the

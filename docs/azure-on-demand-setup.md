@@ -1,8 +1,9 @@
 # One-time setup for Azure on-demand workflows
 
-Follow this guide after the [first interactive deployment](azure-setup-from-scratch.md).
-It configures the GitHub identity, permissions and secrets required for
-repeated create/delete runs. When finished, use the
+Follow this guide after the [first-time bootstrap or recovery](azure-setup-from-scratch.md).
+It describes the GitHub identity, permissions and secrets used by repeated
+create/delete runs and is also the manual verification reference for the local
+setup scripts. When finished, use the
 [prototype lifecycle guide](../AZURE_PROTOTYPE_GUIDE.md#run-the-workflows).
 For day-to-day code changes, use the
 [beginner's release guide](../AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype);

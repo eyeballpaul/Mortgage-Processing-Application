@@ -392,38 +392,43 @@ The on-demand workflow fails if the group or retained identities are missing;
 recreating an empty group alone is not enough. Deleting the group also removes
 its Azure role assignments and permanently deletes its data. Entra app
 registrations and GitHub configuration are outside the group and normally
-remain. To recreate the prototype:
+remain. From the repository root, sign in to the correct Azure subscription
+and GitHub repository, then run:
 
-1. Check the existing Entra registrations, deployment federated credential,
-   staff secret and service keys. Reuse them rather than creating duplicate
-   registrations. Ensure the resource names are still globally available.
-2. Follow [Deploy](docs/azure-advanced-deployment.md#deploy) using an
-   appropriately authorized Azure user. Enter the missing group name and region.
-   The quickstart creates the group after
-   confirmation, rebuilds the infrastructure and identities, assigns the
-   customer role and updates staff callbacks. It can incur charges.
-3. If choosing its optional automatic GitHub setup, first sign in to GitHub
-   CLI and confirm the existing repository variables and exact repository.
-   It restores Contributor and a **queue-scoped** condition for sender and
-   receiver assignments to the Mortgage API identity, and updates three
-   repository variables. This is not sufficient for either the worker and
-   scaler or the on-demand create workflow.
-4. Repeat [one-time setup](docs/azure-on-demand-setup.md#one-time-setup),
-   particularly the group-scoped condition using the **new** managed identity principal IDs, the customer
-   app-role check, and all repository variables and secrets. If automatic
-   GitHub setup was skipped, restore its Contributor permission and variables
-   manually. Recheck Graph consent, ownership and the existing OIDC
-   credential; they are outside the group but should not be assumed correct.
-5. Test customer access and staff sign-in. Create already ran bootstrap and
-   deployed images from its source revision. To prepare immutable images for
-   later individual releases, run the full build described in the
-   [release guide](#release-changes-to-an-existing-prototype). Old build
-   artifacts may refer to images deleted with the previous registry.
+```bash
+az login
+az account set --subscription "<subscription-id>"
+gh auth login --hostname github.com
+bash infra/recover-prototype.sh
+```
 
-GitHub serializes workflow deployments, but cannot serialize a manual
-quickstart run. Avoid running them against the same group simultaneously.
-This new automated recreation flow has not yet been tested against live Azure
-and GitHub.
+The script requires the existing GitHub deployment app, OIDC credential,
+repository settings and secrets. It runs the quickstart to recreate resources,
+then restores the group-scoped permissions for the new managed identity IDs,
+reapplies the notification permissions and initializes deployment-stack
+ownership. Have the staff secret, both service API keys and
+`DEPLOYMENT_FINGERPRINT_KEY` available from your password manager. GitHub does
+not reveal saved secret values. The script refuses if the group still exists.
+It requires an Azure administrator for resource creation and role assignments;
+it does not grant GitHub subscription-wide privileges.
+
+If the Entra app registrations or GitHub configuration are also missing, use
+the separate [fresh bootstrap path](docs/azure-setup-from-scratch.md#first-setup-when-the-entra-and-github-setup-is-also-missing)
+instead. That creates new registrations and secrets and requires the
+appropriate Entra admin consent. Do not use fresh bootstrap just because the
+resource group was deleted; it will refuse to duplicate existing app
+registrations.
+
+Both paths can incur charges and leave partial resources after a failure.
+Review the subscription, resource names and any existing Azure state before
+retrying. Test customer access and staff sign-in after recovery. The quickstart
+builds images and runs the database bootstrap; old build artifacts may refer
+to the registry that was deleted.
+
+GitHub serializes workflow deployments, but cannot serialize a local recovery
+or bootstrap run. Avoid running them against the same group simultaneously.
+These scripts and full recreation paths have not yet been tested against live
+Azure and GitHub.
 
 ## When finished
 

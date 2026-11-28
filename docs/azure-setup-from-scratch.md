@@ -5,10 +5,10 @@ application changes. Replace values in `<angle-brackets>` with your own; do not
 include the brackets. Do not put secret values in this file, Git, chat or logs.
 Keep them in a password manager.
 
-An earlier quickstart and initial GitHub deployment succeeded in one Azure
-environment. Creating every registration from scratch, the separate worker
-and its scale rule, and a later selective incremental deployment have not been
-independently validated. Use fictional data only.
+The interactive quickstart has succeeded in one Azure environment. The
+scripted first-time bootstrap, group recovery, separate worker and scale rule,
+and selective incremental deployment have not been independently validated
+against live Azure. Use fictional data only.
 
 For the separate one-click create and delete workflows, complete
 the [on-demand workflow setup](azure-on-demand-setup.md)
@@ -38,9 +38,74 @@ unavailable; do not broaden permissions just to get past an error.
 
 If you deleted only the resource group, the Entra registrations and GitHub
 configuration are outside it. Reuse them rather than creating duplicates. The
-quickstart can recreate the group, update staff callbacks and restore GitHub
-permissions and variables; see [recreation](../AZURE_PROTOTYPE_GUIDE.md#after-deleting-the-resource-group).
-If you create new registrations, use their new IDs rather than old ones.
+recovery script recreates Azure resources and refreshes group-scoped access;
+see [recreation](../AZURE_PROTOTYPE_GUIDE.md#after-deleting-the-resource-group).
+If the Entra registrations and GitHub configuration are also gone, use the
+fresh bootstrap instead.
+
+## Scripted setup paths
+
+Run these scripts from the repository root in a private terminal. They use your
+interactive Azure and GitHub CLI sign-ins; they do not give the GitHub workflow
+subscription-wide permissions.
+
+### First setup when the Entra and GitHub setup is also missing
+
+Install Azure CLI with the Container Apps commands, `jq`, OpenSSL, `curl`,
+`uuidgen` and GitHub CLI. Sign in to Azure and GitHub with accounts authorized
+to create app registrations, grant the documented permissions and consent,
+create resource groups and role assignments, and manage repository secrets
+and variables. Then run:
+
+```bash
+az login
+az account set --subscription "<subscription-id>"
+gh auth login --hostname github.com
+bash infra/bootstrap-prototype.sh
+```
+
+The script creates the Mortgage API, Staff Web and GitHub deployment app
+registrations, configures the GitHub `main`-branch OIDC credential and
+repository settings, grants the required roles and consent, then deploys the
+prototype. It asks for the staff user's Entra UPN and resource names.
+Tenant-admin consent and Azure role-assignment permissions are still required;
+the script cannot grant itself those permissions.
+
+The script refuses to reuse app registrations with the same display names.
+If it stops partway through, it may have left Entra objects behind; inspect
+those objects with an administrator before retrying. It prints newly generated
+secrets once to the terminal and stores them in GitHub. Save them in a
+password manager before continuing; GitHub will not reveal them later. Keep
+the terminal private and do not paste its output into logs, chat or source
+control. The script and complete setup have not yet been validated against
+live Azure.
+
+### Recovery after deleting only the resource group
+
+This assumes the Entra registrations, GitHub OIDC credential, repository
+variables and secrets still exist. Have the current staff secret and service
+API keys available from your password manager. Sign in as an appropriately
+authorized Azure administrator and GitHub repository administrator, then run:
+
+```bash
+az login
+az account set --subscription "<subscription-id>"
+gh auth login --hostname github.com
+bash infra/recover-prototype.sh
+```
+
+The script refuses to run if the resource group already exists. It runs the
+interactive quickstart, restores the constrained group-scoped deployment
+permissions using the newly created managed identity IDs, extends the
+notification permissions, and initializes deployment-stack ownership. It
+prompts for the existing `DEPLOYMENT_FINGERPRINT_KEY`; retrieve it from your
+password manager, because GitHub secrets cannot be read back. Do not start a
+GitHub deployment while either local script is running.
+
+Both paths create billable resources and can leave partial changes if a
+deployment fails. Inspect the error and Azure state before retrying. The
+normal GitHub workflows remain the day-to-day create, delete and selective
+deployment path once setup is complete.
 
 ## 1. Prepare
 
