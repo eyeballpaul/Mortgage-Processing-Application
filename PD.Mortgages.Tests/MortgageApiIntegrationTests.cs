@@ -44,15 +44,15 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         };
         using var http = staff ? mortgage.Staff() : mortgage.Customer(Guid.NewGuid());
         var client = new MortgageApiClient(http, new ExistingHeadersCredentials());
-        var application = staff ? await client.CreateForStaffAsync() : await client.CreateAsync();
-        await client.SaveQualificationAsync(application.Id, 300000, 30000, application.Version);
-        application = await client.GetAsync(application.Id);
-        await client.SaveFinancesAsync(application.Id, 100000, 1000, EmploymentType.Employed, application.Version);
-        application = await client.GetAsync(application.Id);
-        await client.SaveConsentsAsync(application.Id, false, application.Version);
-        application = await client.GetAsync(application.Id);
+        var application = staff ? await client.CreateForStaffAsync(TestContext.Current.CancellationToken) : await client.CreateAsync(TestContext.Current.CancellationToken);
+        await client.SaveQualificationAsync(application.Id, 300000, 30000, application.Version, TestContext.Current.CancellationToken);
+        application = await client.GetAsync(application.Id, TestContext.Current.CancellationToken);
+        await client.SaveFinancesAsync(application.Id, 100000, 1000, EmploymentType.Employed, application.Version, TestContext.Current.CancellationToken);
+        application = await client.GetAsync(application.Id, TestContext.Current.CancellationToken);
+        await client.SaveConsentsAsync(application.Id, false, application.Version, TestContext.Current.CancellationToken);
+        application = await client.GetAsync(application.Id, TestContext.Current.CancellationToken);
 
-        var result = await client.GenerateDecisionInPrincipleAsync(application.Id, application.Version);
+        var result = await client.GenerateDecisionInPrincipleAsync(application.Id, application.Version, TestContext.Current.CancellationToken);
         Assert.Equal(DecisionInPrincipleOutcome.CreditCheckNotSelected, result.DecisionInPrinciple!.Outcome);
         Assert.Equal(270000, result.DecisionInPrinciple.RequestedLoanAmount);
     }
@@ -65,15 +65,15 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         using var mortgage = new ApiFactory { EligibilityOverride = new UnavailableEligibilityClient() };
         using var http = staff ? mortgage.Staff() : mortgage.Customer(Guid.NewGuid());
         var client = new MortgageApiClient(http, new ExistingHeadersCredentials());
-        var application = staff ? await client.CreateForStaffAsync() : await client.CreateAsync();
-        await client.SaveQualificationAsync(application.Id, 300000, 30000, application.Version);
-        application = await client.GetAsync(application.Id);
-        await client.SaveFinancesAsync(application.Id, 100000, 1000, EmploymentType.Employed, application.Version);
-        application = await client.GetAsync(application.Id);
+        var application = staff ? await client.CreateForStaffAsync(TestContext.Current.CancellationToken) : await client.CreateAsync(TestContext.Current.CancellationToken);
+        await client.SaveQualificationAsync(application.Id, 300000, 30000, application.Version, TestContext.Current.CancellationToken);
+        application = await client.GetAsync(application.Id, TestContext.Current.CancellationToken);
+        await client.SaveFinancesAsync(application.Id, 100000, 1000, EmploymentType.Employed, application.Version, TestContext.Current.CancellationToken);
+        application = await client.GetAsync(application.Id, TestContext.Current.CancellationToken);
         var exception = await Assert.ThrowsAsync<HttpRequestException>(() =>
-            client.GenerateDecisionInPrincipleAsync(application.Id, application.Version));
+            client.GenerateDecisionInPrincipleAsync(application.Id, application.Version, TestContext.Current.CancellationToken));
         Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
-        var unchanged = await client.GetAsync(application.Id);
+        var unchanged = await client.GetAsync(application.Id, TestContext.Current.CancellationToken);
         Assert.Equal(application.Version, unchanged.Version);
         Assert.Null(unchanged.DecisionInPrinciple);
     }
@@ -90,17 +90,17 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
     {
         using var http = factory.Customer(Guid.NewGuid());
         var client = new MortgageApiClient(http, new ExistingHeadersCredentials());
-        var created = await client.CreateAsync();
+        var created = await client.CreateAsync(TestContext.Current.CancellationToken);
         http.DefaultRequestHeaders.Add("X-Expected-Version", created.Version.ToString());
         var root = $"/api/v1/mortgages/{created.Id}";
 
-        using var applicant = await http.PutAsJsonAsync($"{root}/applicant", new SaveApplicantRequest("Jane", "Doe", "invalid", "07123456789"));
-        using var qualification = await http.PutAsJsonAsync($"{root}/qualification", new SaveQualificationRequest(1, 0));
-        using var finances = await http.PutAsJsonAsync($"{root}/finances", new SaveFinancesRequest(100000, 1000, (EmploymentTypeContract)99));
+        using var applicant = await http.PutAsJsonAsync($"{root}/applicant", new SaveApplicantRequest("Jane", "Doe", "invalid", "07123456789"), cancellationToken: TestContext.Current.CancellationToken);
+        using var qualification = await http.PutAsJsonAsync($"{root}/qualification", new SaveQualificationRequest(1, 0), cancellationToken: TestContext.Current.CancellationToken);
+        using var finances = await http.PutAsJsonAsync($"{root}/finances", new SaveFinancesRequest(100000, 1000, (EmploymentTypeContract)99), cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, applicant.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, qualification.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, finances.StatusCode);
-        var unchanged = await client.GetAsync(created.Id);
+        var unchanged = await client.GetAsync(created.Id, TestContext.Current.CancellationToken);
         Assert.Equal(created.Version, unchanged.Version);
         Assert.Null(unchanged.FirstName);
     }
@@ -112,31 +112,31 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         using var staffHttp = factory.Staff();
         var owner = new MortgageApiClient(ownerHttp, new ExistingHeadersCredentials());
         var staff = new MortgageApiClient(staffHttp, new ExistingHeadersCredentials());
-        var created = await owner.CreateAsync();
+        var created = await owner.CreateAsync(TestContext.Current.CancellationToken);
         var root = $"/api/v1/mortgages/{created.Id}";
         var request = new SaveQualificationRequest(300000, 30000);
 
-        using var missing = await ownerHttp.PutAsJsonAsync($"{root}/qualification", request);
+        using var missing = await ownerHttp.PutAsJsonAsync($"{root}/qualification", request, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
         ownerHttp.DefaultRequestHeaders.Add("X-Expected-Version", "not-a-version");
-        using var invalid = await ownerHttp.PutAsJsonAsync($"{root}/qualification", request);
+        using var invalid = await ownerHttp.PutAsJsonAsync($"{root}/qualification", request, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
         ownerHttp.DefaultRequestHeaders.Remove("X-Expected-Version");
 
-        var staffView = await staff.GetForStaffAsync(created.Id);
+        var staffView = await staff.GetForStaffAsync(created.Id, TestContext.Current.CancellationToken);
         Assert.Equal(created.Version, staffView.Version);
-        await owner.SaveQualificationAsync(created.Id, 300000, 30000, created.Version);
-        var updated = await owner.GetAsync(created.Id);
+        await owner.SaveQualificationAsync(created.Id, 300000, 30000, created.Version, TestContext.Current.CancellationToken);
+        var updated = await owner.GetAsync(created.Id, TestContext.Current.CancellationToken);
         Assert.True(updated.Version > created.Version);
         await Assert.ThrowsAsync<PD.Mortgages.Application.Services.MortgageConcurrencyException>(() =>
-            staff.SaveQualificationAsync(created.Id, 400000, 40000, staffView.Version));
+            staff.SaveQualificationAsync(created.Id, 400000, 40000, staffView.Version, TestContext.Current.CancellationToken));
         ownerHttp.DefaultRequestHeaders.Add("X-Expected-Version", created.Version.ToString());
-        using var stale = await ownerHttp.PutAsJsonAsync($"{root}/qualification", request);
+        using var stale = await ownerHttp.PutAsJsonAsync($"{root}/qualification", request, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
-        var problem = await stale.Content.ReadFromJsonAsync<ProblemDetails>();
+        var problem = await stale.Content.ReadFromJsonAsync<ProblemDetails>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(MortgageApiProblems.ConcurrencyConflict, problem!.Type);
-        Assert.Equal(300000, (await owner.GetAsync(created.Id)).PropertyValue);
-        var audit = await staff.GetAuditTrailForStaffAsync(created.Id, 1, 25);
+        Assert.Equal(300000, (await owner.GetAsync(created.Id, TestContext.Current.CancellationToken)).PropertyValue);
+        var audit = await staff.GetAuditTrailForStaffAsync(created.Id, 1, 25, TestContext.Current.CancellationToken);
         Assert.Single(audit.Events, entry => entry.Action == "Qualification updated");
     }
 
@@ -146,24 +146,24 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         using var ownerHttp = factory.Customer(Guid.NewGuid());
         using var otherHttp = factory.Customer(Guid.NewGuid());
         var owner = new MortgageApiClient(ownerHttp, new ExistingHeadersCredentials());
-        var created = await owner.CreateAsync();
-        await owner.SaveQualificationAsync(created.Id, 300000, 30000, created.Version);
-        var current = await owner.GetAsync(created.Id);
+        var created = await owner.CreateAsync(TestContext.Current.CancellationToken);
+        await owner.SaveQualificationAsync(created.Id, 300000, 30000, created.Version, TestContext.Current.CancellationToken);
+        var current = await owner.GetAsync(created.Id, TestContext.Current.CancellationToken);
         var root = $"/api/v1/mortgages/{created.Id}";
 
         otherHttp.DefaultRequestHeaders.Add("X-Expected-Version", current.Version.ToString());
-        Assert.Equal(HttpStatusCode.Forbidden, (await otherHttp.DeleteAsync(root)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await otherHttp.DeleteAsync(root, TestContext.Current.CancellationToken)).StatusCode);
         ownerHttp.DefaultRequestHeaders.Add("X-Expected-Version", created.Version.ToString());
-        Assert.Equal(HttpStatusCode.Conflict, (await ownerHttp.DeleteAsync(root)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await ownerHttp.DeleteAsync(root, TestContext.Current.CancellationToken)).StatusCode);
         ownerHttp.DefaultRequestHeaders.Remove("X-Expected-Version");
         ownerHttp.DefaultRequestHeaders.Add("X-Expected-Version", current.Version.ToString());
-        Assert.Equal(HttpStatusCode.NoContent, (await ownerHttp.DeleteAsync(root)).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await ownerHttp.GetAsync(root)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await ownerHttp.DeleteAsync(root, TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await ownerHttp.GetAsync(root, TestContext.Current.CancellationToken)).StatusCode);
         using var staff = factory.Staff();
-        var audit = await new MortgageApiClient(staff, new ExistingHeadersCredentials()).GetAuditTrailForStaffAsync(created.Id, 1, 25);
+        var audit = await new MortgageApiClient(staff, new ExistingHeadersCredentials()).GetAuditTrailForStaffAsync(created.Id, 1, 25, TestContext.Current.CancellationToken);
         Assert.Contains(audit.Events, entry => entry.Action == "Draft deleted");
-        Assert.Equal(HttpStatusCode.Forbidden, (await ownerHttp.GetAsync($"/api/v1/mortgages/staff/{created.Id}/audit")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await staff.GetAsync($"/api/v1/mortgages/staff/{Guid.NewGuid()}/audit")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await ownerHttp.GetAsync($"/api/v1/mortgages/staff/{created.Id}/audit", TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await staff.GetAsync($"/api/v1/mortgages/staff/{Guid.NewGuid()}/audit", TestContext.Current.CancellationToken)).StatusCode);
     }
 
     [Fact]
@@ -172,9 +172,9 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         using var owner = factory.Customer(Guid.NewGuid());
         using var other = factory.Customer(Guid.NewGuid());
         using var staff = factory.Staff();
-        using var created = await owner.PostAsync("/api/v1/mortgages", null);
+        using var created = await owner.PostAsync("/api/v1/mortgages", null, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-        var application = await created.Content.ReadFromJsonAsync<MortgageApplicationDto>(factory.JsonOptions);
+        var application = await created.Content.ReadFromJsonAsync<MortgageApplicationDto>(factory.JsonOptions, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(application);
         var root = $"/api/v1/mortgages/{application.Id}";
         async Task SetCurrentVersion()
@@ -184,71 +184,71 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
             owner.DefaultRequestHeaders.Add("X-Expected-Version", current!.Version.ToString());
         }
 
-        Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync(root)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync(root, TestContext.Current.CancellationToken)).StatusCode);
         await SetCurrentVersion();
-        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/qualification", new SaveQualificationRequest(300000, 30000))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/qualification", new SaveQualificationRequest(300000, 30000), cancellationToken: TestContext.Current.CancellationToken)).StatusCode);
         await SetCurrentVersion();
-        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/applicant", new SaveApplicantRequest("Jane", "Doe", "jane@example.com", "07123456789"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/applicant", new SaveApplicantRequest("Jane", "Doe", "jane@example.com", "07123456789"), cancellationToken: TestContext.Current.CancellationToken)).StatusCode);
         await SetCurrentVersion();
-        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/finances", new { annualIncome = 100000, monthlyCommitments = 1000, employmentType = "Employed" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/finances", new { annualIncome = 100000, monthlyCommitments = 1000, employmentType = "Employed" }, cancellationToken: TestContext.Current.CancellationToken)).StatusCode);
         await SetCurrentVersion();
-        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/consents", new SaveConsentsRequest(false))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/consents", new SaveConsentsRequest(false), cancellationToken: TestContext.Current.CancellationToken)).StatusCode);
         await SetCurrentVersion();
-        Assert.Equal(HttpStatusCode.OK, (await owner.PostAsync($"{root}/decision", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.PostAsync($"{root}/decision", null, TestContext.Current.CancellationToken)).StatusCode);
         await SetCurrentVersion();
-        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/product", new SelectProductRequest("fixed-2"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"{root}/product", new SelectProductRequest("fixed-2"), cancellationToken: TestContext.Current.CancellationToken)).StatusCode);
 
-        var wireApplication = await owner.GetFromJsonAsync<ApplicationResponse>(root, factory.JsonOptions);
+        var wireApplication = await owner.GetFromJsonAsync<ApplicationResponse>(root, factory.JsonOptions, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(wireApplication);
         Assert.Equal(ApplicationStatusContract.InProgress, wireApplication.Status);
         Assert.Equal(EmploymentTypeContract.Employed, wireApplication.EmploymentType);
         Assert.Equal(DecisionOutcomeContract.CreditCheckNotSelected, wireApplication.DecisionInPrinciple!.Outcome);
         Assert.Equal("fixed-2", wireApplication.SelectedProduct!.Id);
-        var mappedApplication = await new MortgageApiClient(owner, new ExistingHeadersCredentials()).GetAsync(application.Id);
+        var mappedApplication = await new MortgageApiClient(owner, new ExistingHeadersCredentials()).GetAsync(application.Id, TestContext.Current.CancellationToken);
         Assert.Equal(wireApplication.SelectedProduct.InterestRate, mappedApplication.SelectedProduct!.InterestRate);
 
         await SetCurrentVersion();
-        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync($"{root}/documents", new UploadDocumentRequest("bad.pdf", "not a pdf"u8.ToArray()))).StatusCode);
-        using var uploaded = await owner.PostAsJsonAsync($"{root}/documents", new UploadDocumentRequest("../valid.pdf", "%PDF-1.7"u8.ToArray()));
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync($"{root}/documents", new UploadDocumentRequest("bad.pdf", "not a pdf"u8.ToArray()), cancellationToken: TestContext.Current.CancellationToken)).StatusCode);
+        using var uploaded = await owner.PostAsJsonAsync($"{root}/documents", new UploadDocumentRequest("../valid.pdf", "%PDF-1.7"u8.ToArray()), cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Created, uploaded.StatusCode);
         Assert.NotNull(uploaded.Headers.Location);
-        using var refreshed = await owner.GetAsync(root);
-        var draft = await refreshed.Content.ReadFromJsonAsync<MortgageApplicationDto>(factory.JsonOptions);
+        using var refreshed = await owner.GetAsync(root, TestContext.Current.CancellationToken);
+        var draft = await refreshed.Content.ReadFromJsonAsync<MortgageApplicationDto>(factory.JsonOptions, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(draft);
         var document = Assert.Single(draft.Documents);
         Assert.Equal("valid.pdf", document.FileName);
-        Assert.Equal("%PDF-1.7", Encoding.UTF8.GetString(await owner.GetByteArrayAsync($"{root}/documents/{document.Id}")));
+        Assert.Equal("%PDF-1.7", Encoding.UTF8.GetString(await owner.GetByteArrayAsync($"{root}/documents/{document.Id}", TestContext.Current.CancellationToken)));
         for (var index = 0; index < 9; index++)
         {
             await SetCurrentVersion();
-            Assert.Equal(HttpStatusCode.Created, (await owner.PostAsJsonAsync($"{root}/documents", new UploadDocumentRequest($"valid-{index}.pdf", "%PDF-1.7"u8.ToArray()))).StatusCode);
+            Assert.Equal(HttpStatusCode.Created, (await owner.PostAsJsonAsync($"{root}/documents", new UploadDocumentRequest($"valid-{index}.pdf", "%PDF-1.7"u8.ToArray()), cancellationToken: TestContext.Current.CancellationToken)).StatusCode);
         }
         await SetCurrentVersion();
-        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync($"{root}/documents", new UploadDocumentRequest("extra.pdf", "%PDF-1.7"u8.ToArray()))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync($"{root}/documents", new UploadDocumentRequest("extra.pdf", "%PDF-1.7"u8.ToArray()), cancellationToken: TestContext.Current.CancellationToken)).StatusCode);
 
         var submissionKey = Guid.NewGuid();
         var submissions = await Task.WhenAll(
-            owner.PostAsJsonAsync($"{root}/customer-submission", new SubmitCustomerRequest(submissionKey)),
-            owner.PostAsJsonAsync($"{root}/customer-submission", new SubmitCustomerRequest(submissionKey)));
+            owner.PostAsJsonAsync($"{root}/customer-submission", new SubmitCustomerRequest(submissionKey), cancellationToken: TestContext.Current.CancellationToken),
+            owner.PostAsJsonAsync($"{root}/customer-submission", new SubmitCustomerRequest(submissionKey), cancellationToken: TestContext.Current.CancellationToken));
         using var submitted = submissions[0];
         using var repeated = submissions[1];
         Assert.Equal(HttpStatusCode.OK, submitted.StatusCode);
         Assert.Equal(HttpStatusCode.OK, repeated.StatusCode);
-        var receipt = await repeated.Content.ReadFromJsonAsync<SubmissionReceiptDto>();
+        var receipt = await repeated.Content.ReadFromJsonAsync<SubmissionReceiptDto>(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(application.Id, receipt!.Reference);
         other.DefaultRequestHeaders.Add("X-Submission-Key", submissionKey.ToString("D"));
-        Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync($"{root}/submission-receipt")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync($"{root}/submission-receipt", TestContext.Current.CancellationToken)).StatusCode);
         owner.DefaultRequestHeaders.Add("X-Submission-Key", Guid.NewGuid().ToString("D"));
-        Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync($"{root}/submission-receipt")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync($"{root}/submission-receipt", TestContext.Current.CancellationToken)).StatusCode);
         owner.DefaultRequestHeaders.Remove("X-Submission-Key");
         owner.DefaultRequestHeaders.Add("X-Submission-Key", submissionKey.ToString("D"));
-        Assert.Equal(HttpStatusCode.OK, (await owner.GetAsync($"{root}/submission-receipt")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await owner.GetAsync(root)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"/api/v1/mortgages/staff/{application.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.GetAsync($"{root}/submission-receipt", TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await owner.GetAsync(root, TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await staff.GetAsync($"/api/v1/mortgages/staff/{application.Id}", TestContext.Current.CancellationToken)).StatusCode);
         var staffClient = new MortgageApiClient(staff, new ExistingHeadersCredentials());
-        var search = await staffClient.SearchForStaffAsync(application.Id.ToString(), ApplicationStatus.Submitted, 1, 25);
+        var search = await staffClient.SearchForStaffAsync(application.Id.ToString(), ApplicationStatus.Submitted, 1, 25, TestContext.Current.CancellationToken);
         Assert.Contains(search.Applications, item => item.Id == application.Id && item.Status == ApplicationStatus.Submitted);
-        var audit = await staff.GetFromJsonAsync<MortgageApplicationAuditPageDto>($"/api/v1/mortgages/staff/{application.Id}/audit?page=1&pageSize=25", factory.JsonOptions);
+        var audit = await staff.GetFromJsonAsync<MortgageApplicationAuditPageDto>($"/api/v1/mortgages/staff/{application.Id}/audit?page=1&pageSize=25", factory.JsonOptions, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(audit);
         Assert.Single(audit.Events, entry => entry.Action == "Application submitted" && entry.ActorId.StartsWith("session:", StringComparison.Ordinal));
     }
@@ -259,30 +259,30 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         using var noToken = factory.CreateClient();
         noToken.DefaultRequestHeaders.Add("X-Mortgage-Session", $"session:{Guid.NewGuid():N}");
         noToken.DefaultRequestHeaders.Add("X-Staff-Role", "MortgageStaff");
-        Assert.Equal(HttpStatusCode.Unauthorized, (await noToken.GetAsync("/api/v1/mortgages/staff?page=1&pageSize=25")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await noToken.GetAsync("/api/v1/mortgages/staff?page=1&pageSize=25", TestContext.Current.CancellationToken)).StatusCode);
 
         using var customer = factory.Customer(Guid.NewGuid());
         customer.DefaultRequestHeaders.Add("X-Staff-Role", "MortgageStaff");
-        Assert.Equal(HttpStatusCode.Forbidden, (await customer.GetAsync("/api/v1/mortgages/staff?page=1&pageSize=25")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await customer.GetAsync("/api/v1/mortgages/staff?page=1&pageSize=25", TestContext.Current.CancellationToken)).StatusCode);
         using var wrongCustomer = factory.Customer(Guid.NewGuid(), clientId: Guid.NewGuid().ToString());
         using var delegatedCustomer = factory.Customer(Guid.NewGuid(), delegated: true);
-        Assert.Equal(HttpStatusCode.Forbidden, (await wrongCustomer.PostAsync("/api/v1/mortgages", null)).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await delegatedCustomer.PostAsync("/api/v1/mortgages", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await wrongCustomer.PostAsync("/api/v1/mortgages", null, TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await delegatedCustomer.PostAsync("/api/v1/mortgages", null, TestContext.Current.CancellationToken)).StatusCode);
 
         using var missingRole = factory.Staff(role: false);
         using var missingScope = factory.Staff(scope: false);
         using var wrongCaller = factory.Staff(clientId: Guid.NewGuid().ToString());
         foreach (var client in new[] { missingRole, missingScope, wrongCaller })
         {
-            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/v1/mortgages/staff?page=1&pageSize=25")).StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/v1/mortgages/staff?page=1&pageSize=25", TestContext.Current.CancellationToken)).StatusCode);
         }
 
         using var staff = factory.Staff();
-        using var created = await staff.PostAsync("/api/v1/mortgages/staff", null);
+        using var created = await staff.PostAsync("/api/v1/mortgages/staff", null, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-        var application = await created.Content.ReadFromJsonAsync<MortgageApplicationDto>(factory.JsonOptions);
+        var application = await created.Content.ReadFromJsonAsync<MortgageApplicationDto>(factory.JsonOptions, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal($"{ApiFactory.TenantId}:{ApiFactory.StaffObjectId}", application!.CreatedByEmployeeId);
-        var audit = await staff.GetFromJsonAsync<MortgageApplicationAuditPageDto>($"/api/v1/mortgages/staff/{application.Id}/audit?page=1&pageSize=25", factory.JsonOptions);
+        var audit = await staff.GetFromJsonAsync<MortgageApplicationAuditPageDto>($"/api/v1/mortgages/staff/{application.Id}/audit?page=1&pageSize=25", factory.JsonOptions, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal($"{ApiFactory.TenantId}:{ApiFactory.StaffObjectId}", Assert.Single(audit!.Events).ActorId);
     }
 
@@ -292,8 +292,8 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         using var development = factory.CreateClient();
         development.DefaultRequestHeaders.Add("X-Development-Api-Key", ApiFactory.DevelopmentKey);
         development.DefaultRequestHeaders.Add("X-Mortgage-Session", $"session:{Guid.NewGuid():N}");
-        Assert.Equal(HttpStatusCode.Created, (await development.PostAsync("/api/v1/mortgages", null)).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await development.GetAsync("/api/v1/mortgages/staff")).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await development.PostAsync("/api/v1/mortgages", null, TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await development.GetAsync("/api/v1/mortgages/staff", TestContext.Current.CancellationToken)).StatusCode);
 
         using var productionFactory = factory.WithWebHostBuilder(builder =>
         {
@@ -315,7 +315,7 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         using var production = productionFactory.CreateClient();
         production.DefaultRequestHeaders.Add("X-Development-Api-Key", ApiFactory.DevelopmentKey);
         production.DefaultRequestHeaders.Add("X-Mortgage-Session", $"session:{Guid.NewGuid():N}");
-        Assert.Equal(HttpStatusCode.Unauthorized, (await production.PostAsync("/api/v1/mortgages", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await production.PostAsync("/api/v1/mortgages", null, TestContext.Current.CancellationToken)).StatusCode);
     }
 
     [Fact]
@@ -336,8 +336,8 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         }));
         using var client = failingFactory.CreateClient();
 
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/ready")).StatusCode);
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/health/dependencies")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/ready", TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/health/dependencies", TestContext.Current.CancellationToken)).StatusCode);
     }
 
     private sealed class UnavailableCatalog : IProductCatalogClient
@@ -361,16 +361,16 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         var owner = new MortgageApiClient(ownerHttp, new ExistingHeadersCredentials());
         var other = new MortgageApiClient(otherHttp, new ExistingHeadersCredentials());
         var unauthenticated = new MortgageApiClient(unauthenticatedHttp, new ExistingHeadersCredentials());
-        var application = await owner.CreateAsync();
+        var application = await owner.CreateAsync(TestContext.Current.CancellationToken);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => other.GetAsync(application.Id));
-        await Assert.ThrowsAsync<HttpRequestException>(() => unauthenticated.GetAsync(application.Id));
-        var documentId = await owner.AddDocumentAsync(application.Id, "test.pdf", "%PDF-1.7"u8.ToArray(), application.Version);
-        Assert.Equal("%PDF-1.7", Encoding.UTF8.GetString((await owner.GetDocumentAsync(application.Id, documentId))!));
-        Assert.Null(await owner.GetDocumentAsync(application.Id, Guid.NewGuid()));
-        Assert.Null(await owner.GetProductAsync("missing-product"));
-        Assert.Null(await owner.GetSubmissionReceiptAsync(application.Id, Guid.NewGuid()));
-        await Assert.ThrowsAsync<KeyNotFoundException>(() => owner.GetDocumentAsync(Guid.NewGuid(), Guid.NewGuid()));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => other.GetAsync(application.Id, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<HttpRequestException>(() => unauthenticated.GetAsync(application.Id, TestContext.Current.CancellationToken));
+        var documentId = await owner.AddDocumentAsync(application.Id, "test.pdf", "%PDF-1.7"u8.ToArray(), application.Version, TestContext.Current.CancellationToken);
+        Assert.Equal("%PDF-1.7", Encoding.UTF8.GetString((await owner.GetDocumentAsync(application.Id, documentId, TestContext.Current.CancellationToken))!));
+        Assert.Null(await owner.GetDocumentAsync(application.Id, Guid.NewGuid(), TestContext.Current.CancellationToken));
+        Assert.Null(await owner.GetProductAsync("missing-product", TestContext.Current.CancellationToken));
+        Assert.Null(await owner.GetSubmissionReceiptAsync(application.Id, Guid.NewGuid(), TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => owner.GetDocumentAsync(Guid.NewGuid(), Guid.NewGuid(), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -380,7 +380,7 @@ public sealed class MortgageApiIntegrationTests : IClassFixture<MortgageApiInteg
         using var http = new HttpClient(handler) { BaseAddress = new Uri("https://api.example/") };
         var client = new MortgageApiClient(http, new ExistingHeadersCredentials());
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => client.SubmitAsync(Guid.NewGuid(), 0));
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.SubmitAsync(Guid.NewGuid(), 0, TestContext.Current.CancellationToken));
         Assert.Equal(1, handler.Attempts);
     }
 

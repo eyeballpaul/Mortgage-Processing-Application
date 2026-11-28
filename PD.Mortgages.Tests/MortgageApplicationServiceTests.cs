@@ -21,13 +21,13 @@ public sealed class MortgageApplicationServiceTests
         var repository = new InMemoryMortgageApplicationRepository();
         var catalog = new MutableCatalog();
         var service = CreateService(repository, catalog: catalog);
-        var application = await service.CreateAsync();
-        await service.SaveQualificationAsync(application.Id, 300_000, 30_000, application.Version);
-        var current = await service.GetAsync(application.Id);
-        await service.SelectProductAsync(application.Id, "fixed-2", current.Version);
+        var application = await service.CreateAsync(TestContext.Current.CancellationToken);
+        await service.SaveQualificationAsync(application.Id, 300_000, 30_000, application.Version, TestContext.Current.CancellationToken);
+        var current = await service.GetAsync(application.Id, TestContext.Current.CancellationToken);
+        await service.SelectProductAsync(application.Id, "fixed-2", current.Version, TestContext.Current.CancellationToken);
         catalog.Product = catalog.Product with { InterestRate = 9m, CatalogVersion = "changed" };
 
-        var selected = (await service.GetAsync(application.Id)).SelectedProduct;
+        var selected = (await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).SelectedProduct;
         Assert.NotNull(selected);
         Assert.Equal(4m, selected.InterestRate);
         Assert.Equal("original", selected.CatalogVersion);
@@ -39,15 +39,15 @@ public sealed class MortgageApplicationServiceTests
         var repository = new InMemoryMortgageApplicationRepository();
         var storage = new PausingDocumentStorage();
         var service = CreateService(repository, storage: storage);
-        var application = await service.CreateAsync();
-        var upload = service.AddDocumentAsync(application.Id, "test.pdf", "%PDF-1.7"u8.ToArray(), application.Version);
+        var application = await service.CreateAsync(TestContext.Current.CancellationToken);
+        var upload = service.AddDocumentAsync(application.Id, "test.pdf", "%PDF-1.7"u8.ToArray(), application.Version, TestContext.Current.CancellationToken);
         await storage.Stored.Task;
-        await service.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version);
+        await service.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version, TestContext.Current.CancellationToken);
         storage.Continue.SetResult();
 
         await Assert.ThrowsAsync<MortgageConcurrencyException>(() => upload);
-        Assert.Null(await storage.GetAsync(application.Id, storage.DocumentId));
-        Assert.Empty((await service.GetAsync(application.Id)).Documents);
+        Assert.Null(await storage.GetAsync(application.Id, storage.DocumentId, TestContext.Current.CancellationToken));
+        Assert.Empty((await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).Documents);
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public sealed class MortgageApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var storage = new InMemoryMortgageDocumentStorage();
-        var application = await CreateService(repository, storage: storage).CreateAsync();
+        var application = await CreateService(repository, storage: storage).CreateAsync(TestContext.Current.CancellationToken);
         var service = new MortgageApplicationService(
             new CommitResponseLostRepository(repository), repository.AuditRepository,
             new MockProductCatalogClient(new LocalProductCatalogFallback()), new TestEligibilityClient(), storage,
@@ -63,10 +63,10 @@ public sealed class MortgageApplicationServiceTests
             new DocumentUploadValidator(), repository, NullLogger<MortgageApplicationService>.Instance);
 
         await Assert.ThrowsAsync<IOException>(() =>
-            service.AddDocumentAsync(application.Id, "test.pdf", "%PDF-1.7"u8.ToArray(), application.Version));
+            service.AddDocumentAsync(application.Id, "test.pdf", "%PDF-1.7"u8.ToArray(), application.Version, TestContext.Current.CancellationToken));
 
-        var document = Assert.Single((await repository.GetByIdAsync(application.Id))!.Documents);
-        Assert.Equal("%PDF-1.7"u8.ToArray(), await storage.GetAsync(application.Id, document.Id));
+        var document = Assert.Single((await repository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken))!.Documents);
+        Assert.Equal("%PDF-1.7"u8.ToArray(), await storage.GetAsync(application.Id, document.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -75,13 +75,13 @@ public sealed class MortgageApplicationServiceTests
         var repository = new InMemoryMortgageApplicationRepository();
         var storage = new UploadResponseLostStorage();
         var service = CreateService(repository, storage: storage);
-        var application = await service.CreateAsync();
+        var application = await service.CreateAsync(TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<IOException>(() =>
-            service.AddDocumentAsync(application.Id, "test.pdf", "%PDF-1.7"u8.ToArray(), application.Version));
+            service.AddDocumentAsync(application.Id, "test.pdf", "%PDF-1.7"u8.ToArray(), application.Version, TestContext.Current.CancellationToken));
 
-        Assert.Empty((await repository.GetByIdAsync(application.Id))!.Documents);
-        Assert.NotNull(await storage.GetAsync(application.Id, storage.DocumentId));
+        Assert.Empty((await repository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken))!.Documents);
+        Assert.NotNull(await storage.GetAsync(application.Id, storage.DocumentId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -89,16 +89,16 @@ public sealed class MortgageApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var service = CreateService(repository);
-        var application = await service.CreateAsync();
-        await service.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version);
-        await service.SaveFinancesAsync(application.Id, 100_000m, 1_000m, EmploymentType.Employed, (await service.GetAsync(application.Id)).Version);
-        await service.SaveConsentsAsync(application.Id, true, (await service.GetAsync(application.Id)).Version);
-        var version = (await service.GetAsync(application.Id)).Version;
+        var application = await service.CreateAsync(TestContext.Current.CancellationToken);
+        await service.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version, TestContext.Current.CancellationToken);
+        await service.SaveFinancesAsync(application.Id, 100_000m, 1_000m, EmploymentType.Employed, (await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        await service.SaveConsentsAsync(application.Id, true, (await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        var version = (await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version;
 
-        var decision = service.GenerateDecisionInPrincipleAsync(application.Id, version);
-        await service.SaveQualificationAsync(application.Id, 400_000m, 40_000m, version);
+        var decision = service.GenerateDecisionInPrincipleAsync(application.Id, version, TestContext.Current.CancellationToken);
+        await service.SaveQualificationAsync(application.Id, 400_000m, 40_000m, version, TestContext.Current.CancellationToken);
         await Assert.ThrowsAsync<MortgageConcurrencyException>(() => decision);
-        Assert.Null((await service.GetAsync(application.Id)).DecisionInPrinciple);
+        Assert.Null((await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).DecisionInPrinciple);
     }
 
     [Fact]
@@ -116,18 +116,18 @@ public sealed class MortgageApplicationServiceTests
             new DocumentUploadValidator(),
             applicationRepository,
             NullLogger<MortgageApplicationService>.Instance);
-        var application = await applicationService.CreateAsync();
-        await applicationService.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version);
-        await applicationService.SaveFinancesAsync(application.Id, 100_000m, 1_000m, EmploymentType.Employed, (await applicationService.GetAsync(application.Id)).Version);
-        await applicationService.SaveConsentsAsync(application.Id, creditCheckConsent: false, (await applicationService.GetAsync(application.Id)).Version);
+        var application = await applicationService.CreateAsync(TestContext.Current.CancellationToken);
+        await applicationService.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version, TestContext.Current.CancellationToken);
+        await applicationService.SaveFinancesAsync(application.Id, 100_000m, 1_000m, EmploymentType.Employed, (await applicationService.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        await applicationService.SaveConsentsAsync(application.Id, creditCheckConsent: false, (await applicationService.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version, cancellationToken: TestContext.Current.CancellationToken);
 
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        var result = await applicationService.GenerateDecisionInPrincipleAsync(application.Id, (await applicationService.GetAsync(application.Id)).Version, cancellation.Token);
+        var result = await applicationService.GenerateDecisionInPrincipleAsync(application.Id, (await applicationService.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version, cancellation.Token);
 
         Assert.NotNull(result.DecisionInPrinciple);
         Assert.Equal(DecisionInPrincipleOutcome.CreditCheckNotSelected, result.DecisionInPrinciple.Outcome);
         Assert.Null(result.DecisionInPrinciple.IndicativeMaximumBorrowing);
-        Assert.Equal("1", (await applicationRepository.GetByIdAsync(application.Id))!.DecisionInPrinciple!.RuleVersion);
+        Assert.Equal("1", (await applicationRepository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken))!.DecisionInPrinciple!.RuleVersion);
     }
 
     [Fact]
@@ -135,15 +135,15 @@ public sealed class MortgageApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var service = CreateService(repository, eligibility: new UnavailableEligibilityClient());
-        var application = await service.CreateAsync();
-        await service.SaveQualificationAsync(application.Id, 300_000, 30_000, application.Version);
-        var current = await service.GetAsync(application.Id);
-        await service.SaveFinancesAsync(application.Id, 100_000, 1_000, EmploymentType.Employed, current.Version);
-        current = await service.GetAsync(application.Id);
+        var application = await service.CreateAsync(TestContext.Current.CancellationToken);
+        await service.SaveQualificationAsync(application.Id, 300_000, 30_000, application.Version, TestContext.Current.CancellationToken);
+        var current = await service.GetAsync(application.Id, TestContext.Current.CancellationToken);
+        await service.SaveFinancesAsync(application.Id, 100_000, 1_000, EmploymentType.Employed, current.Version, TestContext.Current.CancellationToken);
+        current = await service.GetAsync(application.Id, TestContext.Current.CancellationToken);
 
-        await Assert.ThrowsAsync<EligibilityUnavailableException>(() => service.GenerateDecisionInPrincipleAsync(application.Id, current.Version));
-        Assert.Null((await service.GetAsync(application.Id)).DecisionInPrinciple);
-        Assert.Equal(current.Version, (await service.GetAsync(application.Id)).Version);
+        await Assert.ThrowsAsync<EligibilityUnavailableException>(() => service.GenerateDecisionInPrincipleAsync(application.Id, current.Version, TestContext.Current.CancellationToken));
+        Assert.Null((await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).DecisionInPrinciple);
+        Assert.Equal(current.Version, (await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version);
     }
 
     [Fact]
@@ -151,11 +151,11 @@ public sealed class MortgageApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var service = CreateService(repository);
-        var application = await service.CreateAsync();
+        var application = await service.CreateAsync(TestContext.Current.CancellationToken);
 
-        await service.SaveConsentsAsync(application.Id, true, application.Version);
+        await service.SaveConsentsAsync(application.Id, true, application.Version, TestContext.Current.CancellationToken);
 
-        var persisted = await repository.GetByIdAsync(application.Id);
+        var persisted = await repository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(persisted);
         Assert.Single(persisted.ConsentHistory);
         Assert.All(persisted.ConsentHistory, consent =>
@@ -170,11 +170,11 @@ public sealed class MortgageApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var ownerService = CreateService(repository);
-        var application = await ownerService.CreateAsync();
+        var application = await ownerService.CreateAsync(TestContext.Current.CancellationToken);
         var otherActorService = CreateService(repository, new OtherApplicationActor());
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => otherActorService.DeleteAsync(application.Id, application.Version));
-        Assert.NotNull(await repository.GetByIdAsync(application.Id));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => otherActorService.DeleteAsync(application.Id, application.Version, TestContext.Current.CancellationToken));
+        Assert.NotNull(await repository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -183,17 +183,17 @@ public sealed class MortgageApplicationServiceTests
         var repository = new InMemoryMortgageApplicationRepository();
         var storage = new InMemoryMortgageDocumentStorage();
         var service = CreateService(repository, storage: storage);
-        var application = await service.CreateAsync();
-        var documentId = await service.AddDocumentAsync(application.Id, "test.pdf", "%PDF-1.7"u8.ToArray(), application.Version);
+        var application = await service.CreateAsync(TestContext.Current.CancellationToken);
+        var documentId = await service.AddDocumentAsync(application.Id, "test.pdf", "%PDF-1.7"u8.ToArray(), application.Version, TestContext.Current.CancellationToken);
 
-        await Assert.ThrowsAsync<MortgageConcurrencyException>(() => service.DeleteAsync(application.Id, application.Version));
-        Assert.NotNull(await storage.GetAsync(application.Id, documentId));
-        var current = await service.GetAsync(application.Id);
-        await service.DeleteAsync(application.Id, current.Version);
+        await Assert.ThrowsAsync<MortgageConcurrencyException>(() => service.DeleteAsync(application.Id, application.Version, TestContext.Current.CancellationToken));
+        Assert.NotNull(await storage.GetAsync(application.Id, documentId, TestContext.Current.CancellationToken));
+        var current = await service.GetAsync(application.Id, TestContext.Current.CancellationToken);
+        await service.DeleteAsync(application.Id, current.Version, TestContext.Current.CancellationToken);
 
-        Assert.Null(await repository.GetByIdAsync(application.Id));
-        Assert.Contains(application.Id, await repository.FindDocumentsDueForCleanupAsync(DateTime.UtcNow.AddDays(-1), 100));
-        var audit = await repository.AuditRepository.GetPageAsync(application.Id, 1, 25);
+        Assert.Null(await repository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken));
+        Assert.Contains(application.Id, await repository.FindDocumentsDueForCleanupAsync(DateTime.UtcNow.AddDays(-1), 100, TestContext.Current.CancellationToken));
+        var audit = await repository.AuditRepository.GetPageAsync(application.Id, 1, 25, TestContext.Current.CancellationToken);
         Assert.Contains(audit.Events, entry => entry.Action == "Draft deleted" && entry.ActorId == "customer-1");
     }
 
@@ -203,12 +203,12 @@ public sealed class MortgageApplicationServiceTests
         var repository = new InMemoryMortgageApplicationRepository();
         var owner = CreateService(repository);
         var other = CreateService(repository, new OtherApplicationActor());
-        var application = await owner.CreateAsync();
-        await owner.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version);
+        var application = await owner.CreateAsync(TestContext.Current.CancellationToken);
+        await owner.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version, TestContext.Current.CancellationToken);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => other.GetAsync(application.Id));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => other.SaveQualificationAsync(application.Id, 400_000m, 40_000m, application.Version));
-        Assert.Equal(300_000m, (await owner.GetAsync(application.Id)).PropertyValue);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => other.GetAsync(application.Id, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => other.SaveQualificationAsync(application.Id, 400_000m, 40_000m, application.Version, TestContext.Current.CancellationToken));
+        Assert.Equal(300_000m, (await owner.GetAsync(application.Id, TestContext.Current.CancellationToken)).PropertyValue);
     }
 
     [Fact]
@@ -216,16 +216,16 @@ public sealed class MortgageApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var owner = CreateService(repository);
-        var application = await owner.CreateAsync();
-        await Task.Delay(TimeSpan.FromMilliseconds(20));
+        var application = await owner.CreateAsync(TestContext.Current.CancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(20), TestContext.Current.CancellationToken);
         var cutoff = DateTime.UtcNow;
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            CreateService(repository, new OtherApplicationActor()).GetAsync(application.Id));
-        Assert.Contains(await repository.FindExpiredDraftsAsync(cutoff, 100), draft => draft.Id == application.Id);
+            CreateService(repository, new OtherApplicationActor()).GetAsync(application.Id, TestContext.Current.CancellationToken));
+        Assert.Contains(await repository.FindExpiredDraftsAsync(cutoff, 100, TestContext.Current.CancellationToken), draft => draft.Id == application.Id);
 
-        await owner.GetAsync(application.Id);
-        Assert.DoesNotContain(await repository.FindExpiredDraftsAsync(cutoff, 100), draft => draft.Id == application.Id);
+        await owner.GetAsync(application.Id, TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(await repository.FindExpiredDraftsAsync(cutoff, 100, TestContext.Current.CancellationToken), draft => draft.Id == application.Id);
     }
 
     [Fact]
@@ -233,24 +233,24 @@ public sealed class MortgageApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var service = CreateService(repository);
-        var application = await service.CreateAsync();
-        await service.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version);
-        await service.SaveApplicantAsync(application.Id, "Jane", "Doe", "jane@example.com", "07123456789", (await service.GetAsync(application.Id)).Version);
-        await service.SaveFinancesAsync(application.Id, 100_000m, 1_000m, EmploymentType.Employed, (await service.GetAsync(application.Id)).Version);
-        await service.SaveConsentsAsync(application.Id, false, (await service.GetAsync(application.Id)).Version);
-        await service.GenerateDecisionInPrincipleAsync(application.Id, (await service.GetAsync(application.Id)).Version);
-        var products = await service.GetEligibleProductsAsync(application.Id);
+        var application = await service.CreateAsync(TestContext.Current.CancellationToken);
+        await service.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version, TestContext.Current.CancellationToken);
+        await service.SaveApplicantAsync(application.Id, "Jane", "Doe", "jane@example.com", "07123456789", (await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        await service.SaveFinancesAsync(application.Id, 100_000m, 1_000m, EmploymentType.Employed, (await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        await service.SaveConsentsAsync(application.Id, false, (await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        await service.GenerateDecisionInPrincipleAsync(application.Id, (await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        var products = await service.GetEligibleProductsAsync(application.Id, TestContext.Current.CancellationToken);
         Assert.NotEmpty(products);
-        await service.SelectProductAsync(application.Id, products[0].Id, (await service.GetAsync(application.Id)).Version);
-        await service.SubmitCustomerAsync(application.Id, (await service.GetAsync(application.Id)).Version, Guid.NewGuid());
+        await service.SelectProductAsync(application.Id, products[0].Id, (await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        await service.SubmitCustomerAsync(application.Id, (await service.GetAsync(application.Id, TestContext.Current.CancellationToken)).Version, Guid.NewGuid(), TestContext.Current.CancellationToken);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetAsync(application.Id));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.DeleteAsync(application.Id, application.Version));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetAsync(application.Id, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.DeleteAsync(application.Id, application.Version, TestContext.Current.CancellationToken));
         var staff = CreateService(repository, new StaffApplicationActor());
-        var submitted = await staff.GetForStaffAsync(application.Id);
+        var submitted = await staff.GetForStaffAsync(application.Id, TestContext.Current.CancellationToken);
         Assert.Equal(ApplicationStatus.Submitted, submitted.Status);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => staff.DeleteAsync(application.Id, submitted.Version));
-        Assert.Equal(ApplicationStatus.Submitted, (await staff.GetForStaffAsync(application.Id)).Status);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => staff.DeleteAsync(application.Id, submitted.Version, TestContext.Current.CancellationToken));
+        Assert.Equal(ApplicationStatus.Submitted, (await staff.GetForStaffAsync(application.Id, TestContext.Current.CancellationToken)).Status);
     }
 
     [Fact]
@@ -258,38 +258,38 @@ public sealed class MortgageApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var service = CreateService(repository);
-        var created = await service.CreateAsync();
-        await service.SaveQualificationAsync(created.Id, 300_000, 30_000, created.Version);
-        await service.SaveApplicantAsync(created.Id, "Jane", "Doe", "jane@example.com", "07123456789", (await service.GetAsync(created.Id)).Version);
-        await service.SaveFinancesAsync(created.Id, 100_000, 1_000, EmploymentType.Employed, (await service.GetAsync(created.Id)).Version);
-        await service.SaveConsentsAsync(created.Id, false, (await service.GetAsync(created.Id)).Version);
-        await service.GenerateDecisionInPrincipleAsync(created.Id, (await service.GetAsync(created.Id)).Version);
-        await service.SelectProductAsync(created.Id, "fixed-2", (await service.GetAsync(created.Id)).Version);
+        var created = await service.CreateAsync(TestContext.Current.CancellationToken);
+        await service.SaveQualificationAsync(created.Id, 300_000, 30_000, created.Version, TestContext.Current.CancellationToken);
+        await service.SaveApplicantAsync(created.Id, "Jane", "Doe", "jane@example.com", "07123456789", (await service.GetAsync(created.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        await service.SaveFinancesAsync(created.Id, 100_000, 1_000, EmploymentType.Employed, (await service.GetAsync(created.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        await service.SaveConsentsAsync(created.Id, false, (await service.GetAsync(created.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        await service.GenerateDecisionInPrincipleAsync(created.Id, (await service.GetAsync(created.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
+        await service.SelectProductAsync(created.Id, "fixed-2", (await service.GetAsync(created.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
         var key = Guid.NewGuid();
-        var version = (await service.GetAsync(created.Id)).Version;
-        await service.SubmitCustomerAsync(created.Id, version, key);
+        var version = (await service.GetAsync(created.Id, TestContext.Current.CancellationToken)).Version;
+        await service.SubmitCustomerAsync(created.Id, version, key, TestContext.Current.CancellationToken);
 
-        Assert.NotNull(await service.GetSubmissionReceiptAsync(created.Id, key));
-        Assert.Null(await service.GetSubmissionReceiptAsync(created.Id, Guid.NewGuid()));
+        Assert.NotNull(await service.GetSubmissionReceiptAsync(created.Id, key, TestContext.Current.CancellationToken));
+        Assert.Null(await service.GetSubmissionReceiptAsync(created.Id, Guid.NewGuid(), TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            CreateService(repository, new OtherApplicationActor()).GetSubmissionReceiptAsync(created.Id, key));
+            CreateService(repository, new OtherApplicationActor()).GetSubmissionReceiptAsync(created.Id, key, TestContext.Current.CancellationToken));
 
-        var submitted = (await repository.GetByIdAsync(created.Id))!;
+        var submitted = (await repository.GetByIdAsync(created.Id, TestContext.Current.CancellationToken))!;
         var expired = MortgageApplicationSnapshot.FromDomain(submitted) with { UpdatedAtUtc = DateTime.UtcNow.AddHours(-25) };
         var expiredRepository = new InMemoryMortgageApplicationRepository();
-        await expiredRepository.AddAsync(expired.ToDomain());
-        Assert.Null(await CreateService(expiredRepository).GetSubmissionReceiptAsync(created.Id, key));
+        await expiredRepository.AddAsync(expired.ToDomain(), TestContext.Current.CancellationToken);
+        Assert.Null(await CreateService(expiredRepository).GetSubmissionReceiptAsync(created.Id, key, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task MissingSessionIdentityCannotCreateOrAccessAnApplication()
     {
         var repository = new InMemoryMortgageApplicationRepository();
-        var application = await CreateService(repository).CreateAsync();
+        var application = await CreateService(repository).CreateAsync(TestContext.Current.CancellationToken);
         var service = CreateService(repository, new MissingApplicationActor());
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.CreateAsync());
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetAsync(application.Id));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.CreateAsync(TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetAsync(application.Id, TestContext.Current.CancellationToken));
     }
 
     private static MortgageApplicationService CreateService(

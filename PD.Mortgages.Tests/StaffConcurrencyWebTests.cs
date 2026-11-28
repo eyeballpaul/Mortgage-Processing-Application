@@ -27,13 +27,12 @@ public sealed class StaffConcurrencyWebTests
         using var factory = CreateFactory(transport);
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
-        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/applications/start")).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync("/applications/start", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/applications/start", TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync("/applications/start", null, TestContext.Current.CancellationToken)).StatusCode);
         Assert.Equal(0, transport.CreationCount);
-        var page = await client.GetStringAsync("/account/access-denied");
+        var page = await client.GetStringAsync("/account/access-denied", TestContext.Current.CancellationToken);
         var token = Regex.Match(page, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var response = await client.PostAsync("/applications/start",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
+        using var response = await client.PostAsync("/applications/start", new FormUrlEncodedContent([new("__RequestVerificationToken", token)]), TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal(1, transport.CreationCount);
@@ -46,7 +45,7 @@ public sealed class StaffConcurrencyWebTests
         using var factory = CreateFactory(transport);
         using var client = factory.CreateClient();
 
-        var page = await client.GetStringAsync($"/applications/{transport.Id}");
+        var page = await client.GetStringAsync($"/applications/{transport.Id}", TestContext.Current.CancellationToken);
 
         Assert.Contains("Historic fixed", page);
         Assert.Contains("4.25%", page);
@@ -60,16 +59,16 @@ public sealed class StaffConcurrencyWebTests
         using var factory = CreateFactory(transport);
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         var path = $"/applications/{transport.Id}/step/1";
-        var page = await client.GetStringAsync(path);
+        var page = await client.GetStringAsync(path, TestContext.Current.CancellationToken);
         Assert.Contains("name=\"ExpectedVersion\"", page);
         Assert.Contains("value=\"7\"", page);
         var token = Regex.Match(page, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
         using var response = await client.PostAsync(path, new FormUrlEncodedContent([
             new("__RequestVerificationToken", token), new("ExpectedVersion", "7"),
             new("PropertyValue", "300000"), new("Deposit", "30000")
-        ]));
+        ]), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Contains("Your changes were not saved", await response.Content.ReadAsStringAsync());
+        Assert.Contains("Your changes were not saved", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("7", transport.Version);
     }
 
@@ -79,7 +78,7 @@ public sealed class StaffConcurrencyWebTests
         var transport = new ConflictHandler();
         using var factory = CreateFactory(transport);
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var page = await client.GetStringAsync($"/applications/{transport.Id}/step/5");
+        var page = await client.GetStringAsync($"/applications/{transport.Id}/step/5", TestContext.Current.CancellationToken);
         Assert.Contains("name=\"ExpectedVersion\"", page);
         var token = Regex.Match(page, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/applications/{transport.Id}/decision-in-principle")
@@ -87,9 +86,9 @@ public sealed class StaffConcurrencyWebTests
             Content = new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("expectedVersion", "7")])
         };
         request.Headers.Add("X-Requested-With", "XMLHttpRequest");
-        using var response = await client.SendAsync(request);
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Contains("changed elsewhere", await response.Content.ReadAsStringAsync());
+        Assert.Contains("changed elsewhere", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("7", transport.Version);
     }
 

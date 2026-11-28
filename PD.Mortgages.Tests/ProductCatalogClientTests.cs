@@ -26,7 +26,7 @@ public sealed class ProductCatalogClientTests
             BaseAddress = new Uri("http://products.test/")
         });
 
-        var products = await client.GetProductsAsync();
+        var products = await client.GetProductsAsync(TestContext.Current.CancellationToken);
 
         var product = Assert.Single(products);
         Assert.Equal("fixed-2", product.Id);
@@ -42,7 +42,7 @@ public sealed class ProductCatalogClientTests
             BaseAddress = new Uri("http://products.test/")
         });
 
-        var product = await client.GetProductAsync("missing");
+        var product = await client.GetProductAsync("missing", TestContext.Current.CancellationToken);
 
         Assert.Null(product);
     }

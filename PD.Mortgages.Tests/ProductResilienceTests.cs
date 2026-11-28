@@ -19,7 +19,7 @@ public sealed class ProductResilienceTests
         var httpClient = new HttpClient(resilience) { BaseAddress = new Uri("http://products.test/") };
         var client = new ProductCatalogClient(httpClient, new LocalProductCatalogFallback());
 
-        var products = await client.GetProductsAsync();
+        var products = await client.GetProductsAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(4, products.Count);
     }
@@ -36,11 +36,11 @@ public sealed class ProductResilienceTests
 
         for (var index = 0; index < 3; index++)
         {
-            using var response = await client.GetAsync("api/v1/products");
+            using var response = await client.GetAsync("api/v1/products", TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         }
 
-        using var shortCircuitedResponse = await client.GetAsync("api/v1/products");
+        using var shortCircuitedResponse = await client.GetAsync("api/v1/products", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, shortCircuitedResponse.StatusCode);
         Assert.Equal(9, transport.RequestCount);
@@ -57,7 +57,7 @@ public sealed class ProductResilienceTests
         using var client = new HttpClient(resilience) { BaseAddress = new Uri("http://products.test/") };
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
-            client.GetAsync("api/v1/products/eligible?propertyValue=SYNTHETIC_PRIVATE_VALUE"));
+            client.GetAsync("api/v1/products/eligible?propertyValue=SYNTHETIC_PRIVATE_VALUE", TestContext.Current.CancellationToken));
 
         Assert.NotEmpty(logger.Messages);
         Assert.DoesNotContain(logger.Messages, message => message.Contains("SYNTHETIC_PRIVATE_VALUE", StringComparison.Ordinal));
@@ -87,9 +87,9 @@ public sealed class ProductResilienceTests
         Assert.Equal(3, transport.RequestCount);
 
         for (var index = 0; index < 3; index++)
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetAsync("api/v1/products"));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetAsync("api/v1/products", TestContext.Current.CancellationToken));
 
-        using var response = await client.GetAsync("api/v1/products");
+        using var response = await client.GetAsync("api/v1/products", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Equal(6, transport.RequestCount);
     }

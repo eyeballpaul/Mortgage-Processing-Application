@@ -79,11 +79,11 @@ public sealed class DurableStorageTests
             application.AddDocument(Guid.NewGuid(), "identity.pdf", 128);
             application.RecordAudit("staff-42", "Application created");
 
-            await repository.AddAsync(application);
-            await auditRepository.AppendAsync(application.Id, Assert.Single(application.AuditTrail));
-            var restored = await repository.GetByIdAsync(application.Id);
-            var auditPage = await auditRepository.GetPageAsync(application.Id, 1, 25);
-            var listed = await repository.SearchAsync(null, null, 1, 25);
+            await repository.AddAsync(application, TestContext.Current.CancellationToken);
+            await auditRepository.AppendAsync(application.Id, Assert.Single(application.AuditTrail), TestContext.Current.CancellationToken);
+            var restored = await repository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken);
+            var auditPage = await auditRepository.GetPageAsync(application.Id, 1, 25, TestContext.Current.CancellationToken);
+            var listed = await repository.SearchAsync(null, null, 1, 25, TestContext.Current.CancellationToken);
 
             Assert.NotNull(restored);
             Assert.Equal("customer-123", restored.OwnerId);
@@ -115,10 +115,10 @@ public sealed class DurableStorageTests
                 .Select(index => new MortgageApplicationAuditEntry(DateTime.UtcNow.AddSeconds(index), "staff-42", $"Event {index}"))
                 .ToList();
 
-            await repository.AppendLegacyAsync(applicationId, events);
-            await repository.AppendLegacyAsync(applicationId, events);
-            var firstPage = await repository.GetPageAsync(applicationId, 1, 25);
-            var secondPage = await repository.GetPageAsync(applicationId, 2, 25);
+            await repository.AppendLegacyAsync(applicationId, events, TestContext.Current.CancellationToken);
+            await repository.AppendLegacyAsync(applicationId, events, TestContext.Current.CancellationToken);
+            var firstPage = await repository.GetPageAsync(applicationId, 1, 25, TestContext.Current.CancellationToken);
+            var secondPage = await repository.GetPageAsync(applicationId, 2, 25, TestContext.Current.CancellationToken);
 
             Assert.Equal(31, firstPage.TotalCount);
             Assert.Equal(2, firstPage.TotalPages);
@@ -142,17 +142,17 @@ public sealed class DurableStorageTests
         {
             var repository = new FileMortgageApplicationRepository(new MortgagePersistenceOptions { RootPath = root });
             var application = new MortgageApplication();
-            await repository.AddAsync(application);
-            var firstCopy = await repository.GetByIdAsync(application.Id);
-            var staleCopy = await repository.GetByIdAsync(application.Id);
+            await repository.AddAsync(application, TestContext.Current.CancellationToken);
+            var firstCopy = await repository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken);
+            var staleCopy = await repository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken);
 
             Assert.NotNull(firstCopy);
             Assert.NotNull(staleCopy);
             firstCopy.UpdateApplicant("Jane", "Doe", "jane@example.com", "07123456789");
-            await repository.UpdateAsync(firstCopy);
+            await repository.UpdateAsync(firstCopy, TestContext.Current.CancellationToken);
             staleCopy.UpdateQualification(300_000m, 30_000m);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.UpdateAsync(staleCopy));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repository.UpdateAsync(staleCopy, TestContext.Current.CancellationToken));
         }
         finally
         {
@@ -165,18 +165,18 @@ public sealed class DurableStorageTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var application = new MortgageApplication();
-        await repository.AddAsync(application);
-        var firstCopy = await repository.GetByIdAsync(application.Id);
-        var staleCopy = await repository.GetByIdAsync(application.Id);
+        await repository.AddAsync(application, TestContext.Current.CancellationToken);
+        var firstCopy = await repository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken);
+        var staleCopy = await repository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(firstCopy);
         Assert.NotNull(staleCopy);
         firstCopy.UpdateApplicant("Jane", "Doe", "jane@example.com", "07123456789");
-        await repository.UpdateAsync(firstCopy);
+        await repository.UpdateAsync(firstCopy, TestContext.Current.CancellationToken);
         staleCopy.UpdateQualification(300_000m, 30_000m);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => repository.UpdateAsync(staleCopy));
-        var persisted = await repository.GetByIdAsync(application.Id);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => repository.UpdateAsync(staleCopy, TestContext.Current.CancellationToken));
+        var persisted = await repository.GetByIdAsync(application.Id, TestContext.Current.CancellationToken);
         Assert.Equal("Jane", persisted!.FirstName);
         Assert.Null(persisted.PropertyValue);
     }
@@ -192,12 +192,12 @@ public sealed class DurableStorageTests
             var firstDocumentId = Guid.NewGuid();
             var secondDocumentId = Guid.NewGuid();
 
-            await storage.SaveAsync(applicationId, firstDocumentId, [1, 2, 3]);
-            await storage.SaveAsync(applicationId, secondDocumentId, [4, 5, 6]);
-            await storage.DeleteAsync(applicationId, firstDocumentId);
+            await storage.SaveAsync(applicationId, firstDocumentId, [1, 2, 3], TestContext.Current.CancellationToken);
+            await storage.SaveAsync(applicationId, secondDocumentId, [4, 5, 6], TestContext.Current.CancellationToken);
+            await storage.DeleteAsync(applicationId, firstDocumentId, TestContext.Current.CancellationToken);
 
-            Assert.Null(await storage.GetAsync(applicationId, firstDocumentId));
-            Assert.Equal([4, 5, 6], await storage.GetAsync(applicationId, secondDocumentId));
+            Assert.Null(await storage.GetAsync(applicationId, firstDocumentId, TestContext.Current.CancellationToken));
+            Assert.Equal([4, 5, 6], await storage.GetAsync(applicationId, secondDocumentId, TestContext.Current.CancellationToken));
         }
         finally
         {

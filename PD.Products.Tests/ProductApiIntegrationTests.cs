@@ -12,7 +12,7 @@ public sealed class ProductApiIntegrationTests(ProductApiFactory factory) : ICla
     {
         using var client = factory.CreateClient();
 
-        using var response = await client.GetAsync("/api/v1/products");
+        using var response = await client.GetAsync("/api/v1/products", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -22,13 +22,13 @@ public sealed class ProductApiIntegrationTests(ProductApiFactory factory) : ICla
     {
         using var client = CreateAuthenticatedClient();
 
-        var products = await client.GetFromJsonAsync<List<ProductResponse>>("/api/v1/products");
+        var products = await client.GetFromJsonAsync<List<ProductResponse>>("/api/v1/products", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(products);
         Assert.Equal(4, products.Count);
         Assert.Contains(products, product => product.Id == "fixed-2");
         var product = Assert.Single(products, item => item.Id == "fixed-2");
-        var fetched = await client.GetFromJsonAsync<ProductResponse>("/api/v1/products/fixed-2");
+        var fetched = await client.GetFromJsonAsync<ProductResponse>("/api/v1/products/fixed-2", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(product.CatalogVersion, fetched!.CatalogVersion);
         Assert.NotEqual(product.CatalogVersion, products.First(item => item.Id == "fixed-5").CatalogVersion);
     }
@@ -38,8 +38,7 @@ public sealed class ProductApiIntegrationTests(ProductApiFactory factory) : ICla
     {
         using var client = CreateAuthenticatedClient();
 
-        var products = await client.GetFromJsonAsync<List<ProductResponse>>(
-            "/api/v1/products/eligible?propertyValue=300000&deposit=30000");
+        var products = await client.GetFromJsonAsync<List<ProductResponse>>("/api/v1/products/eligible?propertyValue=300000&deposit=30000", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotNull(products);
         Assert.Equal(3, products.Count);
@@ -51,7 +50,7 @@ public sealed class ProductApiIntegrationTests(ProductApiFactory factory) : ICla
     {
         using var client = factory.CreateClient();
 
-        using var response = await client.GetAsync("/health/ready");
+        using var response = await client.GetAsync("/health/ready", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -64,12 +63,12 @@ public sealed class ProductApiIntegrationTests(ProductApiFactory factory) : ICla
         client.DefaultRequestHeaders.Add("X-Product-Service-Key", "dev-product-api-key");
         for (var index = 0; index < 61; index++)
         {
-            using var response = await client.GetAsync("/api/v1/products");
+            using var response = await client.GetAsync("/api/v1/products", TestContext.Current.CancellationToken);
         }
 
-        using var limited = await client.GetAsync("/api/v1/products");
-        using var live = await client.GetAsync("/health/live");
-        using var ready = await client.GetAsync("/health/ready");
+        using var limited = await client.GetAsync("/api/v1/products", TestContext.Current.CancellationToken);
+        using var live = await client.GetAsync("/health/live", TestContext.Current.CancellationToken);
+        using var ready = await client.GetAsync("/health/ready", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
         Assert.Equal(HttpStatusCode.OK, live.StatusCode);

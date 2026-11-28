@@ -9,7 +9,7 @@ pr:
       - main
 
 variables:
-  dotnetVersion: '10.x'
+  dotnetVersion: '11.x'
   azureServiceConnection: 'REPLACE-WITH-AZURE-DEVOPS-SERVICE-CONNECTION'
   resourceGroupName: 'REPLACE-WITH-RESOURCE-GROUP'
   azureLocation: 'eastus'
@@ -53,7 +53,7 @@ stages:
           - script: dotnet build PD.Mortgages.slnx --configuration $(buildConfiguration) --no-restore
             displayName: Build solution
 
-          - script: dotnet test PD.Mortgages.slnx --configuration $(buildConfiguration) --no-build --no-restore --verbosity normal
+          - script: dotnet test --solution PD.Mortgages.slnx --configuration $(buildConfiguration) --no-build --no-restore --verbosity normal
             displayName: Run tests
 
   - stage: BuildImagesAndDeploy

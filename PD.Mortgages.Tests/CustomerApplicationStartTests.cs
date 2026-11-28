@@ -35,19 +35,17 @@ public sealed class CustomerApplicationStartTests
                     .ConfigurePrimaryHttpMessageHandler(() => transport));
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var token = Regex.Match(await client.GetStringAsync("/"), "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var start = await client.PostAsync("/application/start",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
-        var page = await client.GetStringAsync("/application/connections");
+        var token = Regex.Match(await client.GetStringAsync("/", TestContext.Current.CancellationToken), "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+        using var start = await client.PostAsync("/application/start", new FormUrlEncodedContent([new("__RequestVerificationToken", token)]), TestContext.Current.CancellationToken);
+        var page = await client.GetStringAsync("/application/connections", TestContext.Current.CancellationToken);
         Assert.Contains("I agree to a credit check", page);
         Assert.Single(Regex.Matches(page, "type=\"checkbox\"").Cast<Match>());
         token = Regex.Match(page, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var response = await client.PostAsync("/application/connections",
-            new FormUrlEncodedContent([
+        using var response = await client.PostAsync("/application/connections", new FormUrlEncodedContent([
                 new("__RequestVerificationToken", token),
                 new("expectedVersion", "7"),
                 new("CreditCheckConsent", consent.ToString())
-            ]));
+            ]), TestContext.Current.CancellationToken);
 
         Assert.Equal("/application/decision-in-principle", response.Headers.Location?.OriginalString);
         using var body = JsonDocument.Parse(Assert.IsType<string>(transport.ConsentRequest));
@@ -64,7 +62,7 @@ public sealed class CustomerApplicationStartTests
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, "/?sensitive=fake-test-secret");
         request.Headers.Add("traceparent", "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01");
-        using var response = await client.SendAsync(request);
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
         Assert.Equal("0123456789abcdef0123456789abcdef", response.Headers.GetValues("X-Correlation-ID").Single());
     }
 
@@ -82,8 +80,8 @@ public sealed class CustomerApplicationStartTests
             });
         });
         using var client = factory.CreateClient();
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live")).StatusCode);
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/health/ready")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live", TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/health/ready", TestContext.Current.CancellationToken)).StatusCode);
     }
 
     [Theory]
@@ -105,23 +103,19 @@ public sealed class CustomerApplicationStartTests
                     .ConfigurePrimaryHttpMessageHandler(() => transport));
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var token = Regex.Match(await client.GetStringAsync("/"), "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var start = await client.PostAsync("/application/start",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
-        using var documents = await client.GetAsync("/application/documents");
+        var token = Regex.Match(await client.GetStringAsync("/", TestContext.Current.CancellationToken), "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+        using var start = await client.PostAsync("/application/start", new FormUrlEncodedContent([new("__RequestVerificationToken", token)]), TestContext.Current.CancellationToken);
+        using var documents = await client.GetAsync("/application/documents", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, documents.StatusCode);
-        var review = await client.GetStringAsync("/application/review");
+        var review = await client.GetStringAsync("/application/review", TestContext.Current.CancellationToken);
         token = Regex.Match(review, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var first = await client.PostAsync("/application/submit",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("expectedVersion", "7")]));
-        Assert.Contains("could not confirm", await first.Content.ReadAsStringAsync());
+        using var first = await client.PostAsync("/application/submit", new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("expectedVersion", "7")]), TestContext.Current.CancellationToken);
+        Assert.Contains("could not confirm", await first.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
 
         using var recovery = returnHome
-            ? await client.GetAsync("/")
-            : await client.PostAsync("/application/submit",
-                new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("expectedVersion", "7")]));
+            ? await client.GetAsync("/", TestContext.Current.CancellationToken) : await client.PostAsync("/application/submit", new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("expectedVersion", "7")]), TestContext.Current.CancellationToken);
         Assert.Equal("/application/submitted", recovery.Headers.Location?.OriginalString);
-        Assert.Contains(transport.Id.ToString(), await client.GetStringAsync("/application/submitted"));
+        Assert.Contains(transport.Id.ToString(), await client.GetStringAsync("/application/submitted", TestContext.Current.CancellationToken));
         Assert.Equal(returnHome ? 1 : 2, transport.SubmissionAttempts);
     }
 
@@ -142,22 +136,20 @@ public sealed class CustomerApplicationStartTests
                     .ConfigurePrimaryHttpMessageHandler(() => transport));
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var token = Regex.Match(await client.GetStringAsync("/"), "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var start = await client.PostAsync("/application/start",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
-        using var documents = await client.GetAsync("/application/documents");
+        var token = Regex.Match(await client.GetStringAsync("/", TestContext.Current.CancellationToken), "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+        using var start = await client.PostAsync("/application/start", new FormUrlEncodedContent([new("__RequestVerificationToken", token)]), TestContext.Current.CancellationToken);
+        using var documents = await client.GetAsync("/application/documents", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, documents.StatusCode);
-        var review = await client.GetStringAsync("/application/review");
+        var review = await client.GetStringAsync("/application/review", TestContext.Current.CancellationToken);
         token = Regex.Match(review, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var submit = await client.PostAsync("/application/submit",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("expectedVersion", "7")]));
+        using var submit = await client.PostAsync("/application/submit", new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("expectedVersion", "7")]), TestContext.Current.CancellationToken);
 
-        var home = await client.GetStringAsync("/");
+        var home = await client.GetStringAsync("/", TestContext.Current.CancellationToken);
         Assert.Contains("check your saved application", home);
         transport.ReceiptRouteUnavailable = false;
-        using var recovered = await client.GetAsync("/");
+        using var recovered = await client.GetAsync("/", TestContext.Current.CancellationToken);
         Assert.Equal("/application/submitted", recovered.Headers.Location?.OriginalString);
-        Assert.Contains(transport.Id.ToString(), await client.GetStringAsync("/application/submitted"));
+        Assert.Contains(transport.Id.ToString(), await client.GetStringAsync("/application/submitted", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -177,16 +169,14 @@ public sealed class CustomerApplicationStartTests
                     .ConfigurePrimaryHttpMessageHandler(() => transport));
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var token = Regex.Match(await client.GetStringAsync("/"), "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var start = await client.PostAsync("/application/start",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
-        using var documents = await client.GetAsync("/application/documents");
-        var review = await client.GetStringAsync("/application/review");
+        var token = Regex.Match(await client.GetStringAsync("/", TestContext.Current.CancellationToken), "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+        using var start = await client.PostAsync("/application/start", new FormUrlEncodedContent([new("__RequestVerificationToken", token)]), TestContext.Current.CancellationToken);
+        using var documents = await client.GetAsync("/application/documents", TestContext.Current.CancellationToken);
+        var review = await client.GetStringAsync("/application/review", TestContext.Current.CancellationToken);
         token = Regex.Match(review, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var response = await client.PostAsync("/application/submit",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("expectedVersion", "7")]));
+        using var response = await client.PostAsync("/application/submit", new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("expectedVersion", "7")]), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("Review the applicant details", await response.Content.ReadAsStringAsync());
+        Assert.Contains("Review the applicant details", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -199,16 +189,16 @@ public sealed class CustomerApplicationStartTests
             AllowAutoRedirect = false
         });
 
-        using var get = await client.GetAsync("/application/start");
+        using var get = await client.GetAsync("/application/start", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.MethodNotAllowed, get.StatusCode);
 
         for (var index = 0; index < 5; index++)
         {
-            using var invalidPost = await client.PostAsync("/application/start", null);
+            using var invalidPost = await client.PostAsync("/application/start", null, TestContext.Current.CancellationToken);
             Assert.Equal(HttpStatusCode.BadRequest, invalidPost.StatusCode);
         }
 
-        using var limitedPost = await client.PostAsync("/application/start", null);
+        using var limitedPost = await client.PostAsync("/application/start", null, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.TooManyRequests, limitedPost.StatusCode);
     }
 
@@ -229,7 +219,7 @@ public sealed class CustomerApplicationStartTests
                     .ConfigurePrimaryHttpMessageHandler(() => transport));
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var html = await client.GetStringAsync("/");
+        var html = await client.GetStringAsync("/", TestContext.Current.CancellationToken);
         var match = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"");
         Assert.True(match.Success);
 
@@ -261,12 +251,10 @@ public sealed class CustomerApplicationStartTests
                     .ConfigurePrimaryHttpMessageHandler(() => transport));
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var html = await client.GetStringAsync("/");
+        var html = await client.GetStringAsync("/", TestContext.Current.CancellationToken);
         var token = Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var start = await client.PostAsync("/application/start",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
-        using var save = await client.PostAsync("/application/save-progress",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("step", "3")]));
+        using var start = await client.PostAsync("/application/start", new FormUrlEncodedContent([new("__RequestVerificationToken", token)]), TestContext.Current.CancellationToken);
+        using var save = await client.PostAsync("/application/save-progress", new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("step", "3")]), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Redirect, save.StatusCode);
         Assert.Equal("/application/finances", save.Headers.Location?.OriginalString);
         Assert.Equal(1, transport.ReadCount);
@@ -289,23 +277,22 @@ public sealed class CustomerApplicationStartTests
                     .ConfigurePrimaryHttpMessageHandler(() => transport));
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var token = Regex.Match(await client.GetStringAsync("/"), "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var start = await client.PostAsync("/application/start",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
-        Assert.Contains("Resume your application", await client.GetStringAsync("/"));
-        using var resume = await client.GetAsync("/application/resume");
+        var token = Regex.Match(await client.GetStringAsync("/", TestContext.Current.CancellationToken), "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+        using var start = await client.PostAsync("/application/start", new FormUrlEncodedContent([new("__RequestVerificationToken", token)]), TestContext.Current.CancellationToken);
+        Assert.Contains("Resume your application", await client.GetStringAsync("/", TestContext.Current.CancellationToken));
+        using var resume = await client.GetAsync("/application/resume", TestContext.Current.CancellationToken);
         Assert.Equal("/application/qualification", resume.Headers.Location?.OriginalString);
         Assert.Equal(2, transport.ReadCount);
 
         transport.ReadStatus = HttpStatusCode.Unauthorized;
-        var temporaryFailure = await client.GetStringAsync("/");
+        var temporaryFailure = await client.GetStringAsync("/", TestContext.Current.CancellationToken);
         Assert.Contains("Resume your application", temporaryFailure);
         Assert.Contains("check your saved application", temporaryFailure);
-        using var failedResume = await client.GetAsync("/application/resume");
+        using var failedResume = await client.GetAsync("/application/resume", TestContext.Current.CancellationToken);
         Assert.Equal("/", failedResume.Headers.Location?.OriginalString);
 
         transport.ReadStatus = HttpStatusCode.Forbidden;
-        var stale = await client.GetStringAsync("/");
+        var stale = await client.GetStringAsync("/", TestContext.Current.CancellationToken);
         Assert.DoesNotContain("Resume your application", stale);
     }
 
@@ -326,21 +313,19 @@ public sealed class CustomerApplicationStartTests
                     .ConfigurePrimaryHttpMessageHandler(() => transport));
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var home = await client.GetStringAsync("/");
+        var home = await client.GetStringAsync("/", TestContext.Current.CancellationToken);
         var token = Regex.Match(home, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var start = await client.PostAsync("/application/start",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
-        var form = await client.GetStringAsync("/application/qualification");
+        using var start = await client.PostAsync("/application/start", new FormUrlEncodedContent([new("__RequestVerificationToken", token)]), TestContext.Current.CancellationToken);
+        var form = await client.GetStringAsync("/application/qualification", TestContext.Current.CancellationToken);
         Assert.Contains("name=\"expectedVersion\" value=\"7\"", form);
         token = Regex.Match(form, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var save = await client.PostAsync("/application/qualification",
-            new FormUrlEncodedContent([
+        using var save = await client.PostAsync("/application/qualification", new FormUrlEncodedContent([
                 new("__RequestVerificationToken", token), new("expectedVersion", "7"),
                 new("PropertyValue", "300000"), new("Deposit", "30000")
-            ]));
+            ]), TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Conflict, save.StatusCode);
-        Assert.Contains("Your changes were not saved", await save.Content.ReadAsStringAsync());
+        Assert.Contains("Your changes were not saved", await save.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("7", transport.Version);
     }
 
@@ -361,11 +346,10 @@ public sealed class CustomerApplicationStartTests
                     .ConfigurePrimaryHttpMessageHandler(() => transport));
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var home = await client.GetStringAsync("/");
+        var home = await client.GetStringAsync("/", TestContext.Current.CancellationToken);
         var token = Regex.Match(home, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
-        using var start = await client.PostAsync("/application/start",
-            new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
-        var page = await client.GetStringAsync("/application/decision-in-principle");
+        using var start = await client.PostAsync("/application/start", new FormUrlEncodedContent([new("__RequestVerificationToken", token)]), TestContext.Current.CancellationToken);
+        var page = await client.GetStringAsync("/application/decision-in-principle", TestContext.Current.CancellationToken);
         Assert.Contains("name=\"expectedVersion\" value=\"7\"", page);
         token = Regex.Match(page, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
         using var request = new HttpRequestMessage(HttpMethod.Post, "/application/decision-in-principle/assess")
@@ -373,9 +357,9 @@ public sealed class CustomerApplicationStartTests
             Content = new FormUrlEncodedContent([new("__RequestVerificationToken", token), new("expectedVersion", "7")])
         };
         request.Headers.Add("X-Requested-With", "XMLHttpRequest");
-        using var response = await client.SendAsync(request);
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Contains("changed elsewhere", await response.Content.ReadAsStringAsync());
+        Assert.Contains("changed elsewhere", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         Assert.Equal("7", transport.Version);
     }
 

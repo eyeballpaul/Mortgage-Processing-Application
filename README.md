@@ -1,6 +1,6 @@
 # PD Mortgages
 
-A .NET 10 demonstration of a UK mortgage submission journey. The figures, products and decisions are fictional: no lender or credit-check integrations are connected. Do not use real customer data.
+A .NET 11 demonstration of a UK mortgage submission journey. The figures, products and decisions are fictional: no lender or credit-check integrations are connected. Do not use real customer data.
 
 The customer and staff journeys record an optional credit-check choice. Declining it does not prevent an application from continuing.
 
@@ -76,7 +76,7 @@ See [architecture.md](docs/architecture.md) for boundaries, local and Azure host
 
 ### 1. Prepare your computer
 
-1. Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+1. Install the [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0)
    and [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 2. Start Docker Desktop and wait until it reports that it is running.
 3. Open this repository in VS Code and select **Terminal → New Terminal**.
@@ -236,7 +236,7 @@ The API's [HTTP examples](PD.Mortgages.Api/PD.Mortgages.Api.http) illustrate all
 2. Run:
 
    ```bash
-   dotnet test PD.Mortgages.slnx
+   dotnet test --solution PD.Mortgages.slnx
    ```
 
 3. Check the final summary for failures. An actual staff sign-in still needs
@@ -264,7 +264,7 @@ both connection variables are set:
 3. From the repository root, run:
 
    ```bash
-   dotnet test PD.Mortgages.Tests/PD.Mortgages.Tests.csproj --filter "FullyQualifiedName~SubmissionNotificationTests"
+   dotnet test --project PD.Mortgages.Tests/PD.Mortgages.Tests.csproj --filter-class "PD.Mortgages.Tests.SubmissionNotificationTests"
    ```
 
 4. Check the test summary, stop the dedicated test resources, and remove the

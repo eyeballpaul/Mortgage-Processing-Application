@@ -1,6 +1,7 @@
 extern alias MortgageApi;
 extern alias NotificationWorker;
 
+using System.Runtime.CompilerServices;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -31,7 +32,10 @@ namespace PD.Mortgages.Tests;
 
 public sealed class SqlServerFactAttribute : FactAttribute
 {
-    public SqlServerFactAttribute()
+    public SqlServerFactAttribute(
+        [CallerFilePath] string? sourceFilePath = null,
+        [CallerLineNumber] int sourceLineNumber = -1)
+        : base(sourceFilePath, sourceLineNumber)
     {
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MORTGAGE_TEST_SQL_CONNECTION")))
             Skip = "Set MORTGAGE_TEST_SQL_CONNECTION to a disposable SQL Server to run SQL integration tests.";
@@ -40,7 +44,10 @@ public sealed class SqlServerFactAttribute : FactAttribute
 
 public sealed class ServiceBusEmulatorFactAttribute : FactAttribute
 {
-    public ServiceBusEmulatorFactAttribute()
+    public ServiceBusEmulatorFactAttribute(
+        [CallerFilePath] string? sourceFilePath = null,
+        [CallerLineNumber] int sourceLineNumber = -1)
+        : base(sourceFilePath, sourceLineNumber)
     {
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MORTGAGE_TEST_SQL_CONNECTION")) ||
             string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MORTGAGE_TEST_SERVICEBUS_CONNECTION")))

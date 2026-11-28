@@ -8,7 +8,7 @@ internal sealed class SimulatedNotificationStore(NotificationsDbContext db)
     public async Task<bool> RecordAsync(SubmissionMessage message, CancellationToken cancellationToken)
     {
         var recordedAt = DateTime.UtcNow;
-        var inserted = await db.Database.ExecuteSqlInterpolatedAsync($"""
+        var inserted = await db.Database.ExecuteSqlAsync($"""
             INSERT INTO [SimulatedNotifications] ([EventId], [ApplicationId], [RecordedAtUtc])
             SELECT {message.EventId}, {message.ApplicationId}, {recordedAt}
             WHERE NOT EXISTS (

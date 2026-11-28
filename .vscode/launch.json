@@ -6,7 +6,7 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build solution",
-      "program": "${workspaceFolder}/PD.AppHost/bin/Debug/net10.0/PD.AppHost.dll",
+      "program": "${workspaceFolder}/PD.AppHost/bin/Debug/net11.0/PD.AppHost.dll",
       "args": [],
       "cwd": "${workspaceFolder}/PD.AppHost",
       "env": {
@@ -25,7 +25,7 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build solution",
-      "program": "${workspaceFolder}/PD.Mortgages.Customer.Web/bin/Debug/net10.0/PD.Mortgages.Web.dll",
+      "program": "${workspaceFolder}/PD.Mortgages.Customer.Web/bin/Debug/net11.0/PD.Mortgages.Web.dll",
       "args": [],
       "cwd": "${workspaceFolder}/PD.Mortgages.Customer.Web",
       "env": {

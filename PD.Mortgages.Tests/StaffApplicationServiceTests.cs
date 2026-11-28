@@ -18,14 +18,14 @@ public sealed class StaffApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var service = CreateService(repository, new TestApplicationActor("staff-42", true, true));
-        var created = await service.CreateForStaffAsync();
-        await service.SaveApplicantAsync(created.Id, "Jane", "Doe", "jane@example.com", "07123456789", created.Version);
-        await service.SaveQualificationAsync(created.Id, 300_000m, 30_000m, (await service.GetForStaffAsync(created.Id)).Version);
+        var created = await service.CreateForStaffAsync(TestContext.Current.CancellationToken);
+        await service.SaveApplicantAsync(created.Id, "Jane", "Doe", "jane@example.com", "07123456789", created.Version, TestContext.Current.CancellationToken);
+        await service.SaveQualificationAsync(created.Id, 300_000m, 30_000m, (await service.GetForStaffAsync(created.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
 
-        var matching = await service.SearchForStaffAsync("jane@example.com", ApplicationStatus.InProgress, 1, 25);
+        var matching = await service.SearchForStaffAsync("jane@example.com", ApplicationStatus.InProgress, 1, 25, TestContext.Current.CancellationToken);
         var result = Assert.Single(matching.Applications);
-        var details = await service.GetForStaffAsync(created.Id);
-        var audit = await service.GetAuditTrailForStaffAsync(created.Id, 1, 25);
+        var details = await service.GetForStaffAsync(created.Id, TestContext.Current.CancellationToken);
+        var audit = await service.GetAuditTrailForStaffAsync(created.Id, 1, 25, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, matching.TotalCount);
         Assert.Equal(created.Id, result.Id);
@@ -41,14 +41,14 @@ public sealed class StaffApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var service = CreateService(repository, new TestApplicationActor("staff-42", true, true));
-        var application = await service.CreateForStaffAsync();
+        var application = await service.CreateForStaffAsync(TestContext.Current.CancellationToken);
         for (var index = 0; index < 5; index++)
         {
-            await service.SaveApplicantAsync(application.Id, "Jane", "Doe", $"jane{index}@example.com", "07123456789", (await service.GetForStaffAsync(application.Id)).Version);
+            await service.SaveApplicantAsync(application.Id, "Jane", "Doe", $"jane{index}@example.com", "07123456789", (await service.GetForStaffAsync(application.Id, TestContext.Current.CancellationToken)).Version, TestContext.Current.CancellationToken);
         }
 
-        var firstPage = await service.GetAuditTrailForStaffAsync(application.Id, 1, 2);
-        var secondPage = await service.GetAuditTrailForStaffAsync(application.Id, 2, 2);
+        var firstPage = await service.GetAuditTrailForStaffAsync(application.Id, 1, 2, TestContext.Current.CancellationToken);
+        var secondPage = await service.GetAuditTrailForStaffAsync(application.Id, 2, 2, TestContext.Current.CancellationToken);
 
         Assert.Equal(6, firstPage.TotalCount);
         Assert.Equal(3, firstPage.TotalPages);
@@ -66,11 +66,11 @@ public sealed class StaffApplicationServiceTests
         var repository = new InMemoryMortgageApplicationRepository();
         var application = MortgageApplication.CreateForEmployee("staff-42");
         application.RecordAudit("staff-42", "Legacy event");
-        await repository.AddAsync(application);
+        await repository.AddAsync(application, TestContext.Current.CancellationToken);
         var service = CreateService(repository, new TestApplicationActor("staff-42", true, true));
 
-        var audit = await service.GetAuditTrailForStaffAsync(application.Id, 1, 25);
-        var repeatedAudit = await service.GetAuditTrailForStaffAsync(application.Id, 1, 25);
+        var audit = await service.GetAuditTrailForStaffAsync(application.Id, 1, 25, TestContext.Current.CancellationToken);
+        var repeatedAudit = await service.GetAuditTrailForStaffAsync(application.Id, 1, 25, TestContext.Current.CancellationToken);
 
         Assert.Equal("Legacy event", Assert.Single(audit.Events).Action);
         Assert.Equal(1, repeatedAudit.TotalCount);
@@ -81,9 +81,9 @@ public sealed class StaffApplicationServiceTests
     {
         var service = CreateService(new InMemoryMortgageApplicationRepository(), new TestApplicationActor("customer-1", true, false));
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SearchForStaffAsync(null, null, 1, 25));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetAuditTrailForStaffAsync(Guid.NewGuid(), 1, 25));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.CreateForStaffAsync());
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SearchForStaffAsync(null, null, 1, 25, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.GetAuditTrailForStaffAsync(Guid.NewGuid(), 1, 25, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.CreateForStaffAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class StaffApplicationServiceTests
             new InMemoryMortgageApplicationRepository(),
             new TestApplicationActor(null, true, true));
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.CreateForStaffAsync());
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.CreateForStaffAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -101,12 +101,12 @@ public sealed class StaffApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var staff = CreateService(repository, new TestApplicationActor("staff-42", true, true));
-        var application = await staff.CreateForStaffAsync();
+        var application = await staff.CreateForStaffAsync(TestContext.Current.CancellationToken);
         var unauthenticated = CreateService(repository, new TestApplicationActor("staff-42", false, true));
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.GetForStaffAsync(application.Id));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.GetAsync(application.Id));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.GetForStaffAsync(application.Id, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.GetAsync(application.Id, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthenticated.SaveQualificationAsync(application.Id, 300_000m, 30_000m, application.Version, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public sealed class StaffApplicationServiceTests
             new InMemoryMortgageApplicationRepository(),
             new TestApplicationActor("customer-1", true, false));
 
-        var application = await service.CreateAsync();
+        var application = await service.CreateAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(application.CreatedByEmployeeId);
     }
@@ -126,10 +126,10 @@ public sealed class StaffApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var staffService = CreateService(repository, new TestApplicationActor("staff-42", true, true));
-        var application = await staffService.CreateForStaffAsync();
+        var application = await staffService.CreateForStaffAsync(TestContext.Current.CancellationToken);
         var customerService = CreateService(repository, new TestApplicationActor("customer-1", true, false));
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => customerService.GetAsync(application.Id));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => customerService.GetAsync(application.Id, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -139,15 +139,15 @@ public sealed class StaffApplicationServiceTests
         var service = CreateService(repository, new TestApplicationActor("staff-42", true, true));
         foreach (var email in new[] { "one@example.com", "two@example.com", "three@example.com" })
         {
-            var application = await service.CreateForStaffAsync();
-            await service.SaveApplicantAsync(application.Id, "Test", "Applicant", email, "07123456789", application.Version);
+            var application = await service.CreateForStaffAsync(TestContext.Current.CancellationToken);
+            await service.SaveApplicantAsync(application.Id, "Test", "Applicant", email, "07123456789", application.Version, TestContext.Current.CancellationToken);
         }
 
-        var firstPage = await service.SearchForStaffAsync(null, ApplicationStatus.InProgress, 1, 2);
-        var lastPage = await service.SearchForStaffAsync(null, ApplicationStatus.InProgress, 99, 2);
-        var filtered = await service.SearchForStaffAsync("two@example.com", ApplicationStatus.InProgress, 1, 2);
-        var byCreator = await service.SearchForStaffAsync("staff-42", ApplicationStatus.InProgress, 1, 25);
-        var noMatches = await service.SearchForStaffAsync("missing", ApplicationStatus.InProgress, 1, 25);
+        var firstPage = await service.SearchForStaffAsync(null, ApplicationStatus.InProgress, 1, 2, TestContext.Current.CancellationToken);
+        var lastPage = await service.SearchForStaffAsync(null, ApplicationStatus.InProgress, 99, 2, TestContext.Current.CancellationToken);
+        var filtered = await service.SearchForStaffAsync("two@example.com", ApplicationStatus.InProgress, 1, 2, TestContext.Current.CancellationToken);
+        var byCreator = await service.SearchForStaffAsync("staff-42", ApplicationStatus.InProgress, 1, 25, TestContext.Current.CancellationToken);
+        var noMatches = await service.SearchForStaffAsync("missing", ApplicationStatus.InProgress, 1, 25, TestContext.Current.CancellationToken);
 
         Assert.Equal(3, firstPage.TotalCount);
         Assert.Equal(2, firstPage.Applications.Count);
@@ -165,11 +165,11 @@ public sealed class StaffApplicationServiceTests
     {
         var repository = new InMemoryMortgageApplicationRepository();
         var customerService = CreateService(repository, new TestApplicationActor("session-1", false, false));
-        var application = await customerService.CreateAsync();
+        var application = await customerService.CreateAsync(TestContext.Current.CancellationToken);
         var staffService = CreateService(repository, new TestApplicationActor("staff-42", true, true));
 
-        Assert.Equal(application.Id, (await staffService.GetForStaffAsync(application.Id)).Id);
-        Assert.Equal(application.Id, (await staffService.GetAsync(application.Id)).Id);
+        Assert.Equal(application.Id, (await staffService.GetForStaffAsync(application.Id, TestContext.Current.CancellationToken)).Id);
+        Assert.Equal(application.Id, (await staffService.GetAsync(application.Id, TestContext.Current.CancellationToken)).Id);
     }
 
     private static MortgageApplicationService CreateService(InMemoryMortgageApplicationRepository repository, IApplicationActor actor) =>

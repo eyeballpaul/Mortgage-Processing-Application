@@ -32,10 +32,9 @@ public sealed class EligibilityApiTests : IClassFixture<EligibilityApiTests.ApiF
     public async Task AssessmentUsesExistingIndicativeRules(bool consent, int income, EligibilityOutcome outcome, int? maximum)
     {
         using var client = factory.Authorized();
-        using var response = await client.PostAsJsonAsync("/api/v1/eligibility/assess",
-            new EligibilityRequest(300000, 30000, income, consent));
+        using var response = await client.PostAsJsonAsync("/api/v1/eligibility/assess", new EligibilityRequest(300000, 30000, income, consent), cancellationToken: TestContext.Current.CancellationToken);
         response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<EligibilityResponse>(JsonOptions);
+        var result = await response.Content.ReadFromJsonAsync<EligibilityResponse>(JsonOptions, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(result);
         Assert.Equal(outcome, result.Outcome);
         Assert.Equal(270000, result.RequestedLoanAmount);
@@ -48,14 +47,12 @@ public sealed class EligibilityApiTests : IClassFixture<EligibilityApiTests.ApiF
     {
         using var anonymous = factory.CreateClient();
         var request = new EligibilityRequest(300000, 30000, 100000, true);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync("/api/v1/eligibility/assess", request)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync("/api/v1/eligibility/assess", request, cancellationToken: TestContext.Current.CancellationToken)).StatusCode);
         using var authorized = factory.Authorized();
-        Assert.Equal(HttpStatusCode.BadRequest, (await authorized.PostAsJsonAsync("/api/v1/eligibility/assess",
-            new EligibilityRequest(100, 200, 0, false))).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await authorized.PostAsJsonAsync("/api/v1/eligibility/assess",
-            new { propertyValue = 300000, deposit = 30000, annualIncome = 100000 })).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await anonymous.GetAsync("/health/ready")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await anonymous.GetAsync("/openapi/v1.json")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await authorized.PostAsJsonAsync("/api/v1/eligibility/assess", new EligibilityRequest(100, 200, 0, false), cancellationToken: TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await authorized.PostAsJsonAsync("/api/v1/eligibility/assess", new { propertyValue = 300000, deposit = 30000, annualIncome = 100000 }, cancellationToken: TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await anonymous.GetAsync("/health/ready", TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await anonymous.GetAsync("/openapi/v1.json", TestContext.Current.CancellationToken)).StatusCode);
     }
 
     [Fact]
