@@ -30,7 +30,7 @@ directories remain at the repository root.
 
 | Solution folder | What it contains |
 | --- | --- |
-| Mortgages | Mortgage API, its domain, supporting libraries and the mortgage test project |
+| Mortgages | Mortgage API, continuously running outbox publisher, its domain, supporting libraries and the mortgage test project |
 | Products | Products API, its supporting libraries and tests |
 | Eligibility | Eligibility API and contracts |
 | Notifications | Notifications Worker |
@@ -68,7 +68,8 @@ flowchart LR
     Staff -->|Delegated staff token| API
     Customer --> Sessions[(customer-sessions SQL)]
     API --> Mortgage[(mortgages SQL)]
-    API -->|Publish| Bus[Public Service Bus Basic queue]
+    Publisher[Continuous Outbox Publisher App] -->|Read and lease| Mortgage[(mortgages SQL)]
+    Publisher -->|Send| Bus[Public Service Bus Basic queue]
     Bus -->|Receive| Worker[Notifications Worker]
     Worker --> Notifications[(notifications SQL)]
     API --> Documents[(Mortgage document storage)]
@@ -79,7 +80,9 @@ flowchart LR
 
 The diagram shows the deployed Azure configuration, not the default local
 configuration. Service Bus is publicly reachable and uses separate managed
-identities for sending and receiving; it is not a private endpoint.
+identities for sending and receiving; it is not a private endpoint. The
+Mortgage API commits outbox events with application changes; a continuously
+running Container App polls and publishes them.
 
 The Mortgage API is the only runtime owner of mortgage applications, audit history and documents. It hosts `PD.Mortgages.Application` and `PD.Mortgages.Infrastructure`; the web apps use `PD.Mortgages.Client` and shared contracts instead. The customer app owns its separate session database; staff has no database because no staff-owned data requires one. Customer and staff Data Protection keys are stored in separate private Blob containers in Azure and accessed by their respective identities.
 
@@ -109,7 +112,8 @@ flowchart LR
     API --> Products[Products API]
     API --> Eligibility[Eligibility API]
     Products --> ProductDb
-    API -->|Publish outbox| Bus
+    Publisher[Continuous Outbox Publisher] -->|Read and lease| Mortgage
+    Publisher -->|Publish| Bus
     Bus -->|Receive| Worker[Notifications Worker]
     Worker --> Notifications
 ```
@@ -129,8 +133,8 @@ scaling. Its messages are not retained across container restarts.
 
 1. A customer or staff member submits an application. The Mortgage API saves
    the submission, audit entry and an outbox record together in `mortgages` SQL.
-2. The API checks the outbox roughly every 30 seconds and sends pending events
-   to the local emulator. This includes older pending events.
+2. The local publisher checks the outbox roughly every 30 seconds and sends
+   pending events to the local emulator. This includes older pending events.
 3. The worker receives each event and records a simulated notification in
    `notifications` SQL. It then completes the queue message; **no email is
    sent**. A repeated event does not create another record.
@@ -158,7 +162,7 @@ Staff can look up retained audit history, including deleted drafts, using the fu
 
 The file persistence provider is for development only: unlike SQL, its audit and tombstone writes are not transactional across files.
 
-For both submission paths, SQL saves the status change, audit entry and one minimal outbox event in the same transaction. The API's publisher uses expiring SQL leases to claim pending events, then sends their IDs, application IDs, event type/version and timestamp to one Service Bus queue. A crash after sending but before recording publication can cause a duplicate. The separate worker atomically records one `SimulatedNotifications` row per event in its own database before completing the message; it does not send an email. Invalid messages are dead-lettered; repeated processing failures are eventually dead-lettered by Service Bus. This is at-least-once delivery, not exactly once. Existing submissions are not backfilled. File and in-memory providers do not create outbox events; notifications require SQL.
+For both submission paths, SQL saves the status change, audit entry and one minimal outbox event in the same transaction. The publisher uses expiring SQL leases to claim pending events, then sends their IDs, application IDs, event type/version and timestamp to one Service Bus queue. Locally and in Azure it runs continuously, polling every 30 seconds. Azure keeps at least one publisher replica running, including while idle. A crash after sending but before recording publication can cause a duplicate. The separate worker atomically records one `SimulatedNotifications` row per event in its own database before completing the message; it does not send an email. Invalid messages are dead-lettered; repeated processing failures are eventually dead-lettered by Service Bus. This is at-least-once delivery, not exactly once. Existing submissions are not backfilled. File and in-memory providers do not create outbox events; notifications require SQL.
 
 Mortgage API request and response shapes and their enums live in `PD.Mortgages.Contracts`, which does not reference the domain. The API and typed client use `PD.Mortgages.Transport` to map wire contracts to the models and service interface in `PD.Mortgages.Abstractions`. The application service implements that interface; neither web app nor the client references the application or domain implementation projects. The small `PD.Mortgages.Domain.Types` contains mortgage value enums and their display names, but no entities, persistence or business services. They are shared between layers of the mortgage area, not a shared kernel between separate business contexts.
 
@@ -195,6 +199,7 @@ flowchart LR
                     API[Mortgage API]
                     Products[Products API]
                     Eligibility[Eligibility API]
+                    Publisher[Outbox Publisher app]
                     Worker[Notifications Worker]
                     Bootstrap[Database bootstrap job]
                 end
@@ -228,7 +233,7 @@ flowchart LR
     BlobEndpoint --> Blob
     Dns -.->|Private name resolution| SqlEndpoint
     Dns -.->|Private name resolution| BlobEndpoint
-    API -->|Sender identity| Bus
+    Publisher -->|Queue-scoped sender identity| Bus
     Bus -->|Receiver identity| Worker
     Registry -.->|Images pulled with identity| Environment
     Environment -.->|Console logs| Logs
@@ -241,11 +246,11 @@ accessed through the private endpoints inside it; their public network access
 is disabled. The registry and Service Bus namespace are public endpoints,
 with identity-based access. The queue is part of the Service Bus namespace.
 
-The customer and staff web apps have public HTTPS ingress. All three APIs have internal ingress. The Eligibility API has no database and shares a separate secret with Mortgage API. The customer managed identity can access only its session database and customer key container, and is assigned the API application role. The Mortgage API identity can access the mortgage database and document container; the Products API identity has read access to its catalog database. The staff identity accesses its own key container and has no SQL or document access. Staff API authorization uses delegated tokens, not the staff app's managed identity. The quickstart assigns the customer API role; the bootstrap job's managed identity provisions SQL users and applies migrations.
+The customer and staff web apps have public HTTPS ingress. All three APIs have internal ingress. The Eligibility API has no database and shares a separate secret with Mortgage API. The customer managed identity can access only its session database and customer key container, and is assigned the API application role. The Mortgage API identity can access the mortgage database and document container; the Products API identity has read access to its catalog database. The publisher identity has table-scoped `SELECT` and `UPDATE` on `dbo.SubmissionOutbox` only. The staff identity accesses its own key container and has no SQL or document access. Staff API authorization uses delegated tokens, not the staff app's managed identity. The quickstart assigns the customer API role; the bootstrap job's managed identity provisions SQL users and applies migrations.
 
-One VNet (`10.42.0.0/16`) contains a delegated Container Apps subnet (`10.42.0.0/24`) and a private-endpoint subnet (`10.42.1.0/24`). SQL and Blob private endpoints use linked private DNS zones; public network access is disabled for both services. The registry and Service Bus Basic namespace remain publicly reachable with identity-based access. The API has queue-scoped sender access; the worker has queue-scoped receiver access and its own SQL identity. A separate scaler identity has namespace-scoped Service Bus Data Owner, as in Microsoft's KEDA example, and is unavailable to application containers (`lifecycle: None`). This is broader than receiver access. Local Service Bus authentication is disabled. The worker has no ingress and is configured for zero to one replicas; scale-from-zero and its permissions still need live validation. Only the two web apps expose external ingress.
+One VNet (`10.42.0.0/16`) contains a delegated Container Apps subnet (`10.42.0.0/24`) and a private-endpoint subnet (`10.42.1.0/24`). SQL and Blob private endpoints use linked private DNS zones; public network access is disabled for both services. The registry and Service Bus Basic namespace remain publicly reachable with identity-based access. The publisher has queue-scoped sender access; the worker has queue-scoped receiver access and its own SQL identity. A separate scaler identity has namespace-scoped Service Bus Data Owner, as in Microsoft's KEDA example, and is unavailable to application containers (`lifecycle: None`). This is broader than receiver access. Local Service Bus authentication is disabled. The worker has no ingress and is configured for zero to one replicas; scale-from-zero and its permissions still need live validation. The publisher has no ingress and keeps one replica running continuously; this uses compute even while the outbox is idle. Only the two web apps expose external ingress.
 
-This is not a production security boundary: staff ingress is public, and the prototype needs further security, privacy, backup and retention review before handling real data. The in-memory staff token cache is lost on restart; staff may be prompted to sign in again. A customer-to-staff journey and simulated notification were observed using the earlier API-hosted consumer; the separate worker and scale rule have not yet been tested live. See the [prototype lifecycle guide](../AZURE_PROTOTYPE_GUIDE.md) for create/delete and identity setup, and the [advanced deployment guide](azure-advanced-deployment.md) for cost notes and operational details.
+This is not a production security boundary: staff ingress is public, and the prototype needs further security, privacy, backup and retention review before handling real data. The in-memory staff token cache is lost on restart; staff may be prompted to sign in again. A customer-to-staff journey and simulated notification were observed using the earlier API-hosted consumer; the continuous publisher app, separate worker and scale rule have not yet been tested live. See the [prototype lifecycle guide](../AZURE_PROTOTYPE_GUIDE.md) for create/delete and identity setup, and the [advanced deployment guide](azure-advanced-deployment.md) for cost notes and operational details.
 
 ### Creation, updates and deletion
 
@@ -256,9 +261,9 @@ flowchart TD
     Recovery[Local: resource-group recovery or Azure retry] --> Script
     Create[GitHub: Create prototype] -->|OIDC; retained group and identities required| Script
     Script --> Foundation[Bicep: foundation, network, SQL, Blob and queue]
-    Foundation --> Images[Build seven images in Container Registry]
+    Foundation --> Images[Build eight images in Container Registry]
     Images --> Bootstrap[Run private database bootstrap job]
-    Bootstrap --> Apps[Deploy six Container Apps]
+    Bootstrap --> Apps[Deploy seven Container Apps]
     Apps --> Callbacks[Update Staff Web callbacks in Entra]
     Callbacks --> Ready[Check public readiness]
     Ready --> Finalize[Local finalizer: scoped permissions and deployment stacks]
@@ -276,7 +281,7 @@ flowchart TD
     Delete[GitHub: Delete prototype resources] --> Review[Check known resources and staff callbacks]
     Review -->|Recognized| Remove[Delete prototype resources and data]
     Review -->|Unknown top-level resources or invalid DNS links| Stop[Stop; inspect remaining costs]
-    Remove --> Retain[Keep group, eight identities and group permissions]
+    Remove --> Retain[Keep group, nine identities and group permissions]
 ```
 
 Fresh bootstrap creates Entra and GitHub configuration, then calls the same

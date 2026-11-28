@@ -31,8 +31,8 @@ granting broader permissions.
    The workflow requires these exact identities and the existing
    `MortgageCustomer` app-role assignment on customer-sessions. It checks
    that assignment but cannot create it. Do not delete the group or identities
-   between normal runs. Two additional notification identities are created
-   or verified in step 2 below.
+   between normal runs. The outbox publisher, notifications worker and scaler
+   identities are created or verified in step 2 below.
 4. Open **Microsoft Entra ID → App registrations** and confirm that the
    Mortgage API, Staff Web and GitHub deployment registrations already exist.
    Reuse them; see the [first-time guide](azure-setup-from-scratch.md)
@@ -111,10 +111,11 @@ quickstart may instead have granted `AcrPush` to the signed-in user. Do not
 assume those are the same principal. Repeat this check if the registry is
 deleted and recreated.
 
-#### Add the notification worker identities and permissions
+#### Add the outbox publisher and notification identities and permissions
 
-The separate worker needs two more retained identities. The worker identity
-receives messages; a scaler-only identity reads queue metrics. The scaler uses
+The publisher and separate worker need three more retained identities. The
+publisher sends outbox events; the worker identity receives messages; a
+scaler-only identity reads queue metrics. The scaler uses
 namespace-scoped **Azure Service Bus Data Owner**, a powerful role that can
 manage entities and send and receive messages. The container cannot use that
 scaler identity. This follows Microsoft's
@@ -146,17 +147,18 @@ the new setup still needs live Azure validation.
    ```
 
 3. Check the printed subscription group, GitHub principal and permission
-   summary. Type `yes` only if they are correct. The script creates the two
+   summary. Type `yes` only if they are correct. The script creates the three
    identities if missing and extends the existing conditioned group-scoped
-   administrator assignment. It permits **receiver only for the worker** and
-   **Data Owner only for the scaler**, for both assignment and removal; it
-   preserves the existing condition. It refuses an unconditioned or ambiguous
-   existing assignment. If it fails, read the error and review Azure before
-   retrying.
+   administrator assignment. It permits **Data Sender only for the publisher**,
+   **Data Receiver only for the worker** and **Data Owner only for the scaler**,
+   for both assignment and removal; it preserves the existing condition. It
+   refuses an unconditioned or ambiguous existing assignment. If it fails,
+   read the error and review Azure before retrying.
 4. The script reports when the extension is already present or when the
    restricted permissions are ready. In Azure Portal → resource group → **Resources**, confirm
-   `mortgage-demo-env-notifications` and `mortgage-demo-env-notifications-scaler`
-   now exist along with the original six. In **Access control (IAM) → Role
+   `mortgage-demo-env-outbox-publisher`, `mortgage-demo-env-notifications` and
+   `mortgage-demo-env-notifications-scaler` now exist along with the original
+   identities. In **Access control (IAM) → Role
    assignments**, inspect the updated condition and check for other broader
    assignments. Allow time for permission propagation.
 

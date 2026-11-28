@@ -89,8 +89,11 @@ reset_state() {
       {id:($prefix + "Microsoft.ManagedIdentity/userAssignedIdentities/mortgage-demo-env-mortgages"),type:"Microsoft.ManagedIdentity/userAssignedIdentities",name:"mortgage-demo-env-mortgages"},
       {id:($prefix + "Microsoft.ManagedIdentity/userAssignedIdentities/mortgage-demo-env-notifications"),type:"Microsoft.ManagedIdentity/userAssignedIdentities",name:"mortgage-demo-env-notifications"},
       {id:($prefix + "Microsoft.ManagedIdentity/userAssignedIdentities/mortgage-demo-env-notifications-scaler"),type:"Microsoft.ManagedIdentity/userAssignedIdentities",name:"mortgage-demo-env-notifications-scaler"},
+      {id:($prefix + "Microsoft.ManagedIdentity/userAssignedIdentities/mortgage-demo-env-outbox-publisher"),type:"Microsoft.ManagedIdentity/userAssignedIdentities",name:"mortgage-demo-env-outbox-publisher"},
       {id:($prefix + "Microsoft.App/containerApps/mortgage-api"),type:"Microsoft.App/containerApps",name:"mortgage-api",tags:$tags},
       {id:($prefix + "Microsoft.App/containerApps/notifications-worker"),type:"Microsoft.App/containerApps",name:"notifications-worker",tags:$tags},
+      {id:($prefix + "Microsoft.App/containerApps/mortgage-demo-env-outbox-publisher"),type:"Microsoft.App/containerApps",name:"mortgage-demo-env-outbox-publisher",tags:$tags},
+      {id:($prefix + "Microsoft.App/jobs/mortgage-demo-env-outbox-publisher"),type:"Microsoft.App/jobs",name:"mortgage-demo-env-outbox-publisher",tags:$tags},
       {id:($prefix + "Microsoft.App/containerApps/staff-web"),type:"Microsoft.App/containerApps",name:"staff-web",tags:$tags},
       {id:($prefix + "Microsoft.App/managedEnvironments/mortgage-demo-env"),type:"Microsoft.App/managedEnvironments",name:"mortgage-demo-env",tags:$tags},
       {id:($prefix + "Microsoft.Network/privateEndpoints/sql-server-private"),type:"Microsoft.Network/privateEndpoints",name:"sql-server-private",tags:$tags},
@@ -114,7 +117,7 @@ reset_state() {
 
 reset_state
 bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
-jq -e 'length == 3 and all(.[]; .type == "Microsoft.ManagedIdentity/userAssignedIdentities")' "$TEST_STATE/resources" >/dev/null
+jq -e 'length == 4 and all(.[]; .type == "Microsoft.ManagedIdentity/userAssignedIdentities")' "$TEST_STATE/resources" >/dev/null
 jq -e '.web.redirectUris == ["https://localhost:7241/signin-oidc"] and .web.homePageUrl == "https://existing.example"' "$TEST_STATE/staff" >/dev/null
 app_line="$(grep -n 'resource delete .*containerApps/mortgage-api' "$TEST_LOG" | cut -d: -f1)"
 environment_line="$(grep -n 'resource delete .*managedEnvironments' "$TEST_LOG" | cut -d: -f1)"
@@ -141,14 +144,14 @@ bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
 detach_line="$(grep -n '^stack group delete ' "$TEST_LOG" | cut -d: -f1)"
 delete_line="$(grep -n '^resource delete ' "$TEST_LOG" | head -n 1 | cut -d: -f1)"
 [[ "$detach_line" -lt "$delete_line" ]]
-jq -e 'length == 3 and all(.[]; .type == "Microsoft.ManagedIdentity/userAssignedIdentities")' "$TEST_STATE/resources" >/dev/null
+jq -e 'length == 4 and all(.[]; .type == "Microsoft.ManagedIdentity/userAssignedIdentities")' "$TEST_STATE/resources" >/dev/null
 
 reset_state
 jq '. + [{id:"/subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.Sql/servers/sql-server/databases/extra",
   type:"Microsoft.Sql/servers/databases",name:"sql-server/extra"}]' "$TEST_STATE/resources" > "$TEST_STATE/resources.new"
 mv "$TEST_STATE/resources.new" "$TEST_STATE/resources"
 bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
-jq -e 'length == 3' "$TEST_STATE/resources" >/dev/null
+jq -e 'length == 4' "$TEST_STATE/resources" >/dev/null
 
 reset_state
 jq '. + [
@@ -159,7 +162,7 @@ jq '. + [
 ]' "$TEST_STATE/resources" > "$TEST_STATE/resources.new"
 mv "$TEST_STATE/resources.new" "$TEST_STATE/resources"
 bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"
-jq -e 'length == 3' "$TEST_STATE/resources" >/dev/null
+jq -e 'length == 4' "$TEST_STATE/resources" >/dev/null
 
 : > "$TEST_LOG"
 bash "$root/infra/deployment/delete-prototype.sh" > "$test_dir/output"

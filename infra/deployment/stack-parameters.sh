@@ -104,13 +104,14 @@ else
   sql_fqdn=''
   if [[ "$STACK_TARGET" == products-api || "$STACK_TARGET" == mortgage-api ||
         "$STACK_TARGET" == notifications-worker || "$STACK_TARGET" == mortgages-web ||
-        "$STACK_TARGET" == database-bootstrap ]]; then
+        "$STACK_TARGET" == database-bootstrap || "$STACK_TARGET" == outbox-publisher ]]; then
     sql="$(az sql server show --name "$AZURE_SQL_SERVER" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
     sql_fqdn="$(jq -er '.fullyQualifiedDomainName | select(type == "string" and length > 0)' <<< "$sql")"
   fi
   servicebus_name=''
   servicebus_fqdn=''
-  if [[ "$STACK_TARGET" == mortgage-api || "$STACK_TARGET" == notifications-worker ]]; then
+  if [[ "$STACK_TARGET" == mortgage-api || "$STACK_TARGET" == notifications-worker ||
+        "$STACK_TARGET" == outbox-publisher ]]; then
     namespaces="$(az servicebus namespace list --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
     namespace="$(jq -cer '
       [ .[] | select(.name | type == "string" and test("^mortgage-sb-[a-z0-9]{13}$")) ] |
@@ -139,10 +140,10 @@ else
     fi
   done
   if [[ "$STACK_TARGET" == database-bootstrap ]]; then
-    app_name=mortgage-demo-env-bootstrap
+    app_name="$(service_job_name "$STACK_TARGET")"
     available="$(az containerapp job list --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
   else
-    app_name="$STACK_TARGET"
+    app_name="$(service_app_name "$STACK_TARGET")"
     available="$(az containerapp list --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
   fi
   count="$(jq -er --arg name "$app_name" \
@@ -175,6 +176,7 @@ else
       productsIdentityClientId:identity("products").clientId,
       customerSessionsIdentityClientId:identity("customer-sessions").clientId,
       notificationsIdentityClientId:identity("notifications").clientId,
+      outboxPublisherIdentityClientId:identity("outbox-publisher").clientId,
       bootstrapIdentityClientId:identity("bootstrap").clientId,
       staffIdentityClientId:identity("staff").clientId,
       sqlServerFqdn:$sql, serviceBusFqdn:$sb_fqdn, serviceBusName:$sb_name,
@@ -185,8 +187,10 @@ else
       productsIdentityName:identity("products").name,
       customerSessionsIdentityName:identity("customer-sessions").name,
       notificationsIdentityName:identity("notifications").name,
+      outboxPublisherIdentityName:identity("outbox-publisher").name,
       notificationsScalerIdentityId:identity("notifications-scaler").id,
       notificationsIdentityId:identity("notifications").id,
+      outboxPublisherIdentityId:identity("outbox-publisher").id,
       customerSessionsIdentityId:identity("customer-sessions").id,
       mortgagesIdentityId:identity("mortgages").id,
       productsIdentityId:identity("products").id,

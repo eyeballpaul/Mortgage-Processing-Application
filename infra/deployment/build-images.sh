@@ -29,7 +29,7 @@ if jq -e 'length == 0' <<< "$registries" >/dev/null; then
 fi
 
 images='{}'
-for service in "${app_services[@]}" database-bootstrap; do
+for service in "${app_services[@]}" "${job_services[@]}"; do
   project="$(service_project "$service")"
   image="$(service_image "$service")"
   build=true

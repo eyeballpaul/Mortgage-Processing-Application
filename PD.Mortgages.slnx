@@ -20,6 +20,7 @@
     <Project Path="PD.Mortgages.Domain/PD.Mortgages.Domain.csproj" />
     <Project Path="PD.Mortgages.Domain.Types/PD.Mortgages.Domain.Types.csproj" />
     <Project Path="PD.Mortgages.Infrastructure/PD.Mortgages.Infrastructure.csproj" />
+    <Project Path="PD.Mortgages.OutboxPublisher/PD.Mortgages.OutboxPublisher.csproj" />
     <Project Path="PD.Mortgages.Tests/PD.Mortgages.Tests.csproj" />
     <Project Path="PD.Mortgages.Transport/PD.Mortgages.Transport.csproj" />
   </Folder>

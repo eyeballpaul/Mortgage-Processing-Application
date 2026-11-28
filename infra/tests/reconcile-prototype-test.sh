@@ -40,7 +40,7 @@ case "$1" in
   infra/deployment/plan-apps.sh)
     jq -cn --arg changed "${TEST_CHANGED_SERVICE:-}" --arg missing "${TEST_MISSING_SERVICE:-}" \
       --arg digest "$TEST_DIGEST" --arg bootstrap "${TEST_BOOTSTRAP_BUILD:-false}" --arg missing_job "${TEST_JOB_MISSING:-false}" '
-      ["products-api","eligibility-api","mortgage-api","notifications-worker","mortgages-web","staff-web"] |
+      ["products-api","eligibility-api","mortgage-api","notifications-worker","outbox-publisher","mortgages-web","staff-web"] |
       {targets:map({service:.,status:(if . == $missing then "missing" elif . == $changed then "deploy" else "unchanged" end),
         sourceImage:("registry.example/" + . + "@" + $digest)}),
        bootstrapBuild:($bootstrap == "true" or $missing_job == "true"),
@@ -49,6 +49,7 @@ case "$1" in
     jq -cn --arg sha "$GITHUB_SHA" --arg registry "$AZURE_CONTAINER_REGISTRY" --arg digest "$TEST_DIGEST" '
       {commit:$sha,registry:$registry,images:{
         "database-bootstrap":{repository:"database-bootstrap",digest:$digest},
+        "outbox-publisher":{repository:"outbox-publisher",digest:$digest},
         "mortgage-api":{repository:"mortgages-api",digest:$digest},
         "staff-web":{repository:"mortgages-staff-web",digest:$digest}}}' > "$RELEASE_MANIFEST" ;;
   infra/deployment/app-stack.sh)
@@ -119,7 +120,7 @@ if grep -q 'helper\|az stack group' "$TEST_LOG"; then echo "Untested commit chan
 
 : > "$TEST_LOG"
 /bin/bash infra/deployment/initialize-stacks.sh > "$dir/output"
-[[ "$(grep -c 'helper infra/deployment/app-stack.sh' "$TEST_LOG")" == 7 ]]
+[[ "$(grep -c 'helper infra/deployment/app-stack.sh' "$TEST_LOG")" == 8 ]]
 foundation_line="$(grep -n 'helper infra/deployment/foundation-stack.sh' "$TEST_LOG" | cut -d: -f1)"
 bootstrap_line="$(grep -n 'helper infra/deployment/app-stack.sh .*database-bootstrap' "$TEST_LOG" | cut -d: -f1)"
 [[ "$foundation_line" -lt "$bootstrap_line" ]]

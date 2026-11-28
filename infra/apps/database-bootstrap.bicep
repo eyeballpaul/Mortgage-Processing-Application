@@ -7,12 +7,14 @@ param mortgagesIdentityClientId string
 param productsIdentityClientId string
 param customerSessionsIdentityClientId string
 param notificationsIdentityClientId string
+param outboxPublisherIdentityClientId string
 param bootstrapIdentityClientId string
 param sqlServerFqdn string
 param mortgagesIdentityName string
 param productsIdentityName string
 param customerSessionsIdentityName string
 param notificationsIdentityName string
+param outboxPublisherIdentityName string
 param bootstrapIdentityId string
 param environmentName string
 param imageTag string
@@ -74,6 +76,10 @@ resource databaseBootstrap 'Microsoft.App/jobs@2025-01-01' = {
             notificationsIdentityName
             '--notifications-identity-client-id'
             notificationsIdentityClientId
+            '--outbox-publisher-identity-name'
+            outboxPublisherIdentityName
+            '--outbox-publisher-identity-client-id'
+            outboxPublisherIdentityClientId
           ]
           env: [
             // Choose the admin identity when Azure SDK requests a token.

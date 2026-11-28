@@ -33,10 +33,11 @@ assignment="$(jq -ce --arg principal "$github_principal" --arg group "$group_id"
 echo "Selected group: $group_id"
 echo "GitHub deployment principal: $github_principal"
 echo "The existing RBAC condition will be preserved and extended only for:"
+echo "  Azure Service Bus Data Sender -> mortgage-demo-env-outbox-publisher"
 echo "  Azure Service Bus Data Receiver -> mortgage-demo-env-notifications"
 echo "  Azure Service Bus Data Owner -> mortgage-demo-env-notifications-scaler"
 echo "Data Owner is broad within a Service Bus namespace; review the setup guide before continuing."
-read -r -p "Create the two retained identities if needed and update this condition? Type yes: " confirm
+read -r -p "Create the three retained identities if needed and update this condition? Type yes: " confirm
 if [[ "$confirm" != yes ]]; then
   echo "Setup cancelled."
   exit 1
@@ -48,7 +49,7 @@ if ! jq -e 'type == "array"' <<< "$identities" >/dev/null; then
   echo "Invalid managed identity listing." >&2
   exit 1
 fi
-for name in mortgage-demo-env-notifications mortgage-demo-env-notifications-scaler; do
+for name in mortgage-demo-env-outbox-publisher mortgage-demo-env-notifications mortgage-demo-env-notifications-scaler; do
   count="$(jq --arg name "$name" '[.[] | select(.name == $name)] | length' <<< "$identities")"
   if [[ "$count" == 0 ]]; then
     az identity create --name "$name" --resource-group "$AZURE_RESOURCE_GROUP" --output none
@@ -59,21 +60,24 @@ for name in mortgage-demo-env-notifications mortgage-demo-env-notifications-scal
 done
 worker="$(az identity show --name mortgage-demo-env-notifications --resource-group "$AZURE_RESOURCE_GROUP" --query principalId --output tsv)"
 scaler="$(az identity show --name mortgage-demo-env-notifications-scaler --resource-group "$AZURE_RESOURCE_GROUP" --query principalId --output tsv)"
-for principal in "$worker" "$scaler"; do
+publisher="$(az identity show --name mortgage-demo-env-outbox-publisher --resource-group "$AZURE_RESOURCE_GROUP" --query principalId --output tsv)"
+for principal in "$worker" "$scaler" "$publisher"; do
   if [[ ! "$principal" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
     echo "A notification identity has an invalid principal ID." >&2
     exit 1
   fi
 done
-if [[ "$worker" == "$scaler" || "$worker" == "$github_principal" || "$scaler" == "$github_principal" ]]; then
+if [[ "$worker" == "$scaler" || "$worker" == "$publisher" || "$scaler" == "$publisher" ||
+      "$worker" == "$github_principal" || "$scaler" == "$github_principal" || "$publisher" == "$github_principal" ]]; then
   echo "Notification and deployment principals must be distinct." >&2
   exit 1
 fi
 
 receiver=4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0
+sender=69a216fc-b8fb-44d8-bc22-1f3c2cd27a39
 owner=090c5cfd-751d-490a-894a-3ce6f1109419
-# Add only the worker/scaler assignments to the previously reviewed permission condition.
-extra="((ActionMatches{'Microsoft.Authorization/roleAssignments/write'} AND ((@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$receiver} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$worker}) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$owner} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$scaler}))) OR (ActionMatches{'Microsoft.Authorization/roleAssignments/delete'} AND ((@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$receiver} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$worker}) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$owner} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$scaler}))))"
+# Add only the publisher, worker and scaler assignments to the reviewed condition.
+extra="((ActionMatches{'Microsoft.Authorization/roleAssignments/write'} AND ((@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$sender} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$publisher}) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$receiver} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$worker}) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$owner} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$scaler}))) OR (ActionMatches{'Microsoft.Authorization/roleAssignments/delete'} AND ((@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$sender} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$publisher}) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$receiver} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$worker}) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$owner} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$scaler}))))"
 old_condition="$(jq -er '.condition' <<< "$assignment")"
 if jq -en --arg old "$old_condition" --arg extra "$extra" '
   ($old | gsub("\\s"; "") | ascii_downcase) |
@@ -111,5 +115,5 @@ if ! jq -e --arg id "$assignment_id" --arg condition "$condition" '
   echo "The updated role condition could not be verified; inspect it in Azure before deploying." >&2
   exit 1
 fi
-echo "Notification identities and restricted deployment permissions are ready."
+echo "Outbox publisher and notification identities and restricted deployment permissions are ready."
 echo "Review other role assignments separately; existing permissions were not narrowed."

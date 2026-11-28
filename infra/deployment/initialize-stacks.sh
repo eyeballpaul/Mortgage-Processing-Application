@@ -22,12 +22,13 @@ STACK_TARGET=foundation bash infra/deployment/stack-parameters.sh
 ALLOW_CREATE=true bash infra/deployment/foundation-stack.sh
 
 # Initialize each current image as the baseline for later selective deployments.
-for service in database-bootstrap "${app_services[@]}"; do
-  if [[ "$service" == database-bootstrap ]]; then
+for service in "${job_services[@]}" "${app_services[@]}"; do
+  if [[ " ${job_services[*]} " == *" $service "* ]]; then
     app="$(az containerapp job show --resource-group "$AZURE_RESOURCE_GROUP" \
-      --name mortgage-demo-env-bootstrap --output json)"
+      --name "$(service_job_name "$service")" --output json)"
   else
-    app="$(az containerapp show --resource-group "$AZURE_RESOURCE_GROUP" --name "$service" --output json)"
+    app="$(az containerapp show --resource-group "$AZURE_RESOURCE_GROUP" \
+      --name "$(service_app_name "$service")" --output json)"
   fi
   image="$(jq -er '.properties.template.containers | select(length == 1) |
     .[0].image | select(type == "string" and length > 0)' <<< "$app")"

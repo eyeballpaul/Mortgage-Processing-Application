@@ -1,41 +1,19 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.EntityFrameworkCore;
-using PD.Mortgages.Infrastructure.Persistence;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using PD.Mortgages.Events;
+using PD.Mortgages.Infrastructure.Persistence;
 
-namespace PD.Mortgages.Api.Services;
+namespace PD.Mortgages.OutboxPublisher;
 
 internal sealed class SubmissionOutboxPublisher(
     IServiceScopeFactory scopes,
-    ServiceBusClient client,
-    IConfiguration configuration,
-    ILogger<SubmissionOutboxPublisher> logger) : BackgroundService
+    ILogger<SubmissionOutboxPublisher> logger)
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(5);
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        await using var sender = client.CreateSender(configuration["Notifications:QueueName"]!);
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await PublishBatchAsync(sender, stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception exception)
-            {
-                logger.LogError(exception, "Submission outbox publishing failed; pending events will be retried.");
-            }
-            await Task.Delay(Interval, stoppingToken);
-        }
-    }
-
-    internal async Task PublishBatchAsync(ServiceBusSender sender, CancellationToken cancellationToken)
+    public async Task<int> PublishBatchAsync(ServiceBusSender sender, CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<MortgageDbContext>();
@@ -46,6 +24,7 @@ internal sealed class SubmissionOutboxPublisher(
             .Take(50)
             .ToListAsync(cancellationToken);
 
+        var publishedCount = 0;
         foreach (var item in candidates)
         {
             now = DateTime.UtcNow;
@@ -75,6 +54,10 @@ internal sealed class SubmissionOutboxPublisher(
                     .SetProperty(entry => entry.LeaseUntilUtc, (DateTime?)null), cancellationToken);
             if (marked == 0)
                 logger.LogWarning("Outbox lease expired for event {EventId}; duplicate delivery is possible.", item.Id);
+            else
+                publishedCount++;
         }
+
+        return publishedCount;
     }
 }

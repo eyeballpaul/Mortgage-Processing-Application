@@ -28,6 +28,7 @@ case "$*" in
     mv "$TEST_DIR/identities.new" "$TEST_DIR/identities" ;;
   "identity show --name mortgage-demo-env-notifications-scaler "*) echo aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee ;;
   "identity show --name mortgage-demo-env-notifications "*) echo 99999999-8888-7777-6666-555555555555 ;;
+  "identity show --name mortgage-demo-env-outbox-publisher "*) echo 88888888-7777-6666-5555-444444444444 ;;
   *) echo "Unexpected az invocation: $*" >&2; exit 1 ;;
 esac
 MOCK
@@ -44,13 +45,14 @@ reset_state
 printf 'yes\n' | bash "$root/infra/setup-notification-permissions.sh" > "$test_dir/output"
 jq -e '.condition | startswith("(original-condition) OR (") and
   contains("4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0") and contains("99999999-8888-7777-6666-555555555555") and
+  contains("69a216fc-b8fb-44d8-bc22-1f3c2cd27a39") and contains("88888888-7777-6666-5555-444444444444") and
   contains("090c5cfd-751d-490a-894a-3ce6f1109419") and contains("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee") and
   contains("@Request[Microsoft.Authorization/roleAssignments:PrincipalId]") and
   contains("@Resource[Microsoft.Authorization/roleAssignments:PrincipalId]")' "$TEST_DIR/assignment" >/dev/null
-[[ "$(grep -c '^identity create' "$TEST_LOG")" == 2 ]]
+[[ "$(grep -c '^identity create' "$TEST_LOG")" == 3 ]]
 printf 'yes\n' | bash "$root/infra/setup-notification-permissions.sh" > "$test_dir/output"
 [[ "$(grep -c '^role assignment update' "$TEST_LOG")" == 1 ]]
-[[ "$(grep -c '^identity create' "$TEST_LOG")" == 2 ]]
+[[ "$(grep -c '^identity create' "$TEST_LOG")" == 3 ]]
 
 reset_state
 if printf 'no\n' | bash "$root/infra/setup-notification-permissions.sh" > "$test_dir/output" 2>&1; then

@@ -12,7 +12,6 @@ using PD.Mortgages.Application.Services;
 using PD.Mortgages.Infrastructure.Persistence;
 using PD.Mortgages.Infrastructure.Products;
 using PD.Mortgages.Infrastructure.Eligibility;
-using PD.Mortgages.Events;
 using PD.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -56,15 +55,6 @@ builder.Services.AddHealthChecks()
     .AddCheck<EligibilityDependencyHealthCheck>("eligibility-api", tags: ["dependencies"]);
 builder.Services.AddMortgagePersistence(builder.Configuration);
 builder.Services.AddHostedService<DraftMaintenanceService>();
-if (builder.Configuration.GetValue<bool>("Notifications:Enabled"))
-{
-    if (!string.Equals(builder.Configuration["Persistence:Provider"], "SqlServer", StringComparison.OrdinalIgnoreCase))
-    {
-        throw new InvalidOperationException("Notifications require SQL Server.");
-    }
-    builder.Services.AddSingleton(NotificationServiceBus.Create(builder.Configuration, builder.Environment));
-    builder.Services.AddHostedService<SubmissionOutboxPublisher>();
-}
 builder.Services.AddOptions<MortgageWorkflowOptions>().BindConfiguration(MortgageWorkflowOptions.SectionName)
     .Validate(options => !string.IsNullOrWhiteSpace(options.ConsentTermsVersion), "MortgageWorkflow:ConsentTermsVersion is required.")
     .ValidateOnStart();

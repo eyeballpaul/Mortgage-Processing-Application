@@ -23,6 +23,9 @@ var staffClientId = builder.Configuration["MortgageApi:StaffClientId"] ?? Guid.E
 var notificationsWorker = builder.AddDotnetProject("notifications-worker", "../PD.Notifications.Worker/PD.Notifications.Worker.csproj")
     .WithReference(notificationsDatabase)
     .WaitFor(notificationsDatabase);
+var outboxPublisher = builder.AddDotnetProject("outbox-publisher", "../PD.Mortgages.OutboxPublisher/PD.Mortgages.OutboxPublisher.csproj")
+    .WithReference(mortgagesDatabase)
+    .WaitFor(mortgagesDatabase);
 
 var productsApi = builder.AddDotnetProject("products-api", "../PD.Products.Api/PD.Products.Api.csproj")
     .WithReference(productsDatabase)
@@ -73,8 +76,9 @@ if (useNotificationEmulator)
         .WithEnvironment("Notifications__UseLocalEmulator", "true")
         .WithEnvironment("Notifications__QueueName", "submission-notifications")
         .WaitFor(serviceBus);
-    mortgageApi
+    outboxPublisher
         .WithReference(serviceBus)
+        .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
         .WithEnvironment("Notifications__Enabled", "true")
         .WithEnvironment("Notifications__UseLocalEmulator", "true")
         .WithEnvironment("Notifications__QueueName", "submission-notifications")
@@ -83,6 +87,7 @@ if (useNotificationEmulator)
 else
 {
     notificationsWorker.WithEnvironment("Notifications__Enabled", "false");
+    outboxPublisher.WithEnvironment("Notifications__Enabled", "false");
 }
 
 builder.AddDotnetProject("mortgages-web", "../PD.Mortgages.Customer.Web/PD.Mortgages.Customer.Web.csproj")

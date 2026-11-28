@@ -193,10 +193,16 @@ resource imagePullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@202
   tags: appTags
 }
 
-// The Mortgage API uses this separate identity for SQL, documents and sending
-// events. Its permissions are granted at the relevant resource scopes.
+// The Mortgage API uses this identity for SQL and documents.
 resource mortgagesIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
   name: '${containerAppEnvironmentName}-mortgages'
+  location: location
+  tags: appTags
+}
+
+// The continuous publisher uses this identity for SQL outbox access and queue sending.
+resource outboxPublisherIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
+  name: '${containerAppEnvironmentName}-outbox-publisher'
   location: location
   tags: appTags
 }
@@ -217,12 +223,12 @@ resource notificationsScalerIdentity 'Microsoft.ManagedIdentity/userAssignedIden
 }
 
 // Deploy the companion template in this group to create the public Service Bus
-// namespace, queue and scoped roles using the three identities defined here.
+// namespace, queue and scoped roles using the identities defined here.
 module notifications './notifications.bicep' = {
   name: 'mortgage-notifications'
   params: {
     location: location
-    mortgagesIdentityName: mortgagesIdentity.name
+    outboxPublisherIdentityName: outboxPublisherIdentity.name
     notificationsIdentityName: notificationsIdentity.name
     notificationsScalerIdentityName: notificationsScalerIdentity.name
   }
@@ -667,6 +673,7 @@ output registryServer string = registry.properties.loginServer
 output imagePullIdentityId string = imagePullIdentity.id
 output environmentId string = containerEnvironment.id
 output mortgagesIdentityClientId string = mortgagesIdentity.properties.clientId
+output outboxPublisherIdentityClientId string = outboxPublisherIdentity.properties.clientId
 output productsIdentityClientId string = productsIdentity.properties.clientId
 output customerSessionsIdentityClientId string = customerSessionsIdentity.properties.clientId
 output notificationsIdentityClientId string = notificationsIdentity.properties.clientId
@@ -678,13 +685,17 @@ output serviceBusName string = notifications.outputs.namespaceName
 output serviceBusQueueName string = notifications.outputs.queueName
 output serviceBusQueueId string = notifications.outputs.queueId
 output mortgagesIdentityName string = mortgagesIdentity.name
+output outboxPublisherIdentityName string = outboxPublisherIdentity.name
 output productsIdentityName string = productsIdentity.name
 output customerSessionsIdentityName string = customerSessionsIdentity.name
 output notificationsIdentityName string = notificationsIdentity.name
 output mortgagesIdentityPrincipalId string = mortgagesIdentity.properties.principalId
+output outboxPublisherIdentityPrincipalId string = outboxPublisherIdentity.properties.principalId
 output customerSessionsIdentityPrincipalId string = customerSessionsIdentity.properties.principalId
+output notificationsIdentityPrincipalId string = notificationsIdentity.properties.principalId
 output notificationsScalerIdentityId string = notificationsScalerIdentity.id
 output notificationsIdentityId string = notificationsIdentity.id
+output outboxPublisherIdentityId string = outboxPublisherIdentity.id
 output customerSessionsIdentityId string = customerSessionsIdentity.id
 output mortgagesIdentityId string = mortgagesIdentity.id
 output productsIdentityId string = productsIdentity.id

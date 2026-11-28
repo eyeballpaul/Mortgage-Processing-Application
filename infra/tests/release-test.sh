@@ -17,13 +17,15 @@ case "$*" in
     if [[ "$*" == *"--query digest"* ]]; then echo "$TEST_DIGEST"; fi ;;
   "acr show "*) echo test.azurecr.io ;;
   "containerapp list "*) jq -n --arg missing "${TEST_MISSING_SERVICE:-}" \
-    '["products-api","eligibility-api","mortgage-api","notifications-worker","mortgages-web","staff-web"] | map(select(. != $missing) | {name:.})' ;;
+    '["products-api","eligibility-api","mortgage-api","notifications-worker","mortgage-demo-env-outbox-publisher","mortgages-web","staff-web"] |
+      map(select(. != $missing) | {name:.})' ;;
   "containerapp show "*)
     if [[ "$*" == *"--query properties.configuration.ingress.fqdn"* ]]; then
       echo app.example
     else
       name="$4"
-      case "$name" in mortgage-api) repository=mortgages-api ;; staff-web) repository=mortgages-staff-web ;; *) repository="$name" ;; esac
+      case "$name" in mortgage-api) repository=mortgages-api ;; staff-web) repository=mortgages-staff-web ;;
+        mortgage-demo-env-outbox-publisher) repository=outbox-publisher ;; *) repository="$name" ;; esac
       baseline="${TEST_BASELINE_ALL:-}"
       if [[ "${TEST_BEHIND_SERVICE:-}" == "$name" ]]; then baseline="$TEST_BEHIND_COMMIT"; fi
       if [[ "${TEST_UNVERIFIED_SERVICE:-}" == "$name" ]]; then baseline=""; fi
@@ -37,7 +39,8 @@ case "$*" in
     fi ;;
   "containerapp revision list "*)
     name="$5"
-    case "$name" in mortgage-api) repository=mortgages-api ;; staff-web) repository=mortgages-staff-web ;; *) repository="$name" ;; esac
+    case "$name" in mortgage-api) repository=mortgages-api ;; staff-web) repository=mortgages-staff-web ;;
+      mortgage-demo-env-outbox-publisher) repository=outbox-publisher ;; *) repository="$name" ;; esac
     image="test.azurecr.io/$repository@$TEST_DIGEST"
     if [[ "${TEST_REVISION_DRIFT_SERVICE:-}" == "$name" ]]; then image="test.azurecr.io/$repository:drift"; fi
     jq -n --arg name "$name" --arg image "$image" '[{name:($name + "--revision"),properties:{active:true,template:{containers:[{image:$image}]}}}]' ;;
@@ -132,8 +135,8 @@ if grep -q '^acr build' "$TEST_LOG"; then echo "Built unchanged images." >&2; ex
 
 : > "$TEST_LOG"
 BUILD_ALL=true bash infra/deployment/build-images.sh > "$test_dir/output"
-[[ "$(grep -c '^acr build ' "$TEST_LOG")" == 7 ]]
-jq -e --arg sha "$GITHUB_SHA" '.commit == $sha and (.images | length == 7)' "$RELEASE_MANIFEST" >/dev/null
+[[ "$(grep -c '^acr build ' "$TEST_LOG")" == 8 ]]
+jq -e --arg sha "$GITHUB_SHA" '.commit == $sha and (.images | length == 8)' "$RELEASE_MANIFEST" >/dev/null
 
 : > "$TEST_LOG"
 RELEASE_SERVICE=products-api bash infra/deployment/release-service.sh > "$test_dir/output"
@@ -175,7 +178,7 @@ export APP_PLAN="$test_dir/app-plan.json" TEST_BASELINE_ALL="$GITHUB_SHA" TEST_B
 export TEST_BEHIND_SERVICE=products-api TEST_BEHIND_COMMIT=1111111111111111111111111111111111111111
 : > "$TEST_LOG"
 TEST_BASELINE_ALL= TEST_BASELINE_DIGEST= TEST_BEHIND_SERVICE= bash infra/deployment/plan-apps.sh > "$test_dir/output"
-jq -e '[.targets[] | select(.status == "deploy")] | length == 6' "$APP_PLAN" >/dev/null
+jq -e '[.targets[] | select(.status == "deploy")] | length == 7' "$APP_PLAN" >/dev/null
 
 : > "$TEST_LOG"
 TEST_REVISION_DRIFT_SERVICE=staff-web bash infra/deployment/plan-apps.sh > "$test_dir/output"
@@ -264,6 +267,15 @@ TEST_JOB_IMAGE="test.azurecr.io/database-bootstrap@$TEST_DIGEST" \
   bash infra/deployment/apply-app-plan.sh > "$test_dir/output"
 if grep -q '^containerapp job update \|^containerapp job start ' "$TEST_LOG"; then
   echo "An unchanged bootstrap was run." >&2; exit 1
+fi
+
+: > "$TEST_LOG"
+RELEASE_SERVICE=outbox-publisher RELEASE_COMMIT="$GITHUB_SHA" RELEASE_DIGEST="$TEST_DIGEST" \
+  bash infra/deployment/deploy-image.sh > "$test_dir/output"
+grep -q '^containerapp update --name mortgage-demo-env-outbox-publisher ' "$TEST_LOG"
+grep -q '^tag update .*pd-deployed-commit=' "$TEST_LOG"
+if grep -q '^containerapp job start ' "$TEST_LOG"; then
+  echo "A continuous publisher release started a one-off execution." >&2; exit 1
 fi
 
 bash infra/deployment/plan-apps.sh > "$test_dir/output"

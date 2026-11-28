@@ -18,6 +18,7 @@ on:
           - mortgages-web
           - staff-web
           - notifications-worker
+          - outbox-publisher
       allow_rollback:
         description: Approve deploying an older or divergent application commit
         required: true

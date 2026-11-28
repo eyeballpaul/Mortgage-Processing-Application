@@ -44,7 +44,8 @@ targets='[]'
 for service in "${app_services[@]}"; do
   project="$(service_project "$service")"
   repository="$(service_image "$service")"
-  count="$(jq -r --arg service "$service" '[.[] | select(.name == $service)] | length' <<< "$apps")"
+  app_name="$(service_app_name "$service")"
+  count="$(jq -r --arg name "$app_name" '[.[] | select(.name == $name)] | length' <<< "$apps")"
   if [[ "$count" == 0 ]]; then
     targets="$(jq -cn --argjson targets "$targets" --arg service "$service" \
       '$targets + [{service:$service,status:"missing",reason:"App is absent; create or repair its infrastructure before applying the plan"}]')"
@@ -53,14 +54,14 @@ for service in "${app_services[@]}"; do
     echo "Duplicate Container App entries for $service." >&2
     exit 1
   fi
-  app="$(az containerapp show --name "$service" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
+  app="$(az containerapp show --name "$app_name" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
   id="$(jq -er '.id | select(type == "string" and length > 0)' <<< "$app")"
   image="$(jq -er '.properties.template.containers | select(length == 1) | .[0].image | select(type == "string" and length > 0)' <<< "$app")"
   if ! jq -e '.properties.configuration.activeRevisionsMode == "Single"' <<< "$app" >/dev/null; then
     echo "$service must use single-revision mode before it can be planned." >&2
     exit 1
   fi
-  revisions="$(az containerapp revision list --name "$service" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
+  revisions="$(az containerapp revision list --name "$app_name" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
   active="$(jq -ce '
     if type != "array" then error("Invalid revision list") else
       [ .[] | select(.properties.active == true) |
@@ -133,6 +134,7 @@ if [[ "$bootstrap_commit" =~ ^[0-9a-f]{40}$ && "$bootstrap_digest" =~ ^sha256:[0
     *) echo "Invalid bootstrap change detection result." >&2; exit 1 ;;
   esac
 fi
+
 jq -n --arg commit "$GITHUB_SHA" --arg subscription "$AZURE_SUBSCRIPTION_ID" \
   --arg group "$AZURE_RESOURCE_GROUP" --arg registry "$AZURE_CONTAINER_REGISTRY" \
   --argjson targets "$targets" --argjson bootstrapBuild "$bootstrap_build" \

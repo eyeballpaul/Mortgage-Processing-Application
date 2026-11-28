@@ -25,10 +25,11 @@ if ! jq -en --arg group "$group" --arg expected "$expected_group" \
 fi
 stack="pd-app-$STACK_SERVICE"
 if [[ "$STACK_SERVICE" == database-bootstrap ]]; then
-  resource="$group/providers/Microsoft.App/jobs/mortgage-demo-env-bootstrap"
+  resource="$group/providers/Microsoft.App/jobs/$(service_job_name "$STACK_SERVICE")"
 else
-  resource="$group/providers/Microsoft.App/containerApps/$STACK_SERVICE"
+  resource="$group/providers/Microsoft.App/containerApps/$(service_app_name "$STACK_SERVICE")"
 fi
+legacy_publisher_job="$group/providers/Microsoft.App/jobs/mortgage-demo-env-outbox-publisher"
 stacks="$(az stack group list --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
 if ! jq -e --arg name "$stack" '
   type == "array" and ([.[] | select(.name == $name)] | length <= 1)
@@ -39,12 +40,15 @@ fi
 exists="$(jq -r --arg name "$stack" 'any(.[]; .name == $name)' <<< "$stacks")"
 if [[ "$exists" == true ]]; then
   current="$(az stack group show --resource-group "$AZURE_RESOURCE_GROUP" --name "$stack" --output json)"
-  if ! jq -e --arg name "$stack" --arg group "$group" --arg target "$STACK_SERVICE" --arg resource "$resource" '
+  if ! jq -e --arg name "$stack" --arg group "$group" --arg target "$STACK_SERVICE" \
+    --arg resource "$resource" --arg legacy "$legacy_publisher_job" '
     (.id | type == "string" and ascii_downcase == (($group + "/providers/Microsoft.Resources/deploymentStacks/" + $name) | ascii_downcase)) and
     .tags["pd-owner"] == "mortgage-prototype" and .tags["pd-target"] == $target and
     (.resources | type == "array" and length == 1 and
       .[0].status == "managed" and
-      (.[0].id | type == "string" and ascii_downcase == ($resource | ascii_downcase)))
+      (.[0].id | type == "string" and
+        ((ascii_downcase == ($resource | ascii_downcase)) or
+         ($target == "outbox-publisher" and ascii_downcase == ($legacy | ascii_downcase)))))
   ' <<< "$current" >/dev/null; then
     echo "Stack $stack has an unexpected owner or managed resource; no stack changes were made." >&2
     exit 1
@@ -62,10 +66,12 @@ case "$STACK_ACTION" in
     fi
     ;;
   delete)
-    if [[ "$STACK_SERVICE" == database-bootstrap ]]; then
-      echo "The bootstrap stack must not be deleted as a removed application." >&2
-      exit 1
-    fi
+    for service in "${job_services[@]}"; do
+      if [[ "$service" == "$STACK_SERVICE" ]]; then
+        echo "$STACK_SERVICE is still declared and cannot be deleted." >&2
+        exit 1
+      fi
+    done
     for service in "${app_services[@]}"; do
       if [[ "$service" == "$STACK_SERVICE" ]]; then
         echo "$STACK_SERVICE is still declared and cannot be deleted." >&2
@@ -119,6 +125,9 @@ case "$STACK_ACTION" in
       (if $service == "database-bootstrap" then
         .resources[0].type == "Microsoft.App/jobs" and
         .resources[0].name == "[format('\''{0}-bootstrap'\'', parameters('\''environmentName'\''))]"
+      elif $service == "outbox-publisher" then
+        .resources[0].type == "Microsoft.App/containerApps" and
+        .resources[0].name == "[format('\''{0}-outbox-publisher'\'', parameters('\''environmentName'\''))]"
       elif $service == "notifications-worker" then
         .resources[0].type == "Microsoft.App/containerApps" and .resources[0].name == $service
       else
@@ -131,7 +140,7 @@ case "$STACK_ACTION" in
     fi
     if ! jq -e --arg service "$STACK_SERVICE" --arg image "$STACK_IMAGE" '
       .parameters.imageRef.value == $image and
-      (if $service == "database-bootstrap" then .parameters.environmentName.value == "mortgage-demo-env"
+      (if $service == "database-bootstrap" or $service == "outbox-publisher" then .parameters.environmentName.value == "mortgage-demo-env"
        elif $service == "notifications-worker" then true
        else (.parameters.appName.value // .parameters.name.value) == $service end) and
       ((.parameters.appTags.value // .parameters.tags.value) |
@@ -141,10 +150,10 @@ case "$STACK_ACTION" in
       exit 1
     fi
     if [[ "$STACK_SERVICE" == database-bootstrap ]]; then
-      resource_name=mortgage-demo-env-bootstrap
+      resource_name="$(service_job_name "$STACK_SERVICE")"
       available="$(az containerapp job list --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
     else
-      resource_name="$STACK_SERVICE"
+      resource_name="$(service_app_name "$STACK_SERVICE")"
       available="$(az containerapp list --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
     fi
     count="$(jq -er --arg name "$resource_name" \

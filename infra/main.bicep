@@ -159,13 +159,35 @@ module databaseBootstrap './apps/database-bootstrap.bicep' = if (deployBootstrap
     productsIdentityClientId: foundation.outputs.productsIdentityClientId
     customerSessionsIdentityClientId: foundation.outputs.customerSessionsIdentityClientId
     notificationsIdentityClientId: foundation.outputs.notificationsIdentityClientId
+    outboxPublisherIdentityClientId: foundation.outputs.outboxPublisherIdentityClientId
     bootstrapIdentityClientId: foundation.outputs.bootstrapIdentityClientId
     sqlServerFqdn: foundation.outputs.sqlServerFqdn
     mortgagesIdentityName: foundation.outputs.mortgagesIdentityName
     productsIdentityName: foundation.outputs.productsIdentityName
     customerSessionsIdentityName: foundation.outputs.customerSessionsIdentityName
     notificationsIdentityName: foundation.outputs.notificationsIdentityName
+    outboxPublisherIdentityName: foundation.outputs.outboxPublisherIdentityName
     bootstrapIdentityId: foundation.outputs.bootstrapIdentityId
+    environmentName: containerAppEnvironmentName
+    imageTag: imageTag
+    appTags: foundation.outputs.tags
+    location: location
+  }
+}
+
+// Run a continuously hosted worker for the transactional outbox. It receives
+// only scoped SQL outbox permissions and Service Bus sender access.
+module outboxPublisher './apps/outbox-publisher.bicep' = if (deployApps) {
+  name: 'outbox-publisher-deployment'
+  params: {
+    registryServer: foundation.outputs.registryServer
+    pullIdentityId: foundation.outputs.imagePullIdentityId
+    environmentId: foundation.outputs.environmentId
+    outboxPublisherIdentityClientId: foundation.outputs.outboxPublisherIdentityClientId
+    outboxPublisherIdentityId: foundation.outputs.outboxPublisherIdentityId
+    sqlServerFqdn: foundation.outputs.sqlServerFqdn
+    serviceBusFqdn: foundation.outputs.serviceBusFqdn
+    serviceBusQueueName: foundation.outputs.serviceBusQueueName
     environmentName: containerAppEnvironmentName
     imageTag: imageTag
     appTags: foundation.outputs.tags
@@ -238,8 +260,8 @@ module eligibilityApi './apps/eligibility-api.bicep' = if (deployApps) {
 }
 
 // Run the internal Mortgage API with its managed identity, private SQL and Blob
-// access, Entra token settings, and URLs and keys for the other APIs. It publishes
-// outbox messages to Service Bus; the separate worker consumes them.
+// access, Entra token settings, and URLs and keys for the other APIs. The
+// continuous outbox publisher app owns event publishing.
 module mortgageApi './apps/mortgage-api.bicep' = if (deployApps) {
   name: 'mortgage-api-deployment'
   params: {
@@ -249,8 +271,6 @@ module mortgageApi './apps/mortgage-api.bicep' = if (deployApps) {
     mortgagesIdentityClientId: foundation.outputs.mortgagesIdentityClientId
     customerSessionsIdentityClientId: foundation.outputs.customerSessionsIdentityClientId
     sqlServerFqdn: foundation.outputs.sqlServerFqdn
-    serviceBusFqdn: foundation.outputs.serviceBusFqdn
-    serviceBusQueueName: foundation.outputs.serviceBusQueueName
     productsApiFqdn: productsApi!.outputs.fqdn
     eligibilityApiFqdn: eligibilityApi!.outputs.fqdn
     mortgagesIdentityId: foundation.outputs.mortgagesIdentityId
@@ -333,10 +353,14 @@ output staffWebUrl string = deployApps ? 'https://${staffWeb!.outputs.fqdn}' : '
 output databaseServerName string = foundation.outputs.sqlServerFqdn
 // The job name lets the script start and monitor database preparation.
 output databaseBootstrapJobName string = deployBootstrap ? databaseBootstrap!.outputs.jobName : ''
+// The app name identifies the continuously running outbox publisher.
+output outboxPublisherAppName string = deployApps ? outboxPublisher!.outputs.appName : ''
 // The Mortgage identity name identifies the runtime identity to scripts.
 output mortgagesIdentityName string = foundation.outputs.mortgagesIdentityName
+output outboxPublisherIdentityName string = foundation.outputs.outboxPublisherIdentityName
 // Its client ID selects the identity when requesting managed-identity tokens.
 output mortgagesIdentityClientId string = foundation.outputs.mortgagesIdentityClientId
+output outboxPublisherIdentityClientId string = foundation.outputs.outboxPublisherIdentityClientId
 // Its principal/object ID identifies it in Azure role assignments.
 output mortgagesIdentityPrincipalId string = foundation.outputs.mortgagesIdentityPrincipalId
 // The queue resource ID lets the scripts verify or remove the old receiver role.

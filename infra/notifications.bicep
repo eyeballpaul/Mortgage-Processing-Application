@@ -7,9 +7,9 @@ targetScope = 'resourceGroup'
 @description('Azure region for the Service Bus namespace.')
 param location string = resourceGroup().location
 
-// The caller supplies the existing Mortgage API identity name for sender access.
-@description('Existing user-assigned managed identity used by the Mortgage API.')
-param mortgagesIdentityName string
+// The caller supplies the existing publisher identity name for sender access.
+@description('User-assigned managed identity used by the continuously running outbox publisher.')
+param outboxPublisherIdentityName string
 
 // The caller supplies the existing worker identity name for receiver access.
 @description('Managed identity used by the notification worker.')
@@ -22,7 +22,7 @@ param notificationsScalerIdentityName string
 // Derive a stable namespace name from the group ID so retries use the same
 // name; Azure still requires namespace names to be globally unique.
 var namespaceName = 'mortgage-sb-${uniqueString(resourceGroup().id)}'
-// Resolve Azure's built-in Service Bus Data Sender role for the API.
+// Resolve Azure's built-in Service Bus Data Sender role for the publisher.
 var senderRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39')
 // Resolve the built-in Data Receiver role for the worker.
 var receiverRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0')
@@ -30,10 +30,9 @@ var receiverRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitio
 // it can manage entities and send/receive messages. Review the deployment guide.
 var ownerRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
 
-// Reference, rather than create, the Mortgage API identity in this group.
-// Its principal ID is needed for the queue-scoped sender role below.
-resource mortgagesIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
-  name: mortgagesIdentityName
+// Reference the publisher identity so it can send outbox events to the queue.
+resource outboxPublisherIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' existing = {
+  name: outboxPublisherIdentityName
 }
 
 // Reference the existing worker identity so it can receive queue messages.
@@ -80,13 +79,13 @@ resource queue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   }
 }
 
-// Grant the Mortgage API identity the sender role on this queue. The deterministic
+// Grant the publisher identity the sender role on this queue. The deterministic
 // GUID makes reapplying it repeatable; other assignments may also grant access.
 resource sender 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: queue
-  name: guid(queue.id, mortgagesIdentity.id, senderRole)
+  name: guid(queue.id, outboxPublisherIdentity.id, senderRole)
   properties: {
-    principalId: mortgagesIdentity.properties.principalId
+    principalId: outboxPublisherIdentity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: senderRole
   }

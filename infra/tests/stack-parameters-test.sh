@@ -21,12 +21,17 @@ case "$*" in
     elif [[ "${TEST_BAD_IDENTITY:-false}" == mismatch ]]; then
       echo '[{"name":"mortgage-demo-env-pull","id":"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/other","clientId":"client"}]'
     else
-      jq -cn '["pull","mortgages","products","customer-sessions","bootstrap","staff","notifications","notifications-scaler"] |
+      jq -cn '["pull","mortgages","products","customer-sessions","bootstrap","staff","notifications","notifications-scaler","outbox-publisher"] |
         map({name:("mortgage-demo-env-" + .),id:("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/mortgage-demo-env-" + .),clientId:"client"})'
     fi ;;
   "sql server show "*) echo '{"fullyQualifiedDomainName":"sql.database.windows.net"}' ;;
   "servicebus namespace list "*) echo '[{"name":"mortgage-sb-123456789abcd","serviceBusEndpoint":"https://sb.servicebus.windows.net:443/"}]' ;;
-  "containerapp list "*) echo '[{"name":"eligibility-api"}]' ;;
+  "containerapp list "*)
+    if [[ "${STACK_TARGET:-}" == outbox-publisher ]]; then
+      echo '[{"name":"mortgage-demo-env-outbox-publisher"}]'
+    else
+      echo '[{"name":"eligibility-api"}]'
+    fi ;;
   "containerapp job list "*) echo '[{"name":"mortgage-demo-env-bootstrap"}]' ;;
   "containerapp job show "*) echo '{"tags":{"application":"pd-mortgages-demo","managedBy":"bicep"}}' ;;
   "containerapp show "*)
@@ -86,7 +91,7 @@ if TEST_REGISTRY='' STACK_TARGET=eligibility-api STACK_IMAGE=test.azurecr.io/eli
 fi
 jq -e '.parameters.registryServer.value == "test.azurecr.io"' "$STACK_PARAMETERS" >/dev/null
 if [[ -n "${TEST_REAL_TEMPLATES:-}" ]]; then
-  for target in foundation database-bootstrap products-api eligibility-api mortgage-api notifications-worker mortgages-web staff-web; do
+  for target in foundation database-bootstrap outbox-publisher products-api eligibility-api mortgage-api notifications-worker mortgages-web staff-web; do
     STACK_TARGET="$target" STACK_IMAGE=test.azurecr.io/example:latest \
       bash infra/deployment/stack-parameters.sh > "$dir/output"
     jq -e '.parameters | type == "object"' "$STACK_PARAMETERS" >/dev/null

@@ -308,8 +308,9 @@ those objects before running bootstrap.
    choose **yes** and confirm the repository.
 5. The script deploys the infrastructure, including a public Service Bus Basic
    namespace and queue, assigns the customer API role, builds
-   seven images, runs the private database bootstrap job and deploys six apps.
-   Record the customer and staff URLs printed at the end. On failure, inspect
+   eight images, runs the private database bootstrap job and deploys seven apps,
+   including the continuously running outbox publisher. Record the customer and staff
+   URLs printed at the end. On failure, inspect
    the error; partial resources remain billable. A retry reapplies the template
    and can overwrite app settings, images and secrets. Use the intended source
    revision, existing names and matching secrets.
@@ -344,9 +345,14 @@ those objects before running bootstrap.
 
 If reusing an existing deployment app and choosing automatic GitHub setup in
 the quickstart, verify its OIDC credential instead of creating a duplicate;
-the script restores Contributor and a queue-scoped permission for the Mortgage
-API identity. Both GitHub deployment paths still need the group-scoped
-condition and notification extension below.
+the script restores Contributor and creates or verifies a queue-scoped
+role-assignment condition that allows the deployment identity to grant sender
+access to the outbox-publisher identity and receiver access to the worker. It
+also removes the Mortgage API identity's legacy queue receiver assignment.
+The quickstart does not remove a legacy sender assignment from that API; use
+the reviewed reconciliation workflow for an existing deployment and inspect
+its role assignments before and after migration. Both GitHub deployment paths
+still need the group-scoped condition and notification extension below.
 Otherwise follow these manual steps.
 
 1. Open **Microsoft Entra ID → App registrations → New registration**. Create
@@ -445,7 +451,7 @@ Otherwise follow these manual steps.
 
 Use **Actions → Delete prototype resources** as described in
 [delete when finished](../AZURE_PROTOTYPE_GUIDE.md#delete-when-finished). This
-destroys prototype data but keeps the dedicated group and eight managed
+destroys prototype data but keeps the dedicated group and nine managed
 identities so the create workflow can be used again. Verify success and review
 costs.
 

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="..\PD.Shared\NotificationServiceBus.cs" Link="NotificationServiceBus.cs" />
+    <Compile Include="..\PD.Shared\SubmissionMessage.cs" Link="SubmissionMessage.cs" />
+    <InternalsVisibleTo Include="PD.Mortgages.Tests" />
+    <ProjectReference Include="..\PD.Mortgages.Infrastructure\PD.Mortgages.Infrastructure.csproj" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient.Extensions.Azure" Version="8.0.0" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

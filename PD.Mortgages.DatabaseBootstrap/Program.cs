@@ -32,6 +32,7 @@ await MigrateMortgageDatabaseAsync(options.Server, token.Token);
 await MigrateProductsDatabaseAsync(options.Server, token.Token);
 await MigrateCustomerSessionsDatabaseAsync(options.Server, token.Token);
 await MigrateNotificationsDatabaseAsync(options.Server, token.Token);
+await EnsureOutboxPublisherAccessAsync(options.Server, options.OutboxPublisherIdentity, token.Token);
 await using (var source = CreateConnection(options.Server, "mortgages", token.Token))
 await using (var target = CreateConnection(options.Server, "notifications", token.Token))
     await HistoricalNotificationCopy.CopyAsync(source, target);
@@ -84,6 +85,29 @@ static async Task EnsureRoleMembershipAsync(
             INNER JOIN sys.database_principals AS members ON members.principal_id = roleMembers.member_principal_id
             WHERE roles.name = N'{role}' AND members.name = N'{escapedIdentityName}')
             ALTER ROLE {role} ADD MEMBER [{quotedIdentityName}];
+        """;
+    await command.ExecuteNonQueryAsync();
+}
+
+static async Task EnsureOutboxPublisherAccessAsync(
+    string server,
+    ApplicationIdentity identity,
+    string accessToken)
+{
+    await using var connection = CreateConnection(server, "mortgages", accessToken);
+    await connection.OpenAsync();
+    var safeName = identity.Name.Replace("]", "]]", StringComparison.Ordinal);
+    var escapedName = identity.Name.Replace("'", "''", StringComparison.Ordinal);
+    var identitySid = Convert.ToHexString(identity.ClientId.ToByteArray());
+    await using var command = connection.CreateCommand();
+    command.CommandText = $"""
+        IF DATABASE_PRINCIPAL_ID(N'{escapedName}') IS NULL
+            CREATE USER [{safeName}] WITH SID = 0x{identitySid}, TYPE = E;
+        ELSE IF NOT EXISTS (
+            SELECT 1 FROM sys.database_principals
+            WHERE name = N'{escapedName}' AND type = 'E' AND sid = 0x{identitySid})
+            THROW 50000, 'Existing outbox publisher principal does not match the managed identity client ID.', 1;
+        GRANT SELECT, UPDATE ON OBJECT::dbo.SubmissionOutbox TO [{safeName}];
         """;
     await command.ExecuteNonQueryAsync();
 }
@@ -166,9 +190,12 @@ static BootstrapOptions ParseArguments(string[] arguments)
         !Guid.TryParse(customerSessionsIdentityClientIdText, out var customerSessionsIdentityClientId) ||
         !values.TryGetValue("notifications-identity-name", out var notificationsIdentityName) ||
         !values.TryGetValue("notifications-identity-client-id", out var notificationsIdentityClientIdText) ||
-        !Guid.TryParse(notificationsIdentityClientIdText, out var notificationsIdentityClientId))
+        !Guid.TryParse(notificationsIdentityClientIdText, out var notificationsIdentityClientId) ||
+        !values.TryGetValue("outbox-publisher-identity-name", out var outboxPublisherIdentityName) ||
+        !values.TryGetValue("outbox-publisher-identity-client-id", out var outboxPublisherIdentityClientIdText) ||
+        !Guid.TryParse(outboxPublisherIdentityClientIdText, out var outboxPublisherIdentityClientId))
     {
-        throw new ArgumentException("Provide --server and valid identity names and client IDs for mortgages, products, customer sessions, and notifications.");
+        throw new ArgumentException("Provide --server and valid identity names and client IDs for mortgages, products, customer sessions, notifications, and the outbox publisher.");
     }
 
     return new BootstrapOptions(
@@ -176,7 +203,8 @@ static BootstrapOptions ParseArguments(string[] arguments)
         new ApplicationIdentity(mortgagesIdentityName, mortgagesIdentityClientId, CanWrite: true),
         new ApplicationIdentity(productsIdentityName, productsIdentityClientId, CanWrite: false),
         new ApplicationIdentity(customerSessionsIdentityName, customerSessionsIdentityClientId, CanWrite: true),
-        new ApplicationIdentity(notificationsIdentityName, notificationsIdentityClientId, CanWrite: true));
+        new ApplicationIdentity(notificationsIdentityName, notificationsIdentityClientId, CanWrite: true),
+        new ApplicationIdentity(outboxPublisherIdentityName, outboxPublisherIdentityClientId, CanWrite: false));
 }
 
 sealed record BootstrapOptions(
@@ -184,6 +212,7 @@ sealed record BootstrapOptions(
     ApplicationIdentity MortgagesIdentity,
     ApplicationIdentity ProductsIdentity,
     ApplicationIdentity CustomerSessionsIdentity,
-    ApplicationIdentity NotificationsIdentity);
+    ApplicationIdentity NotificationsIdentity,
+    ApplicationIdentity OutboxPublisherIdentity);
 
 sealed record ApplicationIdentity(string Name, Guid ClientId, bool CanWrite);

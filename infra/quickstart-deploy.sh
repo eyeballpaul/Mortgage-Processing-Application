@@ -240,7 +240,7 @@ api_principal_id="$(jq -er '.id' <<< "$api_sp")"
 customer_role_id="$(jq -er '[.appRoles[] | select(.value == "MortgageCustomer" and .isEnabled and (.allowedMemberTypes | index("Application")))] | if length == 1 then .[0].id else error("MortgageCustomer application role missing or ambiguous") end' <<< "$api_sp")"
 
 if [[ "$automated" == true ]]; then
-  for identity in pull mortgages products customer-sessions bootstrap staff notifications notifications-scaler; do
+  for identity in pull mortgages products customer-sessions bootstrap staff notifications notifications-scaler outbox-publisher; do
     if ! identity_json="$(az identity show --name "mortgage-demo-env-$identity" --resource-group "$resource_group" --output json)"; then
       echo "Required retained identity mortgage-demo-env-$identity is unavailable; complete one-time setup before deployment." >&2
       exit 1
@@ -274,12 +274,21 @@ if [[ "$group_exists" == true ]]; then
     echo "Could not verify existing Container Apps; refusing deployment." >&2
     exit 1
   fi
+  existing_jobs="$(az containerapp job list --resource-group "$resource_group" --output json)"
+  if ! jq -e 'type == "array"' <<< "$existing_jobs" >/dev/null; then
+    echo "Could not verify existing Container Apps Jobs; refusing deployment." >&2
+    exit 1
+  fi
+  if jq -e 'any(.[]; .name == "mortgage-demo-env-outbox-publisher")' <<< "$existing_jobs" >/dev/null; then
+    echo "A legacy scheduled publisher job exists. Use the reviewed deployment workflow to migrate it safely." >&2
+    exit 1
+  fi
   if jq -e 'any(.[]; .name == "mortgage-api")' <<< "$existing_apps" >/dev/null &&
      ! jq -e 'any(.[]; .name == "mortgage-api" and
        any(.properties.template.containers[0].env[]?; .name == "Notifications__WorkerModel" and .value == "separate")) and
        any(.[]; .name == "notifications-worker")' <<< "$existing_apps" >/dev/null; then
-    echo "An older notification consumer is still deployed in mortgage-api. Deployment stopped before making changes." >&2
-    echo "Back up any required data and follow the legacy cutover instructions before deploying the separate worker." >&2
+    echo "An older notification publisher is still hosted in mortgage-api. Deployment stopped before making changes." >&2
+    echo "Complete one-time setup and reconcile the API and continuous publisher before relying on notifications." >&2
     exit 1
   fi
 fi
@@ -384,10 +393,16 @@ queue_id="$(az deployment group show --name mortgage-foundation --resource-group
 bash infra/deployment/remove-legacy-receiver.sh "$mortgage_principal" "$queue_id"
 
 if [[ "$configure_github" == true ]]; then
+  publisher_principal="$(az deployment group show --name mortgage-foundation --resource-group "$resource_group" \
+    --query properties.outputs.outboxPublisherIdentityPrincipalId.value --output tsv)"
+  worker_principal="$(az deployment group show --name mortgage-foundation --resource-group "$resource_group" \
+    --query properties.outputs.notificationsIdentityPrincipalId.value --output tsv)"
   if [[ ! "$mortgage_principal" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] ||
+    [[ ! "$publisher_principal" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] ||
+    [[ ! "$worker_principal" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] ||
     ! jq -en --arg queue "$queue_id" --arg prefix "/subscriptions/$subscription_id/resourceGroups/$resource_group/providers/Microsoft.ServiceBus/namespaces/" \
       '($queue | ascii_downcase) as $q | ($q | startswith($prefix | ascii_downcase)) and ($q | endswith("/queues/submission-notifications"))' >/dev/null; then
-    echo "Foundation deployment did not return the expected mortgage identity and notification queue." >&2
+    echo "Foundation deployment did not return the expected notification identities and queue." >&2
     exit 1
   fi
   group_scope="/subscriptions/$subscription_id/resourceGroups/$resource_group"
@@ -399,7 +414,7 @@ if [[ "$configure_github" == true ]]; then
   sender=69a216fc-b8fb-44d8-bc22-1f3c2cd27a39
   receiver=4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0
   admin_role=f58310d9-a9f6-439a-9e8d-f62e7b41a168
-  condition="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$sender, $receiver} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$mortgage_principal})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$sender, $receiver} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$mortgage_principal}))"
+  condition="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR ((@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$sender} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$publisher_principal}) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$receiver} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$worker_principal}))) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR ((@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$sender} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$publisher_principal}) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$receiver} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$worker_principal})))"
   queue_assignments="$(az role assignment list --assignee "$github_principal_id" --scope "$queue_id" --output json)"
   matching_admin="$(jq --arg scope "$queue_id" --arg role "$admin_role" \
     '[.[] | select((.scope | ascii_downcase) == ($scope | ascii_downcase) and (.roleDefinitionId | ascii_downcase | endswith("/" + $role)))]' <<< "$queue_assignments")"
@@ -449,6 +464,7 @@ for image_and_dockerfile in \
   "mortgages-staff-web:PD.Mortgages.Staff.Web/Dockerfile" \
   "mortgages-api:PD.Mortgages.Api/Dockerfile" \
   "notifications-worker:PD.Notifications.Worker/Dockerfile" \
+  "outbox-publisher:PD.Mortgages.OutboxPublisher/Dockerfile" \
   "products-api:PD.Products.Api/Dockerfile" \
   "eligibility-api:PD.Eligibility.Api/Dockerfile"; do
   image="${image_and_dockerfile%%:*}"

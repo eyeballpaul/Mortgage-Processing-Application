@@ -48,19 +48,20 @@ In Azure, the main connections are:
 
 ```text
 Customer browser -> Customer web -> Mortgage API -> mortgage SQL + document Blob
-                         |               |    \-> Service Bus queue -> Notifications worker -> notifications SQL
+                         |               |          |
                   customer sessions SQL  -> Products API -> products SQL
                                          -> Eligibility API (no database)
 Staff browser -> Staff web -------------> Mortgage API
                      |
                      -> Microsoft Entra ID
+Mortgage SQL outbox -> Outbox publisher -> Service Bus queue -> Notifications worker -> notifications SQL
 ```
 
 Aspire uses a development-only customer credential, local document files and,
 by default, a local Service Bus emulator. See the separate local and Azure
 diagrams in the [architecture guide](docs/architecture.md).
 
-For SQL-backed submissions, the Mortgage API commits an `ApplicationSubmitted` outbox entry with the application and audit entry. Its publisher sends the event to an Azure Service Bus Basic queue. A separate Notifications Worker records a simulation in its own database. **No email is sent.** Delivery is at least once; duplicate messages are deduplicated when recording the simulation. See [architecture.md](docs/architecture.md) and the [Azure deployment guide](docs/azure-advanced-deployment.md#submission-notifications) for limitations and operation.
+For SQL-backed submissions, the Mortgage API commits an `ApplicationSubmitted` outbox entry with the application and audit entry. The publisher polls pending entries every 30 seconds and sends them to an Azure Service Bus Basic queue. In Azure it is a continuously running, no-ingress Container App with one replica; Aspire runs the same poll loop locally. A separate Notifications Worker records a simulation in its own database. **No email is sent.** Delivery is at least once; duplicate messages are deduplicated when recording the simulation. See [architecture.md](docs/architecture.md) and the [Azure deployment guide](docs/azure-advanced-deployment.md#submission-notifications) for limitations and operation.
 
 Customer submissions are anonymous. A random server-side session actor owns each draft; the customer cannot reopen it after submission. A submission can be safely retried using the same session-bound attempt key and application version; a minimal reference and submission time can be recovered for 24 hours in the same session. Losing the session prevents recovery. Staff must sign in with Entra and have the `MortgageStaff` role. The API validates both the calling app and the delegated staff identity, scope and role; audit entries use the validated tenant/object IDs. In Azure the customer app uses a managed identity with the API's `MortgageCustomer` application role. Browser-supplied identity or role headers are not accepted as staff identity.
 
@@ -133,13 +134,13 @@ Without that setup, staff sign-in will not work.
 
 Aspire starts both web apps, the internal Mortgage, Products and Eligibility APIs, the Notifications Worker, and a local Service Bus emulator. One SQL Server container has separate `mortgages`, `products`, `customer-sessions` and `notifications` database resources; a second SQL Server container supports the emulator. Aspire generates separate, process-scoped keys for Mortgage's calls to Products and Eligibility; no local service key needs to be configured manually.
 
-Aspire runs the .NET apps locally and the SQL servers and emulator in Docker. For a container image, build from the repository root using the relevant service Dockerfile, for example `docker build -f PD.Mortgages.Customer.Web/Dockerfile .`. Azure deployment uses six service images and a separate database-bootstrap image.
+Aspire runs the .NET apps locally and the SQL servers and emulator in Docker. For a container image, build from the repository root using the relevant service Dockerfile, for example `docker build -f PD.Mortgages.Customer.Web/Dockerfile .`. Azure deployment uses seven service images, including the continuously running outbox-publisher Container App, and a separate database-bootstrap image.
 
 The Mortgage API stores documents under `LocalApplicationData/PD.Mortgages`; the SQL Docker volume persists data across restarts. The APIs migrate the mortgage and product databases locally at startup, and the customer web app migrates the customer-session database. Aspire creates a fresh, process-scoped development credential for customer-to-API calls; it is accepted **only** by an API running in Development. Staff still need real Entra sign-in and a delegated API token.
 
 ### Local notification processing
 
-By default, Aspire starts the emulator and enables the Mortgage API publisher
+By default, Aspire starts the emulator and enables the Outbox Publisher
 and Notifications Worker in Development. The worker migrates its local
 notifications database before starting. The emulator and its SQL dependency
 need extra memory and disk space and may need to download container images.
@@ -151,7 +152,7 @@ To check the flow:
    submission can appear before its notification is processed.
 3. Return to the dashboard, find `notifications-worker` in the resources
    list and open its console logs. Look for `Simulated notification recorded`.
-   The publisher polls roughly every 30 seconds; **no email is sent**.
+   The local publisher polls roughly every 30 seconds; **no email is sent**.
 4. Stop the local apps with **Ctrl+C** in the terminal running Aspire when
    finished.
 
@@ -185,7 +186,7 @@ Azure queue, so test expiry, retries and dead-letter handling in Azure separatel
    error. The emulator and its additional SQL container may need extra memory,
    disk space and time to start.
 3. If an application submits but no notification appears, wait at least
-   30 seconds, then check both `mortgages-api` and `notifications-worker`
+   30 seconds, then check both `outbox-publisher` and `notifications-worker`
    logs in the Aspire dashboard. Verify the emulator is running and that the
    opt-out setting is not active. A failed publisher or worker logs an error;
    correct it before retrying with a fictional application.
@@ -273,11 +274,11 @@ both connection variables are set:
 
 ## Azure prototype deployment
 
-The [setup-from-scratch guide](docs/azure-setup-from-scratch.md) gives step-by-step Azure, Entra and GitHub setup without secret values. The [prototype lifecycle guide](AZURE_PROTOTYPE_GUIDE.md) covers fresh bootstrap, resource-group recovery/retry, routine creation and deletion; the [advanced deployment guide](docs/azure-advanced-deployment.md) covers the interactive quickstart, costs and troubleshooting. The quickstart provisions one VNet with Container Apps and private-endpoint subnets, six Container Apps, four SQL databases, private SQL and Blob endpoints, a private database-bootstrap job and a public Service Bus Basic namespace. Both web apps have public HTTPS ingress; the three APIs have internal ingress and the worker has no ingress. SQL and Blob public network access is disabled. Staff access still requires Entra authentication and the staff app is not private-network-only. Use fictional data only; this is not a production security boundary. For the gaps and work to assess before a real bank deployment, see the [productionisation roadmap](docs/production-readiness-roadmap.md).
+The [setup-from-scratch guide](docs/azure-setup-from-scratch.md) gives step-by-step Azure, Entra and GitHub setup without secret values. The [prototype lifecycle guide](AZURE_PROTOTYPE_GUIDE.md) covers fresh bootstrap, resource-group recovery/retry, routine creation and deletion; the [advanced deployment guide](docs/azure-advanced-deployment.md) covers the interactive quickstart, costs and troubleshooting. The quickstart provisions one VNet with Container Apps and private-endpoint subnets, seven Container Apps (including the continuous outbox publisher), four SQL databases, private SQL and Blob endpoints, a private database-bootstrap job and a public Service Bus Basic namespace. Both web apps have public HTTPS ingress; the three APIs have internal ingress and the worker and publisher have no ingress. SQL and Blob public network access is disabled. Staff access still requires Entra authentication and the staff app is not private-network-only. Use fictional data only; this is not a production security boundary. For the gaps and work to assess before a real bank deployment, see the [productionisation roadmap](docs/production-readiness-roadmap.md).
 
 The [GitHub Actions workflow](.github/workflows/ci.yml) tests changes on push; it **does not build images or deploy them**. After the checks succeed, run **Deploy prototype changes** to build affected images and reconcile owned infrastructure, migrations and apps. Removed managed resources and their child resources, including data, can be deleted. Follow the [beginner's guide](AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype), including its one-time recreation and secret setup. These workflows, the separate worker and its scale rule have not been validated live in Azure. The older [Azure DevOps pipeline](azure-pipelines.yml) is not compatible with the current private SQL bootstrap and should not be used without changes.
 
-The SQL template requests the free offer with auto-pause on free-limit exhaustion; once the allowance is used, a database is unavailable until the next month. The five web/API apps have at least one replica each; the worker is configured to scale to zero but has not been validated in Azure. Readiness probes and background maintenance can consume database compute even when idle. Do not assume ordinary idle auto-pause will occur. Registry, image builds, private endpoints, logging and other resources may incur charges; an Azure budget is an alert, not a spending cap. There is no verified whole-environment pause/resume procedure or guaranteed £20 monthly cost.
+The SQL template requests the free offer with auto-pause on free-limit exhaustion; once the allowance is used, a database is unavailable until the next month. The five web/API apps and the outbox publisher each have at least one replica; the worker is configured to scale to zero but has not been validated in Azure. Readiness probes and background maintenance can consume database compute even when idle. Do not assume ordinary idle auto-pause will occur. Registry, image builds, private endpoints, logging and other resources may incur charges; an Azure budget is an alert, not a spending cap. There is no verified whole-environment pause/resume procedure or guaranteed £20 monthly cost.
 
 Products API key rotation is not zero-downtime: the services do not accept overlapping keys. Schedule a maintenance window and update the matching secret on both services. The GitHub workflow does not update secrets. If an update fails, restore the same previously working secret to both services; do not roll back only one.
 

@@ -149,7 +149,7 @@ done
 
 while IFS= read -r target; do
   declared=false
-  for service in "${app_services[@]}" database-bootstrap; do
+  for service in "${app_services[@]}" "${job_services[@]}"; do
     if [[ "$service" == "$target" ]]; then declared=true; break; fi
   done
   if [[ "$declared" != true ]]; then

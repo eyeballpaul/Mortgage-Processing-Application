@@ -1,5 +1,6 @@
 extern alias MortgageApi;
 extern alias NotificationWorker;
+extern alias OutboxPublisher;
 
 using System.Runtime.CompilerServices;
 using Microsoft.Data.SqlClient;
@@ -21,8 +22,8 @@ using PD.Mortgages.Infrastructure.Products;
 using PD.Mortgages.Infrastructure.Storage;
 using PD.Mortgages.DatabaseBootstrap;
 using SubmissionMessage = MortgageApi::PD.Mortgages.Events.SubmissionMessage;
-using SubmissionOutboxPublisher = MortgageApi::PD.Mortgages.Api.Services.SubmissionOutboxPublisher;
-using NotificationServiceBus = MortgageApi::PD.Mortgages.Events.NotificationServiceBus;
+using SubmissionOutboxPublisher = OutboxPublisher::PD.Mortgages.OutboxPublisher.SubmissionOutboxPublisher;
+using NotificationServiceBus = OutboxPublisher::PD.Mortgages.Events.NotificationServiceBus;
 using NotificationsDbContext = NotificationWorker::PD.Notifications.Worker.NotificationsDbContext;
 using WorkerMessage = NotificationWorker::PD.Mortgages.Events.SubmissionMessage;
 using WorkerStore = NotificationWorker::PD.Notifications.Worker.SimulatedNotificationStore;
@@ -322,7 +323,7 @@ public sealed class SubmissionNotificationTests
             .AddDbContext<MortgageDbContext>(options => options.UseSqlServer(database.ConnectionString))
             .BuildServiceProvider();
         var publisher = new SubmissionOutboxPublisher(services.GetRequiredService<IServiceScopeFactory>(),
-            null!, new ConfigurationBuilder().Build(), NullLogger<SubmissionOutboxPublisher>.Instance);
+            NullLogger<SubmissionOutboxPublisher>.Instance);
         var failed = new TestSender { Fail = true };
         await Assert.ThrowsAsync<IOException>(() => publisher.PublishBatchAsync(failed, CancellationToken.None));
 
@@ -384,7 +385,7 @@ public sealed class SubmissionNotificationTests
             try
             {
                 var publisher = new SubmissionOutboxPublisher(services.GetRequiredService<IServiceScopeFactory>(),
-                    client, config, NullLogger<SubmissionOutboxPublisher>.Instance);
+                    NullLogger<SubmissionOutboxPublisher>.Instance);
                 await using var sender = client.CreateSender("test-submission-notifications");
                 await publisher.PublishBatchAsync(sender, CancellationToken.None);
 

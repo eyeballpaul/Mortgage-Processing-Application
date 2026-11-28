@@ -99,10 +99,10 @@ if [[ "$(jq -r '.bootstrapBuild' "$plan")" == true ]]; then
   az acr repository show --name "$AZURE_CONTAINER_REGISTRY" \
     --image "database-bootstrap@$bootstrap_digest" --output none
 fi
-
 for service in "${app_services[@]}"; do
   expected="$(jq -ce --arg service "$service" '.targets[] | select(.service == $service)' "$plan")"
-  app="$(az containerapp show --name "$service" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
+  app_name="$(service_app_name "$service")"
+  app="$(az containerapp show --name "$app_name" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
   if ! jq -e --argjson expected "$expected" '
     .id == $expected.id and
     .properties.configuration.activeRevisionsMode == "Single" and
@@ -113,7 +113,7 @@ for service in "${app_services[@]}"; do
     echo "$service changed since the plan was generated; create and review a new plan." >&2
     exit 1
   fi
-  revisions="$(az containerapp revision list --name "$service" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
+  revisions="$(az containerapp revision list --name "$app_name" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
   if ! jq -e --argjson expected "$expected" '
     type == "array" and
     ([.[] | select(.properties.active == true) |
@@ -146,7 +146,6 @@ if [[ "$(jq -r '.bootstrapBuild' "$plan")" == true ]]; then
   echo "Running the reviewed database bootstrap before application updates."
   RELEASE_SERVICE=database-bootstrap bash infra/deployment/release-service.sh
 fi
-
 echo "Applying the reviewed app plan in dependency order. A failure may leave earlier apps updated."
 for service in "${app_services[@]}"; do
   if [[ "$(jq -r --arg service "$service" '.targets[] | select(.service == $service) | .status' "$plan")" == deploy ]]; then

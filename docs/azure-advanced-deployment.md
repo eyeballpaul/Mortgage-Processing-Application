@@ -35,17 +35,26 @@ private endpoints, logging, storage and other resources may still incur charges.
 There is no verified pause/resume feature and no guaranteed £20 monthly cost.
 In Azure Cost Management, filter Cost analysis to the resource group and group
 by resource to identify actual charges; check the subscription scope for costs
-outside the group. Five continuously running apps, two private endpoints and the
+outside the group. Six continuously running apps, two private endpoints and the
 Basic registry are important costs to monitor.
 
 ## Submission notifications
 
 The quickstart provisions a **public** Service Bus Basic namespace and one
 `submission-notifications` queue. Basic does not offer a private endpoint.
-SAS authentication is disabled. The API publishes with its sender identity;
-the separate Notifications Worker receives with its own receiver identity and
-records a simulation in its own SQL database. **No email is sent.** Messages
-contain an event ID, application ID, type/version and timestamp.
+SAS authentication is disabled. Mortgage API submission writes a durable
+outbox row in the same SQL transaction as the application and audit changes.
+A separately deployed, continuously running `outbox-publisher` Container App
+polls that table every 30 seconds, claims rows with five-minute SQL leases and
+sends messages using its own managed identity. Each batch processes at most
+50 events. Azure keeps one replica running even while the outbox is idle, which
+adds continuous compute cost; the configured budget is not a spending cap.
+The identity receives only `SELECT` and `UPDATE` on `dbo.SubmissionOutbox` and
+queue-scoped Service Bus Data Sender. The API has neither Service Bus sender
+configuration nor sender-role access. The separate Notifications Worker
+receives with its own identity and records a simulation in its own SQL
+database. **No email is sent.** Messages contain an event ID, application ID,
+type/version and timestamp.
 
 The worker has no ingress and is configured to scale from zero to one replica.
 Its separate scaler identity has **Azure Service Bus Data Owner** on the
@@ -58,57 +67,55 @@ The worker identity itself has only queue-scoped receive access. The exact
 scale-to-zero behavior, including the permissions and isolation, has **not
 yet been tested in Azure**.
 
-An earlier API-hosted consumer was observed in Azure; this new separate
-worker has not been validated there. Health checks do not test the flow.
+An earlier API-hosted publisher was observed in Azure; this separate continuous
+publisher and worker have not been validated there. Health checks do not test
+the flow.
 
 ### Check a submission notification
 
 1. With the prototype running, submit a fictional application. The Mortgage
-   API saves the submission first; its publisher checks for pending events
-   roughly every 30 seconds. A cold start or SQL resume can take longer.
-2. In Azure Portal, open **Resource groups → your group →
-   notifications-worker → Log stream**. Choose a running replica if
-   prompted and look for `Simulated notification recorded`. No email is sent.
-   The worker is configured to scale to zero, so a replica or its live log
-   stream may not be available after it becomes idle. If needed, submit
-   another fictional application and check while it is running.
-3. If there is no record, inspect Mortgage API and worker logs and the queue's
-   active and dead-letter counts as described under
+   API saves the submission first; the publisher polls every 30 seconds.
+   Azure SQL resume or publisher startup can add delay.
+2. In Azure Portal, open the Container Apps environment and select the
+   `mortgage-demo-env-outbox-publisher` app. Inspect its replica and container
+   logs for a publish count or error. Then inspect
+   `notifications-worker` logs for `Simulated notification recorded`. No
+   email is sent.
+3. If there is no record, inspect publisher and worker logs, unpublished
+   `SubmissionOutbox` rows, and the queue's active and dead-letter counts as
+   described under
    [monitoring](#monitoring-retries-and-cost). Check Container Apps system
    logs for scaler authentication errors. Do not treat an empty live stream
    by itself as proof that processing failed or succeeded.
 
 ### Enable on an existing quickstart deployment
 
-An older deployment can still have the consumer running inside `mortgage-api`.
-The create and individual Mortgage API release scripts stop before upgrading such an app:
-two consumers writing to different databases could record a duplicate.
+An older deployment can still have the outbox publisher hosted inside
+`mortgage-api` and may have sender access assigned to that API identity. The
+updated reconciliation deploys the separate continuous app and updates the
+stack-managed sender assignment from the API identity to the publisher
+identity. Existing SQL leases coordinate publishers during transition. This
+stack migration has not been validated live; verify the role assignments in
+Azure before and after it. Quickstart refuses to proceed if it detects the
+legacy scheduled publisher job; use the one-button reconciliation workflow for
+that migration. The reviewed app-plan workflow only releases images and cannot
+perform this infrastructure cutover.
 
-1. Check whether the existing prototype contains data or queued messages you
-   need. Do not delete it if you need that data. Arrange and test a separate
-   backup and migration/cutover first; an in-place legacy cutover is not
-   automated.
-2. If the prototype is disposable and you accept permanent data loss, use
-   [Delete when finished](../AZURE_PROTOTYPE_GUIDE.md#delete-when-finished).
-   Confirm deletion succeeded and inspect costs. Make sure the updated
-   deletion workflow and scripts are committed and pushed to `main` first.
-   The push does not deploy applications or perform the cutover.
-3. Complete the updated [one-time setup](azure-on-demand-setup.md#one-time-setup),
-   including the two new retained identities and the restricted role condition.
-   Then run [Create when needed](../AZURE_PROTOTYPE_GUIDE.md#create-when-needed).
-   If resources were already deleted, begin with step 3.
-4. Submit fictional customer and staff applications and follow
+1. Complete the updated [one-time setup](azure-on-demand-setup.md#one-time-setup),
+   including the outbox-publisher identity and restricted role condition.
+2. Run [Everyday changes: one button](../AZURE_PROTOTYPE_GUIDE.md#everyday-changes-one-button)
+   from `main`. Review the deployment plan; database bootstrap runs before the
+   apps, including the continuous publisher, are updated.
+3. Submit fictional customer and staff applications and follow
    [Check a submission notification](#check-a-submission-notification).
-   Check Service Bus active/dead-letter counts and the notification database.
-   Confirm the worker scales back to zero in Azure after its cooldown and starts
-   again for another message. Check Container Apps system logs for scaler
-   authentication errors if it does not.
+   Check publisher replica logs, Service Bus active/dead-letter counts and the
+   notification database. Confirm the worker scales back to zero in Azure.
 
 Subsequent pushes run checks but do not build images or change the queue,
 permissions, database or running apps. Use the
 [release guide](../AZURE_PROTOTYPE_GUIDE.md#release-changes-to-an-existing-prototype)
 for deliberate updates. A successful submission can precede publishing, because
-the outbox retries later. File and in-memory providers do not create outbox
+the continuously running outbox publisher retries later. File and in-memory providers do not create outbox
 events. Aspire enables the publisher and worker with its
 [local emulator](../README.md#local-notification-processing) by default in
 Development; it does not connect to the Azure queue.
@@ -116,8 +123,9 @@ Development; it does not connect to the Azure queue.
 ### One-time GitHub deployment permission
 
 Follow [one-time setup](azure-on-demand-setup.md#2-allow-the-deployment-identity-to-manage-azure-resources).
-It preserves the existing group-scoped condition and adds only two
-role/principal pairs: receiver for the worker and Data Owner for the scaler.
+It preserves the existing group-scoped condition and adds three
+role/principal pairs: sender for the publisher, receiver for the worker and
+Data Owner for the scaler.
 Contributor and any other role assignments remain powerful; inspect them
 separately. No new Entra app registration, client secret or Service Bus key
 is needed. Register `Microsoft.ServiceBus` if required by the subscription.
@@ -125,16 +133,19 @@ Role propagation can take several minutes.
 
 ### Monitoring, retries and cost
 
-The publisher checks SQL approximately every 30 seconds per running replica;
-a failed or interrupted claim becomes available after its five-minute lease.
-Sending followed by a crash can produce duplicates. The SQL simulation record
+The publisher polls every 30 seconds, so normal publication latency is about
+30 seconds plus SQL resume or publisher recovery. A failed or interrupted claim
+becomes available after its five-minute lease and is picked up by a later poll.
+Sending followed by a crash can produce
+duplicates. The SQL simulation record
 deduplicates by event ID, but this is **at-least-once**, not exactly-once
 delivery. Processing errors are retried by Service Bus and eventually
 dead-lettered; invalid events are dead-lettered immediately. Active messages
 expire after 14 days and are moved to the dead-letter queue. Dead-lettered
 messages are not automatically deleted.
 
-Inspect Mortgage API and worker error logs, unpublished `SubmissionOutbox` rows,
+Inspect the publisher app's replica logs, unpublished `SubmissionOutbox` rows,
+worker error logs,
 the queue's active/dead-letter counts, and `SimulatedNotifications` in the
 private `notifications` database. In the Azure portal, use Service Bus Explorer with suitable Entra
 data-plane permissions to peek at dead-lettered messages and their reasons.
@@ -195,10 +206,12 @@ entire group. For the normal one-click cycle, use
 Confirm the subscription, resource group, resource names, staff registration
 and GitHub repository carefully. If the group is missing, choose its region and
 the script creates it only after confirmation. It deploys the foundation,
-assigns the customer managed identity its API role, builds seven images, runs the
-private database bootstrap, deploys the apps, adds the staff URL's `/signin-oidc`
-and `/signout-callback-oidc` paths without removing existing redirect URIs, and
-checks public readiness. Avoid changing the registration concurrently.
+assigns the customer managed identity its API role, builds eight images, runs
+the private database bootstrap, deploys seven apps including the continuous
+publisher,
+adds the staff URL's `/signin-oidc` and `/signout-callback-oidc` paths without
+removing existing redirect URIs, and checks public readiness. Avoid changing
+the registration concurrently.
 
 For automatic GitHub setup, the repository must already have the correct
 `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` repository variables and an existing
@@ -206,9 +219,10 @@ deployment app with the correct OIDC federated credential. The selected tenant
 must match. The script grants the Azure permissions and, after readiness,
 updates `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP` and
 `AZURE_CONTAINER_REGISTRY` in the confirmed repository. It does not create an
-Entra app or federated credential. Its queue-scoped condition only covers
-sender and receiver assignments for the Mortgage API identity; it is not
-sufficient for the worker and scaler. Complete the
+Entra app or federated credential. Its queue-scoped condition covers only the
+publisher sender and worker receiver assignments; the namespace-scoped scaler
+assignment requires the group-scoped condition. Neither condition grants
+runtime data access. Complete the
 [group-scoped setup and notification extension](azure-on-demand-setup.md#2-allow-the-deployment-identity-to-manage-azure-resources)
 for either GitHub deployment path. Choose no for manual GitHub setup if this
 is a first-time setup or GitHub CLI is unavailable.

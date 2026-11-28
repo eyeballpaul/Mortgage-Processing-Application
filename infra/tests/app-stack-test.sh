@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 dir="$(mktemp -d "${TMPDIR:-/tmp}/mortgage-stack-test.XXXXXXXX")"
-trap 'rm -f -- "$dir/az" "$dir/log" "$dir/output" "$dir/template.json" "$dir/parameters.json" "$dir/config.json"; rmdir "$dir"' EXIT
+trap 'rm -f -- "$dir/az" "$dir/log" "$dir/output" "$dir/template.json" "$dir/parameters.json" "$dir/config.json" "$dir/updated-stack"; rmdir "$dir"' EXIT
 
 cat > "$dir/az" <<'MOCK'
 #!/usr/bin/env bash
@@ -13,11 +13,21 @@ case "$*" in
   "group show "*) echo /subscriptions/sub/resourceGroups/rg ;;
   "acr show "*) echo test.azurecr.io ;;
   "containerapp list "*) if [[ -n "${TEST_APPS:-}" ]]; then echo "$TEST_APPS"; else echo '[{"name":"eligibility-api"}]'; fi ;;
-  "containerapp show "*) jq -n --arg id "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/eligibility-api" \
-    '{id:$id,tags:{application:"pd-mortgages-demo",managedBy:"bicep"},properties:{template:{containers:[{image:"test.azurecr.io/eligibility-api:latest"}]}}}' ;;
+  "containerapp job list "*) echo "${TEST_JOBS:-[]}" ;;
+  "containerapp show "*)
+    name="$6"
+    jq -n --arg id "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/$name" \
+      --arg image "test.azurecr.io/$([[ "$name" == mortgage-demo-env-outbox-publisher ]] && echo outbox-publisher || echo eligibility-api):latest" \
+      '{id:$id,tags:{application:"pd-mortgages-demo",managedBy:"bicep"},properties:{template:{containers:[{image:$image}]}}}' ;;
   "stack group list "*) echo "${TEST_STACKS:-[]}" ;;
-  "stack group show "*) echo "$TEST_STACK" ;;
-  "stack group create "*|"stack group delete "*) : ;;
+  "stack group show "*)
+    if [[ -f "$TEST_DIR/updated-stack" ]]; then cat "$TEST_DIR/updated-stack"; else echo "$TEST_STACK"; fi ;;
+  "stack group create "*)
+    if [[ "$*" == *"pd-app-outbox-publisher"* ]]; then
+      jq --arg resource "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/mortgage-demo-env-outbox-publisher" \
+        '.resources[0].id = $resource' <<< "$TEST_STACK" > "$TEST_DIR/updated-stack"
+    fi ;;
+  "stack group delete "*) : ;;
   "bicep build "*) cat "$TEST_DIR/template.json" ;;
   *) echo "Unexpected Azure command: $*" >&2; exit 1 ;;
 esac
@@ -129,6 +139,23 @@ if TEST_STACKS='[{"name":"pd-app-eligibility-api"}]' STACK_ACTION=delete \
   echo "A declared application was deleted." >&2; exit 1
 fi
 if grep -q '^stack group delete ' "$TEST_LOG"; then echo "A declared stack was deleted." >&2; exit 1; fi
+
+: > "$TEST_LOG"
+cat > "$dir/template.json" <<'JSON'
+{"resources":[{"type":"Microsoft.App/containerApps","name":"[format('{0}-outbox-publisher', parameters('environmentName'))]"}]}
+JSON
+cat > "$dir/parameters.json" <<'JSON'
+{"parameters":{"environmentName":{"value":"mortgage-demo-env"},"imageRef":{"value":"test.azurecr.io/outbox-publisher:latest"},"appTags":{"value":{"application":"pd-mortgages-demo","managedBy":"bicep"}}}}
+JSON
+TEST_APPS='[{"name":"mortgage-demo-env-outbox-publisher"}]' \
+  TEST_STACKS='[{"name":"pd-app-outbox-publisher"}]' \
+  TEST_STACK="$(stack_json outbox-publisher "$group/providers/Microsoft.App/jobs/mortgage-demo-env-outbox-publisher" "$fingerprint")" \
+  STACK_SERVICE=outbox-publisher STACK_IMAGE=test.azurecr.io/outbox-publisher:latest \
+  STACK_PARAMETERS="$dir/parameters.json" STACK_ACTION=apply ALLOW_CREATE=true \
+  bash infra/deployment/app-stack.sh > "$dir/output"
+grep -q '^stack group create ' "$TEST_LOG"
+grep -q -- '--action-on-unmanage deleteResources' "$TEST_LOG"
+rm -f -- "$dir/updated-stack"
 
 : > "$TEST_LOG"
 TEST_STACKS='[{"name":"pd-app-retired-app"}]' \

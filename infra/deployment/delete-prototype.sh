@@ -48,7 +48,8 @@ classify() {
       if $type == "microsoft.managedidentity/userassignedidentities" and
         ($name | oneof(["mortgage-demo-env-pull", "mortgage-demo-env-mortgages", "mortgage-demo-env-products",
           "mortgage-demo-env-customer-sessions", "mortgage-demo-env-bootstrap", "mortgage-demo-env-staff",
-          "mortgage-demo-env-notifications", "mortgage-demo-env-notifications-scaler"])) then "retain"
+          "mortgage-demo-env-notifications", "mortgage-demo-env-notifications-scaler",
+          "mortgage-demo-env-outbox-publisher"])) then "retain"
       elif $type == "microsoft.resources/deploymentstacks" and
         .tags["pd-owner"] == "mortgage-prototype" and
         (($name == "pd-foundation" and .tags["pd-target"] == "foundation") or
@@ -56,9 +57,11 @@ classify() {
       elif $type == "microsoft.insights/scheduledqueryrules" and $name == "mortgage-demo-env-server-errors" and tagged then "alert-rules"
       elif $type == "microsoft.insights/actiongroups" and $name == "mortgage-demo-env-alerts" and tagged then "alert-groups"
       elif $type == "microsoft.app/containerapps" and
-        (($name | oneof(["products-api", "eligibility-api", "mortgage-api", "staff-web", "mortgages-web", "notifications-worker"])) or
+        (($name | oneof(["products-api", "eligibility-api", "mortgage-api", "staff-web", "mortgages-web",
+          "notifications-worker", "mortgage-demo-env-outbox-publisher"])) or
          ($owned_apps | index($name) != null)) and tagged then "apps"
-      elif $type == "microsoft.app/jobs" and $name == "mortgage-demo-env-bootstrap" and tagged then "apps"
+      elif $type == "microsoft.app/jobs" and
+        ($name | oneof(["mortgage-demo-env-bootstrap", "mortgage-demo-env-outbox-publisher"])) and tagged then "apps"
       elif $type == "microsoft.app/managedenvironments" and $name == "mortgage-demo-env" and tagged then "environment"
       elif $type == "microsoft.network/privateendpoints" and
         ($name | oneof([($sql + "-private"), ($storage + "-private")])) and tagged then "endpoints"
@@ -125,10 +128,15 @@ while IFS= read -r stack_name; do
       ($name | ltrimstr("pd-app-")) as $target |
       .tags["pd-target"] == $target and
       (.resources | length == 1 and
-        (.[0].id | ascii_downcase) ==
-          (if $target == "database-bootstrap" then
-            ($group + "/providers/Microsoft.App/jobs/mortgage-demo-env-bootstrap" | ascii_downcase)
-           else ($group + "/providers/Microsoft.App/containerApps/" + $target | ascii_downcase) end))
+        (if $target == "database-bootstrap" then
+          (.[0].id | ascii_downcase) == ($group + "/providers/Microsoft.App/jobs/mortgage-demo-env-bootstrap" | ascii_downcase)
+         elif $target == "outbox-publisher" then
+          (.[0].id | ascii_downcase) as $id |
+            $id == ($group + "/providers/Microsoft.App/containerApps/mortgage-demo-env-outbox-publisher" | ascii_downcase) or
+            $id == ($group + "/providers/Microsoft.App/jobs/mortgage-demo-env-outbox-publisher" | ascii_downcase)
+         else
+          (.[0].id | ascii_downcase) == ($group + "/providers/Microsoft.App/containerApps/" + $target | ascii_downcase)
+         end))
      end)
   ' <<< "$stack" >/dev/null; then
     echo "Stack $stack_name has invalid ownership or resource scope; nothing has been deleted." >&2

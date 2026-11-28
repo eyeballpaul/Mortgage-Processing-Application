@@ -1,10 +1,12 @@
 # Azure prototype: create, delete and recreate
 
-The quickstart deploys two public web apps, three internal APIs, a notification worker, four SQL databases,
+The quickstart deploys two public web apps, three internal APIs, a continuous
+outbox publisher app, a notification worker, four SQL databases,
 and private SQL and Blob endpoints in one VNet. This is a prototype: use fictional
 data only. An earlier version of the quickstart, staff sign-in and GitHub
-Actions deployment succeeded in one Azure environment. The separate worker,
-its scale rule and the updated workflows have not yet been validated live.
+Actions deployment succeeded in one Azure environment. The continuous outbox
+publisher, separate worker, its scale rule and the updated workflows have not
+yet been validated live.
 
 For detailed first-time setup, see the [setup-from-scratch guide](docs/azure-setup-from-scratch.md).
 
@@ -45,7 +47,7 @@ but have not yet been tested live.
 The delete workflow removes recognized prototype resources and their data,
 including SQL databases, blobs, the Service Bus queue, images, and the Log
 Analytics workspace and its logs. The workspace is permanently deleted so its
-name can be reused. It retains the resource group, eight managed identities and
+name can be reused. It retains the resource group, nine managed identities and
 group-scoped permissions. If it finds an unrecognized resource or a resource
 without the expected prototype tags, it stops **before deleting resources** and
 lists the resource for review; a billable resource may remain. Child resources
@@ -88,7 +90,7 @@ reviewed separately.
 #### Delete when finished
 
 **This permanently deletes prototype databases, blobs, queue data, images and
-logs.** Back up anything needed first. The resource group, eight identities,
+logs.** Back up anything needed first. The resource group, nine identities,
 Entra registrations, GitHub configuration and group permissions remain.
 
 1. In GitHub, open **Actions → Delete prototype resources → Run workflow**.
@@ -97,7 +99,7 @@ Entra registrations, GitHub configuration and group permissions remain.
    resources behind. Read its log and follow
    [troubleshooting](#workflow-troubleshooting); do not assume cleanup succeeded.
 3. In Azure Portal, open **Resource groups → your group → Resources** and
-   confirm only the eight named managed identities remain. Check for additional
+   confirm only the nine named managed identities remain. Check for additional
    resources and costs elsewhere in the subscription too.
 4. Open **Cost Management + Billing → Cost analysis** at the subscription
    scope. Review charges by resource, and check again later because charges can
@@ -193,7 +195,7 @@ so creation and later updates agree.
 The workflow does not infer a new service's build or configuration from its
 directory alone.
 
-### Advanced alternative: reviewed app-only deployment
+### Advanced alternative: reviewed app-image deployment
 
 The following older workflows remain available for fine-grained control.
 They are **not** the one-button infrastructure reconciliation described
@@ -204,12 +206,12 @@ main** to produce their plan and image artifacts.
 
 | What changed? | After the build succeeds |
 | --- | --- |
-| Documentation only | Review the plan. If all apps are `unchanged` and bootstrap inputs are unchanged, there is nothing to deploy. |
+| Documentation only | If all apps are `unchanged` and bootstrap inputs are unchanged, there are no images or migrations to release. Review infrastructure separately. |
 | One or more existing apps | Review the plan, then run **Deploy reviewed application plan** once. |
 | Database migrations | Review compatibility, then run **Deploy reviewed application plan**. It runs the planned bootstrap before app updates. |
 | New resources | Review and use **Preview or apply prototype infrastructure**. Then apply the app plan if existing apps need updating. |
 | Apps, migrations and new resources together | Review dependencies; apply infrastructure in a safe order, generate a fresh plan, then apply it. |
-| Changes to existing Azure resources | Plan a separate, resource-specific change. The new-resource workflow does not modify existing definitions. |
+| Changes to existing Azure resources | Use one-button reconciliation for existing stack-managed resources. For resources outside those stacks, plan a separate, resource-specific change; the new-resource workflow does not modify existing definitions. |
 
 This is a guide, not an automatic compatibility check. A new app starts its
 initial image as soon as its infrastructure is created; if it needs a database
@@ -227,15 +229,17 @@ migration first, split the change into stages so its prerequisites are ready.
    when bootstrap inputs may have changed, a bootstrap image. Digests and the
    plan are saved as artifacts. Pull requests run checks but do not publish
    images or create a release plan.
-3. Check every row. The plan compares the target commit with each app's
-   recorded deployment commit and checks its recorded image digest, app
-   template and active revision. It considers project references and linked
-   files, so it includes an earlier change that was built but never deployed.
-   The plan is a suggestion, not proof of compatibility or health. It cannot
-   infer every operational dependency or infrastructure change. Review those
-   separately; applying the plan does not update infrastructure.
+3. Check every row. The plan compares each app's recorded deployment commit,
+   image digest and active revision with the target build. It considers project
+   references and linked files, so it includes an earlier    image-input change that was built but never deployed. The plan does **not**
+   detect app Bicep template or parameter changes. Review infrastructure
+   changes separately: the reviewed-plan workflow releases selected images
+   (and may run the planned bootstrap job), but does not reconcile app or
+   foundation stacks. Use the one-button reconciliation for existing
+   stack-managed infrastructure. The plan is not proof of schema compatibility
+   or app health.
 4. The first plan after creation or after upgrading from the old workflow may
-   say `deploy` for **all six apps**: their previous images lack verified
+   say `deploy` for **all seven apps**: their previous images lack verified
    commit-and-digest markers. This conservative fallback can rebuild and
    update unchanged apps; review it before proceeding. After successful
    releases, later plans can identify unchanged apps. If the running image
@@ -248,7 +252,8 @@ migration first, split the change into stages so its prerequisites are ready.
    If the bootstrap has no verified commit-and-digest marker, its image is
    built conservatively and the plan runs it when applied.
 5. If the registry or resource group is absent, the plan and image build are skipped:
-   create the prototype first. To build **all seven** images for the current
+   create the prototype first. To build **all eight** images (seven apps and
+   the database-bootstrap job) for the current
    `main` commit, choose **Actions → Build, test and security checks → Run
    workflow → main → Run workflow** and wait for success. Do this after
    recreating the registry, or when an incremental run did not build the
@@ -338,7 +343,11 @@ Never put secrets in the template or preview output.
 ### 4. Deploy the reviewed app plan
 
 For example, if the summary says `deploy` for Products API and Staff Web and
-`unchanged` for the other four, the button updates those two apps—not all six.
+`unchanged` for the other five, the plan selects those two images for release,
+not all seven. The outbox publisher appears as an application target in the
+same plan. This workflow deploys selected app images; it does not apply
+app-stack or shared-foundation changes. Use the one-button reconciliation when
+you need to apply changes to existing managed infrastructure.
 
 1. Review the plan, the proposed order and compatibility of the apps,
    configuration, database and infrastructure. Complete any necessary
@@ -348,13 +357,15 @@ For example, if the summary says `deploy` for Products API and Staff Web and
    workflow**. Choose `main`, enter the build run ID, tick the review
    confirmation and select **Run workflow**.
 3. Open the run and wait for success. It checks that the build and plan match
-   current `main`, and that every app's recorded state and active revisions
-   still match the reviewed plan. If bootstrap is planned, it runs and waits
-   for success before updating any apps. It then deploys the `deploy` rows in this
-   fixed order: Products API, Eligibility API, Mortgage API, Notifications
-   Worker, Customer Web, Staff Web. It does not update `unchanged` rows,
-   apply infrastructure. If that order is not safe for your
-   change, use the individual-app workflow below instead.
+   current `main`, and that every app's recorded state and active revisions,
+   along with the bootstrap job configuration, still match the reviewed plan.
+   If bootstrap is planned, it runs and waits for success before app updates.
+   It releases images for rows marked `deploy` in this order: Products API,
+   Eligibility API, Mortgage API, Notifications Worker, Outbox Publisher,
+   Customer Web, Staff Web. Unchanged images are not rebuilt or redeployed.
+   This workflow does not reconcile per-app or shared-foundation stacks. If
+   that order is not safe for your change, use the individual-app workflow
+   below instead.
 4. Inspect the updated Container Apps' revisions and logs. A release waits for
    the selected image to become the sole active revision; selected public web
    apps also receive a readiness check. Internal APIs and the worker still
@@ -362,7 +373,7 @@ For example, if the summary says `deploy` for Products API and Staff Web and
    customer and staff submission, uploads and notifications as appropriate.
 5. If the plan is stale, a new commit was pushed, or any app changed, run
    **Build, test and security checks → Run workflow → main** to generate a
-   fresh plan, then review it. This manual run builds all seven images.
+   fresh plan, then review it. This manual run builds all relevant app and job images.
    A failed plan can leave earlier apps updated or a failed app partially
    updated; inspect revisions and logs before generating and applying a new plan.
 

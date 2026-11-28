@@ -64,7 +64,8 @@ if [[ "$RELEASE_SERVICE" == database-bootstrap ]]; then
   exit 0
 fi
 
-app="$(az containerapp show --name "$RELEASE_SERVICE" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
+app_name="$(service_app_name "$RELEASE_SERVICE")"
+app="$(az containerapp show --name "$app_name" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
 app_id="$(jq -er '.id | select(type == "string" and length > 0)' <<< "$app")"
 if [[ "$RELEASE_SERVICE" == mortgage-api ]]; then
   verify_mortgage_identity "$app"
@@ -76,11 +77,11 @@ if [[ "$current" =~ ^[0-9a-f]{40}$ && "$current" != "$RELEASE_COMMIT" ]] &&
   echo "The selected commit is not a descendant of the deployed commit. Explicitly approve a rollback after reviewing database compatibility." >&2
   exit 1
 fi
-az containerapp update --name "$RELEASE_SERVICE" --resource-group "$AZURE_RESOURCE_GROUP" \
+az containerapp update --name "$app_name" --resource-group "$AZURE_RESOURCE_GROUP" \
   --image "$registry/$image@$RELEASE_DIGEST" --output none
 revision_ready=false
 for ((attempt=1; attempt<=60; attempt++)); do
-  revisions="$(az containerapp revision list --name "$RELEASE_SERVICE" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
+  revisions="$(az containerapp revision list --name "$app_name" --resource-group "$AZURE_RESOURCE_GROUP" --output json)"
   if jq -e --arg image "$registry/$image@$RELEASE_DIGEST" '
     type == "array" and ([.[] | select(.properties.active == true)] |
       length == 1 and .[0].properties.template.containers[0].image == $image)

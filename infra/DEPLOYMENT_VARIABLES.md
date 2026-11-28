@@ -46,16 +46,18 @@ management access, plus existing `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`
 repository variables and the deployment app's federated credential.
 The quickstart grants Azure roles, updates the subscription, group and registry
 repository variables, and adds staff callbacks to Entra. Its optional
-queue-scoped condition covers only the Mortgage API identity and is not
-sufficient for the worker and scaler; complete the
+queue-scoped condition covers the publisher and worker role assignments, but
+not the namespace-scoped scaler assignment; complete the
 [group-scoped setup and notification extension](../docs/azure-on-demand-setup.md#2-allow-the-deployment-identity-to-manage-azure-resources).
 Choose manual GitHub setup on first-time deployment if those prerequisites do
 not yet exist.
 
-It uses `mortgage-demo-env` as the Container Apps environment, and names the
-six apps `mortgages-web`, `staff-web`, `mortgage-api`, `products-api`,
-`eligibility-api` and `notifications-worker`. The bootstrap job is `mortgage-demo-env-bootstrap`. The
-GitHub deployment script currently expects those names.
+It uses `mortgage-demo-env` as the Container Apps environment and deploys
+seven apps: `mortgages-web`, `staff-web`, `mortgage-api`, `products-api`,
+`eligibility-api`, `notifications-worker` and the continuously running
+`mortgage-demo-env-outbox-publisher`. It also deploys the manual
+`mortgage-demo-env-bootstrap` job. The GitHub deployment script expects these
+names.
 
 ## GitHub Actions variables
 
@@ -123,11 +125,11 @@ that identity. The quickstart supplies the signed-in user and sets the type to
 
 The quickstart also creates a public Basic Service Bus namespace and the
 `submission-notifications` queue using [notifications.bicep](notifications.bicep).
-The Mortgage API receives queue-scoped sender access, and the worker's separate
-identity receives queue-scoped receiver access. A separate scaler-only identity
+The continuously running outbox publisher receives queue-scoped sender access, and the
+worker's separate identity receives queue-scoped receiver access. A separate scaler-only identity
 receives namespace-scoped Service Bus Data Owner; it is unavailable to the
-containers. `Notifications__Enabled`, `Notifications__ServiceBusNamespace` and
-`Notifications__QueueName` are set by the template; no Service Bus key is used.
+containers. The publisher receives its Service Bus namespace, queue and
+continuous polling settings from its app template; no Service Bus key is used.
 Push checks and individual releases do not reapply the notification module or
 Mortgage API settings. They cannot upgrade an API-hosted consumer; see the
 [legacy cutover](../docs/azure-advanced-deployment.md#enable-on-an-existing-quickstart-deployment).

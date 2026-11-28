@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 
-app_services=(products-api eligibility-api mortgage-api notifications-worker mortgages-web staff-web)
+app_services=(products-api eligibility-api mortgage-api notifications-worker outbox-publisher mortgages-web staff-web)
+job_services=(database-bootstrap)
+
+service_job_name() {
+  case "$1" in
+    database-bootstrap) echo mortgage-demo-env-bootstrap ;;
+    *) echo "Unknown job target: $1" >&2; return 1 ;;
+  esac
+}
+
+service_app_name() {
+  case "$1" in
+    outbox-publisher) echo mortgage-demo-env-outbox-publisher ;;
+    products-api|eligibility-api|mortgage-api|notifications-worker|mortgages-web|staff-web) echo "$1" ;;
+    *) echo "$1" ;;
+  esac
+}
 
 bootstrap_fingerprint() {
   jq -Sc '{id, identity, properties: {
@@ -19,6 +35,7 @@ service_project() {
     staff-web) echo PD.Mortgages.Staff.Web ;;
     notifications-worker) echo PD.Notifications.Worker ;;
     database-bootstrap) echo PD.Mortgages.DatabaseBootstrap ;;
+    outbox-publisher) echo PD.Mortgages.OutboxPublisher ;;
     *) echo "Unknown release target: $1" >&2; return 1 ;;
   esac
 }
@@ -27,7 +44,7 @@ service_image() {
   case "$1" in
     mortgage-api) echo mortgages-api ;;
     staff-web) echo mortgages-staff-web ;;
-    products-api|eligibility-api|mortgages-web|notifications-worker|database-bootstrap) echo "$1" ;;
+    products-api|eligibility-api|mortgages-web|notifications-worker|database-bootstrap|outbox-publisher) echo "$1" ;;
     *) echo "Unknown release target: $1" >&2; return 1 ;;
   esac
 }

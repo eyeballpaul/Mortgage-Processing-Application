@@ -140,16 +140,17 @@ jobs:
             (if .bootstrapBuild then
               $manifest[0].images["database-bootstrap"].repository == "database-bootstrap" and
               ($manifest[0].images["database-bootstrap"].digest | type == "string" and test("^sha256:[0-9a-f]{64}$"))
-             else true end)
+             else true end) and
+            true
           ' "$APP_PLAN" >/dev/null
           {
             echo '## Application deployment plan'
             echo 'Review migrations, infrastructure, configuration and compatibility before applying. A changed or unverified bootstrap will run before app updates.'
-            echo '| App | Decision | Reason |'
+            echo '| Target | Decision | Reason |'
             echo '| --- | --- | --- |'
             jq -r '.targets[] | "| \(.service) | \(.status) | \(.reason) |"' "$APP_PLAN"
             echo
-            jq -r '"Database: \(.bootstrapReason). Infrastructure: manual review required."' "$APP_PLAN"
+            jq -r '"Database: \(.bootstrapReason). Outbox publisher is included with the application targets. Infrastructure: manual review required."' "$APP_PLAN"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Save built image digests

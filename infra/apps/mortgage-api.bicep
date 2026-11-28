@@ -6,8 +6,6 @@ param environmentId string
 param mortgagesIdentityClientId string
 param customerSessionsIdentityClientId string
 param sqlServerFqdn string
-param serviceBusFqdn string
-param serviceBusQueueName string
 param productsApiFqdn string
 param eligibilityApiFqdn string
 param mortgagesIdentityId string
@@ -75,6 +73,7 @@ resource mortgageApi 'Microsoft.App/containerApps@2026-07-01' = {
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
             { name: 'ASPNETCORE_FORWARDEDHEADERS_ENABLED', value: 'true' }
             { name: 'AZURE_CLIENT_ID', value: mortgagesIdentityClientId }
+            { name: 'Notifications__WorkerModel', value: 'separate' }
             // These IDs identify the trusted tenant, API and calling apps.
             { name: 'AzureAd__TenantId', value: tenant().tenantId }
             { name: 'AzureAd__ClientId', value: mortgageApiClientId }
@@ -90,12 +89,6 @@ resource mortgageApi 'Microsoft.App/containerApps@2026-07-01' = {
             { name: 'Persistence__Provider', value: 'SqlServer' }
             { name: 'Persistence__RunMigrationsOnStartup', value: 'false' }
             { name: 'ConnectionStrings__mortgages', value: 'Server=tcp:${sqlServerFqdn},1433;Database=mortgages;Authentication=Active Directory Managed Identity;User Id=${mortgagesIdentityClientId};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;' }
-            // Publish to the queue and mark this deployment as using the
-            // separate worker, so scripts can reject legacy in-place upgrades.
-            { name: 'Notifications__Enabled', value: 'true' }
-            { name: 'Notifications__WorkerModel', value: 'separate' }
-            { name: 'Notifications__ServiceBusNamespace', value: serviceBusFqdn }
-            { name: 'Notifications__QueueName', value: serviceBusQueueName }
             // Store uploaded documents in the private Blob container.
             { name: 'DocumentStorage__Provider', value: 'AzureBlob' }
             { name: 'DocumentStorage__BlobServiceUri', value: 'https://${storageName}.blob.${environment().suffixes.storage}/' }

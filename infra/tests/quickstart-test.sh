@@ -25,6 +25,12 @@ case "$*" in
     else
       echo '[]'
     fi ;;
+  "containerapp job list --resource-group test-rg --output json")
+    if [[ "${TEST_LEGACY_PUBLISHER_JOB:-false}" == true ]]; then
+      echo '[{"name":"mortgage-demo-env-outbox-publisher"}]'
+    else
+      echo '[]'
+    fi ;;
   "sql server list --resource-group test-rg --output json")
     if [[ "${TEST_EXISTING_SERVER:-false}" == "true" ]]; then
       echo '[{"name":"sql-server"}]'
@@ -64,6 +70,8 @@ case "$*" in
   *"properties.outputs.customerSessionsIdentityPrincipalId.value"*) echo customer-principal ;;
   *"properties.outputs.customerSessionsIdentityClientId.value"*) echo customer-client ;;
   *"properties.outputs.mortgagesIdentityPrincipalId.value"*) echo 11111111-2222-3333-4444-555555555555 ;;
+  *"properties.outputs.outboxPublisherIdentityPrincipalId.value"*) echo 22222222-3333-4444-5555-666666666666 ;;
+  *"properties.outputs.notificationsIdentityPrincipalId.value"*) echo 33333333-4444-5555-6666-777777777777 ;;
   *"properties.outputs.notificationQueueId.value"*) echo /subscriptions/subscription-id/resourceGroups/test-rg/providers/Microsoft.ServiceBus/namespaces/test-sb/queues/submission-notifications ;;
   *"properties.outputs.databaseBootstrapJobName.value"*) echo bootstrap-job ;;
   *"properties.outputs.mortgagesWebUrl.value"*) echo https://customer.example ;;
@@ -152,6 +160,7 @@ grep -q 'deployment group create --name mortgage-apps .*deployApps=true deployBo
 grep -q -- '--image mortgages-api:latest --file PD.Mortgages.Api/Dockerfile' "$TEST_LOG"
 grep -q -- '--image mortgages-web:latest --file PD.Mortgages.Customer.Web/Dockerfile' "$TEST_LOG"
 grep -q -- '--image notifications-worker:latest --file PD.Notifications.Worker/Dockerfile' "$TEST_LOG"
+grep -q -- '--image outbox-publisher:latest --file PD.Mortgages.OutboxPublisher/Dockerfile' "$TEST_LOG"
 grep -q -- '--image mortgages-staff-web:latest --file PD.Mortgages.Staff.Web/Dockerfile' "$TEST_LOG"
 grep -q 'curl .*https://customer.example/health/ready' "$TEST_LOG"
 grep -q 'curl .*https://staff.example/health/ready' "$TEST_LOG"
@@ -223,7 +232,8 @@ jq -e 'any(.[]; .roleDefinitionName == "Role Based Access Control Administrator"
   (.scope | endswith("/queues/submission-notifications")) and
   (.condition | contains("@Request[Microsoft.Authorization/roleAssignments:PrincipalId]") and
     contains("@Resource[Microsoft.Authorization/roleAssignments:PrincipalId]") and
-    contains("11111111-2222-3333-4444-555555555555") and
+    contains("22222222-3333-4444-5555-666666666666") and
+    contains("33333333-4444-5555-6666-777777777777") and
     contains("69a216fc-b8fb-44d8-bc22-1f3c2cd27a39") and
     contains("4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0")))' "$TEST_STATE/roles" >/dev/null
 grep -q 'gh variable set AZURE_RESOURCE_GROUP --repo owner/repo --body test-rg' "$TEST_LOG"
@@ -269,7 +279,7 @@ reset_state
 if printf '%s' "$inputs" | TEST_LEGACY_APP=true bash "$root/infra/quickstart-deploy.sh" > "$test_dir/output" 2>&1; then
   echo "Expected legacy consumer to block deployment." >&2; exit 1
 fi
-grep -q 'older notification consumer' "$test_dir/output"
+grep -q 'older notification publisher' "$test_dir/output"
 if grep -q '^deployment group create' "$TEST_LOG"; then
   echo "Changed infrastructure while a legacy consumer was present." >&2; exit 1
 fi
@@ -322,4 +332,17 @@ for failure in TEST_MISSING_IDENTITY TEST_AUTOMATED_ASSIGNMENT; do
     echo "Deployed resources despite missing prerequisites." >&2; exit 1
   fi
 done
+
+reset_state
+if printf '%s' "$existing_auto_inputs" | TEST_AUTOMATED_ASSIGNMENT=true TEST_LEGACY_PUBLISHER_JOB=true \
+  bash "$root/infra/quickstart-deploy.sh" > "$test_dir/output" 2>&1; then
+  echo "Expected a legacy scheduled publisher to block quickstart." >&2
+  exit 1
+fi
+grep -q 'legacy scheduled publisher job exists' "$test_dir/output"
+if grep -q '^deployment group create' "$TEST_LOG"; then
+  echo "Quickstart changed infrastructure while the legacy publisher job was present." >&2
+  exit 1
+fi
+
 echo "Quickstart mock tests passed."

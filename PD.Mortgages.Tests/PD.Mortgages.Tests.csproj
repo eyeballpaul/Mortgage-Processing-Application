@@ -6,6 +6,7 @@
 	<ProjectReference Include="..\PD.Mortgages.Domain\PD.Mortgages.Domain.csproj" />
 	  <ProjectReference Include="..\PD.Mortgages.Infrastructure\PD.Mortgages.Infrastructure.csproj" />
 	  <ProjectReference Include="..\PD.Mortgages.Api\PD.Mortgages.Api.csproj" Aliases="MortgageApi" />
+	  <ProjectReference Include="..\PD.Mortgages.OutboxPublisher\PD.Mortgages.OutboxPublisher.csproj" Aliases="OutboxPublisher" />
 	  <ProjectReference Include="..\PD.Notifications.Worker\PD.Notifications.Worker.csproj" Aliases="NotificationWorker" />
 	  <ProjectReference Include="..\PD.Mortgages.DatabaseBootstrap\PD.Mortgages.DatabaseBootstrap.csproj" />
 	  <ProjectReference Include="..\PD.Mortgages.Staff.Web\PD.Mortgages.Staff.Web.csproj" />
